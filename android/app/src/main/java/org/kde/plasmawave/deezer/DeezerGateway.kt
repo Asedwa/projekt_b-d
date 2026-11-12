@@ -48,8 +48,9 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
     fun getAccount(): Account = account ?: login()
 
     @Synchronized
-    fun resolve(trackId: String): Media {
+    fun resolve(trackId: String, exactFormat: String? = null): Media {
         require(trackId.isNotEmpty() && trackId.all(Char::isDigit)) { "Geçersiz şarkı kimliği" }
+        require(exactFormat == null || exactFormat in setOf("FLAC", "MP3_320", "MP3_128")) { "Geçersiz ses biçimi" }
         getAccount()
         // Refresh the session and track token once if Deezer rejects an old media grant.
         repeat(2) { attempt ->
@@ -59,17 +60,19 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
                 val id = if (index == 0) trackId else candidate.optString("SNG_ID")
                 val token = candidate.optString("TRACK_TOKEN")
                 if (id.isBlank() || !id.all(Char::isDigit) || token.isBlank() || licenseToken.isBlank()) continue
-                resolveMedia(id, token)?.let { return it }
+                resolveMedia(id, token, exactFormat)?.let { return it }
             }
             if (attempt == 0) login()
         }
-        throw DeezerException("Bu şarkının tamamı hesapta kullanılamıyor")
+        throw DeezerException(if (exactFormat == null) "Bu şarkının tamamı hesapta kullanılamıyor"
+            else "Bu şarkı seçilen $exactFormat biçiminde hesabında kullanılamıyor")
     }
 
-    private fun resolveMedia(trackId: String, token: String): Media? {
+    private fun resolveMedia(trackId: String, token: String, exactFormat: String?): Media? {
         val formats = JSONArray()
-        if (account?.highQuality == true) formats.put(JSONObject().put("cipher", "BF_CBC_STRIPE").put("format", "MP3_320"))
-        listOf("MP3_128", "MP3_64", "MP3_MISC").forEach {
+        val requested = if (exactFormat != null) listOf(exactFormat) else
+            (if (account?.highQuality == true) listOf("MP3_320") else emptyList()) + listOf("MP3_128", "MP3_64", "MP3_MISC")
+        requested.forEach {
             formats.put(JSONObject().put("cipher", "BF_CBC_STRIPE").put("format", it))
         }
         val payload = JSONObject().put("license_token", licenseToken)
@@ -78,6 +81,7 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
         val reply = JSONObject(transport.post("https://media.deezer.com/v1/get_url", payload.toString(), null).body)
         val item = reply.optJSONArray("data")?.optJSONObject(0)
         val media = item?.optJSONArray("media")?.optJSONObject(0) ?: return null
+        if (exactFormat != null && media.optString("format") != exactFormat) return null
         val source = media.optJSONArray("sources")?.optJSONObject(0)?.optString("url").orEmpty()
         val url = try { URL(source) } catch (_: Exception) { return null }
         val host = url.host.lowercase()
@@ -142,10 +146,17 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
 
     private fun pages(load: (Int) -> JSONArray?): JSONArray {
         val all = JSONArray()
-        for (start in 0 until 5000 step 100) {
-            val page = load(start) ?: break
+        var start = 0
+        var previous: String? = null
+        while (true) {
+            val page = load(start) ?: throw DeezerException("Deezer listesi okunamadı")
+            val signature = page.toString()
+            if (page.length() > 0 && signature == previous) throw DeezerException("Deezer listesinin sonraki sayfası alınamadı")
             for (index in 0 until page.length()) all.put(page.get(index))
             if (page.length() < 100) break
+            previous = signature
+            start += page.length()
+            if (start > 100_000) throw DeezerException("Deezer listesi çok büyük")
         }
         return all
     }

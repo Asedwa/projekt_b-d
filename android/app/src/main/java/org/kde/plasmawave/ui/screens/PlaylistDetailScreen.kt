@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -31,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -86,11 +88,19 @@ fun PlaylistDetailScreen(
         mutableStateOf(runCatching { PlaylistTrackSort.valueOf(sortPrefs.getString(sortKey, null) ?: "ORIGINAL") }.getOrDefault(PlaylistTrackSort.ORIGINAL))
     }
     var showSort by remember { mutableStateOf(false) }
+    var query by rememberSaveable(playlist.id) { mutableStateOf("") }
     val playerState by viewModel.playbackManager.uiState.collectAsState()
     val colors = LocalPlasmaColors.current
     val entries = (state as? PlaylistLoadState.Loaded)?.entries.orEmpty()
     val sortedEntries = remember(entries, sort) { sortPlaylistTracks(entries, sort) }
-    val tracks = remember(sortedEntries) { sortedEntries.map { it.track } }
+    val filteredEntries = remember(sortedEntries, query) {
+        val text = query.trim()
+        if (text.isBlank()) sortedEntries else sortedEntries.filter {
+            it.track.title.contains(text, ignoreCase = true) || it.track.artist.contains(text, ignoreCase = true) ||
+                it.track.album.contains(text, ignoreCase = true)
+        }
+    }
+    val tracks = remember(filteredEntries) { filteredEntries.map { it.track } }
     val hasAddedDates = remember(entries) { entries.any { it.addedAt != null } }
 
     LaunchedEffect(playlist.id, retry) {
@@ -141,12 +151,20 @@ fun PlaylistDetailScreen(
                     Spacer(modifier = Modifier.height(18.dp))
                     Text(playlist.name, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
                     Spacer(modifier = Modifier.height(4.dp))
-                    val count = if (state is PlaylistLoadState.Loaded) tracks.size else playlist.trackCount.toInt()
+                    val count = if (state is PlaylistLoadState.Loaded) entries.size else playlist.trackCount.toInt()
                     Text(
                         "Çalma listesi • $count şarkı" + if (playlist.isLocal) " • Bu cihaz" else " • Deezer",
                         modifier = Modifier.fillMaxWidth(),
                         style = MaterialTheme.typography.bodyMedium.copy(color = colors.textSecondary)
                     )
+                    if (entries.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            placeholder = { Text("Listede şarkı veya sanatçı ara") }, singleLine = true
+                        )
+                    }
                     if (tracks.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -160,7 +178,7 @@ fun PlaylistDetailScreen(
                             }
                         }
                     }
-                    if (tracks.isNotEmpty()) {
+                    if (entries.isNotEmpty()) {
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("Şarkılar", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                             Box {
@@ -203,9 +221,9 @@ fun PlaylistDetailScreen(
                 }
                 is PlaylistLoadState.Loaded -> {
                     if (tracks.isEmpty()) item {
-                        Text("Bu çalma listesi boş.", modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), color = colors.textSecondary, textAlign = TextAlign.Center)
+                        Text(if (query.isBlank()) "Bu çalma listesi boş." else "Aramayla eşleşen şarkı yok.", modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), color = colors.textSecondary, textAlign = TextAlign.Center)
                     }
-                    else itemsIndexed(sortedEntries, key = { _, entry -> "${entry.originalIndex}:${entry.track.id}" }) { index, entry ->
+                    else itemsIndexed(filteredEntries, key = { _, entry -> "${entry.originalIndex}:${entry.track.id}" }) { index, entry ->
                         val track = entry.track
                         TrackListItem(
                             track = track,

@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -60,6 +62,7 @@ import org.kde.plasmawave.ui.LibraryPlaylistEntry
 import org.kde.plasmawave.ui.LibraryPlaylistSort
 import org.kde.plasmawave.ui.sortLibraryPlaylists
 import org.kde.plasmawave.ui.MainViewModel
+import org.kde.plasmawave.ui.PinnedItem
 import org.kde.plasmawave.ui.components.ArtworkImage
 import uniffi.plasmawave_core.FfiPlaylist
 
@@ -254,6 +257,9 @@ private fun PlaylistRow(
     onClick: (FfiPlaylist) -> Unit
 ) {
     val colors = LocalPlasmaColors.current
+    val pins by viewModel.pins.collectAsState()
+    val pinned = pins.any { it.id == PinnedItem.Playlist(playlist).id }
+    var showMenu by remember { mutableStateOf(false) }
     var artwork by remember(playlist.id, playlist.artworkUrl, playlist.trackCount) { mutableStateOf(playlist.artworkUrl) }
     LaunchedEffect(playlist.id, playlist.artworkUrl, playlist.trackCount) {
         if (artwork.isNullOrBlank() && playlist.isLocal && playlist.trackCount > 0u) {
@@ -286,6 +292,16 @@ private fun PlaylistRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        Box {
+            IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "Liste seçenekleri") }
+            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenuItem(
+                    text = { Text(if (pinned) "Ana sayfadan kaldır" else "Ana sayfaya sabitle") },
+                    leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                    onClick = { viewModel.togglePinnedPlaylist(playlist); showMenu = false }
+                )
+            }
         }
     }
 }

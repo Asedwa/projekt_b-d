@@ -22,6 +22,11 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+enum class StreamingQuality(val label: String, val format: String?) {
+    AUTO("Otomatik", null), MP3_128("MP3 • 128 kbps", "MP3_128"),
+    MP3_320("MP3 • 320 kbps", "MP3_320"), FLAC("FLAC • Kayıpsız", "FLAC")
+}
+
 /** Owns the user's session. ARL is encrypted by a non-exportable Android Keystore key. */
 class DeezerSession private constructor(context: Context) {
     companion object {
@@ -32,6 +37,15 @@ class DeezerSession private constructor(context: Context) {
     }
 
     private val prefs = context.getSharedPreferences("deezer_session", Context.MODE_PRIVATE)
+    private val audioPrefs = context.getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
+    private val _streamingQuality = MutableStateFlow(runCatching {
+        StreamingQuality.valueOf(audioPrefs.getString("streaming_quality", StreamingQuality.AUTO.name)!!)
+    }.getOrDefault(StreamingQuality.AUTO))
+    val streamingQuality = _streamingQuality.asStateFlow()
+    fun setStreamingQuality(quality: StreamingQuality) {
+        audioPrefs.edit().putString("streaming_quality", quality.name).apply()
+        _streamingQuality.value = quality
+    }
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
     private var gateway: DeezerGateway? = null
@@ -68,8 +82,14 @@ class DeezerSession private constructor(context: Context) {
         return gateway ?: throw DeezerException("Tam şarkıları dinlemek için Deezer'a giriş yap")
     }
 
-    internal fun resolve(trackId: String): DeezerGateway.Media = activeGateway().resolve(trackId)
-    fun favorites(): List<FfiTrack> = tracks(activeGateway().favorites())
+    internal fun resolve(trackId: String): DeezerGateway.Media = activeGateway().resolve(trackId, _streamingQuality.value.format)
+    internal fun resolveDownload(trackId: String, format: String): DeezerGateway.Media = activeGateway().resolve(trackId, format)
+    fun favoriteTrackEntries(): List<PlaylistTrackEntry> =
+        objects(activeGateway().favorites()).mapIndexedNotNull { index, json ->
+            track(json)?.let {
+                PlaylistTrackEntry(it, parseAddedAt(json.opt("DATE_ADD")) ?: parseAddedAt(json.opt("DATE_FAVORITE")), index)
+            }
+        }
     fun playlists(): List<LibraryPlaylistEntry> = objects(activeGateway().playlists()).mapNotNull { p ->
         val id = p.optString("PLAYLIST_ID")
         if (id.isBlank() || !id.all(Char::isDigit)) null else {

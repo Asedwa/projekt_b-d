@@ -17,6 +17,10 @@ import org.kde.plasmawave.player.PlaybackManager
 import org.kde.plasmawave.deezer.DeezerSession
 import org.kde.plasmawave.deezer.DeezerWebCookies
 import org.kde.plasmawave.deezer.DeezerException
+import org.kde.plasmawave.deezer.StreamingQuality
+import org.kde.plasmawave.download.Downloads
+import org.kde.plasmawave.download.DownloadQuality
+import org.kde.plasmawave.download.SavedDownload
 import java.util.concurrent.atomic.AtomicLong
 import uniffi.plasmawave_core.FfiAlbum
 import uniffi.plasmawave_core.FfiArtist
@@ -30,6 +34,7 @@ import uniffi.plasmawave_core.FfiTheme
 import uniffi.plasmawave_core.FfiTrack
 
 const val LOCAL_FAVORITES_ID = "local:favorite_tracks"
+const val DEEZER_FAVORITES_ID = "deezer:loved_tracks"
 
 enum class SearchCategory {
     TRACKS, ALBUMS, ARTISTS, PLAYLISTS
@@ -40,6 +45,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val core = PlasmaWaveApp.core
     val playbackManager = PlaybackManager.getInstance(application)
     private val deezerSession = DeezerSession.get(application)
+    val streamingQuality = deezerSession.streamingQuality
+    fun setStreamingQuality(quality: StreamingQuality) = deezerSession.setStreamingQuality(quality)
+    private val pinnedItems = PinnedItems(application)
+    private val fullDownloadManager = Downloads.get(application)
+    val fullDownloads = fullDownloadManager.items
+    val downloadQuality = fullDownloadManager.quality
+    fun setDownloadQuality(quality: DownloadQuality) = fullDownloadManager.setQuality(quality)
+    fun cancelFullDownload(id: String) = fullDownloadManager.cancel(id)
+    fun forgetFullDownload(id: String) = fullDownloadManager.forget(id)
+    val pins = pinnedItems.items
+    fun togglePinnedTrack(track: FfiTrack) = pinnedItems.toggle(PinnedItem.Track(track))
+    fun togglePinnedPlaylist(playlist: FfiPlaylist) = pinnedItems.toggle(PinnedItem.Playlist(playlist))
     private val deezerGeneration = AtomicLong()
     private val _deezerBusy = MutableStateFlow(false)
     val deezerBusy: StateFlow<Boolean> = _deezerBusy.asStateFlow()
@@ -77,6 +94,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _deezerFavorites = MutableStateFlow<List<FfiTrack>>(emptyList())
     val deezerFavorites: StateFlow<List<FfiTrack>> = _deezerFavorites.asStateFlow()
+    private var deezerFavoriteEntries: List<PlaylistTrackEntry> = emptyList()
 
     private val _deezerFlow = MutableStateFlow<List<FfiTrack>>(emptyList())
     val deezerFlow: StateFlow<List<FfiTrack>> = _deezerFlow.asStateFlow()
@@ -101,6 +119,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _settings = MutableStateFlow(core.getSettings())
     val settings: StateFlow<FfiSettings> = _settings.asStateFlow()
+
+    fun updateSettings(settings: FfiSettings) {
+        try { _settings.value = core.updateSettings(settings) }
+        catch (_: Exception) { _statusMessage.value = "Ayar kaydedilemedi" }
+    }
 
     // Contextual Long-press state
     private val _selectedTrackForMenu = MutableStateFlow<FfiTrack?>(null)
@@ -272,6 +295,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _deezerLibraryLoading.value = false
         _deezerPlaylists.value = emptyList()
         _deezerFavorites.value = emptyList()
+        deezerFavoriteEntries = emptyList()
         _deezerFlow.value = emptyList()
         _statusMessage.value = "Deezer oturumu kapatıldı"
         viewModelScope.launch(Dispatchers.IO) {
@@ -312,8 +336,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (generation != deezerGeneration.get()) return
         try {
-            val favorites = deezerSession.favorites()
-            if (generation == deezerGeneration.get()) _deezerFavorites.value = favorites
+            val entries = deezerSession.favoriteTrackEntries()
+            if (generation == deezerGeneration.get()) {
+                deezerFavoriteEntries = entries
+                _deezerFavorites.value = entries.map { it.track }
+            }
         } catch (_: Exception) {
             if (generation == deezerGeneration.get()) _statusMessage.value = "Deezer favorileri yüklenemedi"
         }
@@ -371,6 +398,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun downloadFullTrack(track: FfiTrack, quality: DownloadQuality) {
+        try {
+            val added = fullDownloadManager.enqueue(track, quality, _settings.value.downloadsWifiOnly)
+            _statusMessage.value = if (added) "İndirme sıraya eklendi: ${track.title}" else "Bu şarkı zaten indiriliyor"
+        } catch (_: Exception) {
+            _statusMessage.value = "İndirme başlatılamadı"
+        }
+    }
+
+    fun playFullDownload(task: SavedDownload) {
+        val uri = task.uri ?: return
+        val track = task.track.copy(id = "local:download-${task.id}", provider = "local", playbackUri = uri, isPreview = false)
+        playbackManager.playTrackList(listOf(track))
+    }
+
+    fun retryFullDownload(task: SavedDownload) {
+        try {
+            if (fullDownloadManager.enqueue(task.track, task.quality, _settings.value.downloadsWifiOnly)) {
+                fullDownloadManager.forget(task.id)
+                _statusMessage.value = "İndirme yeniden sıraya eklendi"
+            } else _statusMessage.value = "Bu şarkı zaten indiriliyor"
+        } catch (_: Exception) { _statusMessage.value = "İndirme başlatılamadı" }
+    }
+
     fun playDownloadedTask(task: FfiDownloadTask) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -414,7 +465,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getPlaylistTrackEntries(playlistId).map { it.track }
 
     suspend fun getPlaylistTrackEntries(playlistId: String): List<PlaylistTrackEntry> = withContext(Dispatchers.IO) {
-        if (playlistId.startsWith("deezer:") && deezerSession.hasSavedSession) {
+        if (playlistId == DEEZER_FAVORITES_ID) {
+            if (deezerFavoriteEntries.isNotEmpty()) deezerFavoriteEntries else deezerSession.favoriteTrackEntries()
+        } else if (playlistId.startsWith("deezer:") && deezerSession.hasSavedSession) {
             deezerSession.playlistTrackEntries(playlistId)
         } else {
             val tracks = if (playlistId == LOCAL_FAVORITES_ID) core.getFavorites() else core.getPlaylistTracks(playlistId)

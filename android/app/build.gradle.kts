@@ -68,6 +68,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     // Media3 / ExoPlayer
     implementation(libs.androidx.media3.exoplayer)

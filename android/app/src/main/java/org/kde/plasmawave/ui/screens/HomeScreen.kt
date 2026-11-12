@@ -1,6 +1,7 @@
 package org.kde.plasmawave.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,13 +20,17 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -36,15 +41,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.MainViewModel
+import org.kde.plasmawave.ui.PinnedItem
+import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
+import org.kde.plasmawave.ui.components.ArtworkImage
 import org.kde.plasmawave.ui.components.TrackListItem
+import uniffi.plasmawave_core.FfiPlaylist
 
 @Composable
 fun HomeScreen(
     viewModel: MainViewModel,
+    onPlaylistClick: (FfiPlaylist) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val favorites by viewModel.favorites.collectAsState()
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
+    val pins by viewModel.pins.collectAsState()
+    val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
+    val localPlaylists by viewModel.playlists.collectAsState()
     val playerState by viewModel.playbackManager.uiState.collectAsState()
     val customColors = LocalPlasmaColors.current
 
@@ -107,6 +120,45 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
 
+        if (pins.isNotEmpty()) {
+            item {
+                Text("Sabitlediklerin", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            items(pins, key = { "pin:${it.id}" }) { pin ->
+                when (pin) {
+                    is PinnedItem.Track -> TrackListItem(
+                        track = pin.track,
+                        isPlaying = playerState.currentEntry?.track?.id == pin.track.id,
+                        onClick = { viewModel.playbackManager.playTrackList(listOf(pin.track)) },
+                        onLongClick = { viewModel.openTrackMenu(pin.track) }
+                    )
+                    is PinnedItem.Playlist -> {
+                        val playlist = (deezerPlaylists.map { it.playlist } + localPlaylists)
+                            .firstOrNull { it.id == pin.playlist.id } ?: pin.playlist
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                .clickable { onPlaylistClick(playlist) }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ArtworkImage(url = playlist.artworkUrl, modifier = Modifier.size(56.dp),
+                                fallback = Icons.AutoMirrored.Filled.PlaylistPlay, shape = RoundedCornerShape(6.dp),
+                                background = customColors.card, tint = customColors.textSecondary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(playlist.name, maxLines = 1, fontWeight = FontWeight.SemiBold)
+                                Text("Çalma listesi • ${playlist.trackCount} şarkı", color = customColors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                            }
+                            IconButton(onClick = { viewModel.togglePinnedPlaylist(playlist) }) {
+                                Icon(Icons.Default.PushPin, contentDescription = "Sabitlemeyi kaldır")
+                            }
+                        }
+                    }
+                }
+            }
+            item { Spacer(modifier = Modifier.height(24.dp)) }
+        }
+
         // Favorites quick play section
         if (favorites.isNotEmpty()) {
             item {
@@ -149,6 +201,11 @@ fun HomeScreen(
         // Deezer Loved Tracks (Sevdiğim Şarkılar) Quick Play
         if (deezerFavorites.isNotEmpty()) {
             item {
+                val likedPlaylist = FfiPlaylist(
+                    id = DEEZER_FAVORITES_ID, name = "Deezer • Sevdiğim Şarkılar", description = null,
+                    isLocal = false, trackCount = deezerFavorites.size.toUInt(),
+                    artworkUrl = deezerFavorites.firstNotNullOfOrNull { it.artworkUrl }, origin = "real"
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -175,6 +232,7 @@ fun HomeScreen(
                         Text("Tümünü Çal")
                     }
                 }
+                TextButton(onClick = { onPlaylistClick(likedPlaylist) }) { Text("Tüm şarkıları gör ve sırala") }
                 Spacer(modifier = Modifier.height(8.dp))
             }
 

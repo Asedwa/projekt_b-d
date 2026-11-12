@@ -30,6 +30,27 @@ class DeezerGatewayTest {
         assertNull(calls[2].third)
     }
 
+    @Test fun exactDownloadFormatIsRequestedAndMustBeHonored() {
+        var requestedFormats: org.json.JSONArray? = null
+        var returned = "FLAC"
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, body, _ ->
+            when {
+                url.contains("getUserData") -> DeezerGateway.Reply(login)
+                url.contains("song.getData") -> DeezerGateway.Reply("""{"error":{},"results":{"TRACK_TOKEN":"t"}}""")
+                else -> {
+                    requestedFormats = JSONObject(body).getJSONArray("media").getJSONObject(0).getJSONArray("formats")
+                    DeezerGateway.Reply("""{"data":[{"media":[{"format":"$returned","sources":[{"url":"https://test.dzcdn.net/audio"}]}]}]}""")
+                }
+            }
+        })
+        assertEquals("FLAC", gateway.resolve("123", "FLAC").format)
+        assertEquals(1, requestedFormats!!.length())
+        assertEquals("FLAC", requestedFormats!!.getJSONObject(0).getString("format"))
+        returned = "MP3_128"
+        assertThrows(DeezerException::class.java) { gateway.resolve("123", "FLAC") }
+        assertThrows(IllegalArgumentException::class.java) { gateway.resolve("123", "MP3_FAKE") }
+    }
+
     @Test fun expiredGatewayTokenIsRefreshedAndRetried() {
         var logins = 0
         var songs = 0
@@ -98,6 +119,22 @@ class DeezerGatewayTest {
         })
         assertEquals(102, gateway.favorites().length())
         assertEquals(listOf(0, 100), starts)
+    }
+
+    @Test fun favoritesCanExceedFiveThousandAndRepeatedPagesFail() {
+        var repeatPage = false
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, body, _ ->
+            if (url.contains("getUserData")) DeezerGateway.Reply(login) else {
+                val start = if (repeatPage) 0 else JSONObject(body).getInt("start")
+                val size = if (start < 5100) 100 else 2
+                val data = org.json.JSONArray()
+                repeat(size) { data.put(JSONObject().put("SNG_ID", start + it)) }
+                DeezerGateway.Reply(JSONObject().put("error", JSONObject()).put("results", JSONObject().put("data", data)).toString())
+            }
+        })
+        assertEquals(5102, gateway.favorites().length())
+        repeatPage = true
+        assertThrows(DeezerException::class.java) { gateway.favorites() }
     }
     @Test fun playlistUsesDeezerPageAndFollowsActualPageSize() {
         val starts = mutableListOf<Int>()

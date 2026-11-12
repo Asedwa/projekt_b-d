@@ -2,6 +2,8 @@ package org.kde.plasmawave.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -59,6 +62,9 @@ fun SongLongPressBottomSheet(
     onToggleFavorite: (FfiTrack) -> Unit,
     onAddToPlaylist: (FfiTrack) -> Unit,
     onDownload: (FfiTrack) -> Unit,
+    isPinned: Boolean,
+    onTogglePin: (FfiTrack) -> Unit,
+    canDownloadDeezer: Boolean,
     customModActions: List<FfiModInfo> = emptyList(),
     onExecuteModAction: (FfiModInfo, FfiTrack) -> Unit = { _, _ -> }
 ) {
@@ -90,6 +96,7 @@ fun SongLongPressBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(bottom = 32.dp)
         ) {
             // Track Header
@@ -185,8 +192,22 @@ fun SongLongPressBottomSheet(
                 }
             )
 
+            ActionMenuItem(
+                icon = Icons.Default.PushPin,
+                title = if (isPinned) "Ana sayfadan kaldır" else "Ana sayfaya sabitle",
+                onClick = { onTogglePin(track); onDismiss() }
+            )
+
             // 5. Download (Capability-Gated)
-            if (offlinePath != null) {
+            if (track.provider == "deezer") {
+                ActionMenuItem(
+                    icon = Icons.Default.CloudDownload,
+                    title = "Şarkıyı indir",
+                    subtitle = if (canDownloadDeezer) "MP3 veya FLAC olarak kaydet" else "Deezer'a giriş yap",
+                    enabled = canDownloadDeezer,
+                    onClick = { onDownload(track); onDismiss() }
+                )
+            } else if (offlinePath != null) {
                 ActionMenuItem(
                     icon = Icons.Default.CloudDone,
                     title = if (track.provider == "deezer") "Preview available offline" else "Offline available",

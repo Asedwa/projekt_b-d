@@ -1,11 +1,17 @@
 package org.kde.plasmawave
 
 import android.os.Bundle
+import android.os.Build
+import android.Manifest
+import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -14,6 +20,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Home
@@ -21,6 +29,9 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -44,6 +55,7 @@ import kotlinx.coroutines.launch
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.theme.PlasmaTheme
 import org.kde.plasmawave.ui.MainViewModel
+import org.kde.plasmawave.download.DownloadQuality
 import org.kde.plasmawave.ui.components.FullPlayerSheet
 import org.kde.plasmawave.ui.components.MiniPlayer
 import org.kde.plasmawave.ui.components.SongLongPressBottomSheet
@@ -57,6 +69,7 @@ import org.kde.plasmawave.ui.screens.SearchScreen
 import org.kde.plasmawave.ui.screens.SettingsScreen
 import org.kde.plasmawave.ui.screens.ThemesScreen
 import uniffi.plasmawave_core.FfiPlaylist
+import uniffi.plasmawave_core.FfiTrack
 
 sealed class Screen(val title: String, val icon: ImageVector) {
     object Home : Screen("Home", Icons.Default.Home)
@@ -88,6 +101,17 @@ class MainActivity : ComponentActivity() {
             val selectedTrackForMenu by viewModel.selectedTrackForMenu.collectAsState()
             val customModActions by viewModel.customTrackActions.collectAsState()
             val statusMessage by viewModel.statusMessage.collectAsState()
+            val pins by viewModel.pins.collectAsState()
+            val deezerUser by viewModel.deezerUser.collectAsState()
+            val defaultDownloadQuality by viewModel.downloadQuality.collectAsState()
+            var trackToDownload by remember { mutableStateOf<FfiTrack?>(null) }
+            var requestedDownload by remember { mutableStateOf<Pair<FfiTrack, DownloadQuality>?>(null) }
+            val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                val request = requestedDownload
+                if (granted && request != null) viewModel.downloadFullTrack(request.first, request.second)
+                else if (!granted) Toast.makeText(this@MainActivity, "Şarkıyı kaydetmek için depolama izni gerekli", Toast.LENGTH_LONG).show()
+                requestedDownload = null
+            }
 
             var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
             var currentSubScreen by remember { mutableStateOf<SubScreen>(SubScreen.None) }
@@ -202,7 +226,10 @@ class MainActivity : ComponentActivity() {
                             }
                             is SubScreen.None -> {
                                 when (currentScreen) {
-                                    is Screen.Home -> HomeScreen(viewModel = viewModel)
+                                    is Screen.Home -> HomeScreen(
+                                        viewModel = viewModel,
+                                        onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) }
+                                    )
                                     is Screen.Library -> LibraryScreen(
                                         viewModel = viewModel,
                                         onPlaylistClick = { pl ->
@@ -278,12 +305,46 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onDownload = { track ->
-                            viewModel.downloadTrack(track)
+                            if (track.provider == "deezer") trackToDownload = track else viewModel.downloadTrack(track)
                         },
+                        isPinned = pins.any { it.id == "track:${selectedTrackForMenu?.id}" },
+                        onTogglePin = viewModel::togglePinnedTrack,
+                        canDownloadDeezer = deezerUser != null,
                         customModActions = customModActions,
                         onExecuteModAction = { mod, track ->
                             viewModel.executeModAction(mod.id, track)
                         }
+                    )
+                }
+
+                trackToDownload?.let { track ->
+                    var quality by remember(track.id) { mutableStateOf(defaultDownloadQuality) }
+                    AlertDialog(
+                        onDismissRequest = { trackToDownload = null },
+                        title = { Text("İndirme biçimi") },
+                        text = {
+                            Column {
+                                Text("${track.artist} • ${track.title}")
+                                DownloadQuality.entries.forEach { choice ->
+                                    Row(modifier = Modifier.fillMaxWidth().clickable { quality = choice }) {
+                                        RadioButton(selected = quality == choice, onClick = { quality = choice })
+                                        Text(choice.label, modifier = Modifier.padding(top = 14.dp))
+                                    }
+                                }
+                                Text("Müzik/PlasmaWave klasörüne kaydedilir. Kalite hesabının erişimine bağlıdır.")
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                viewModel.setDownloadQuality(quality)
+                                trackToDownload = null
+                                if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                                    requestedDownload = track to quality
+                                    storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                } else viewModel.downloadFullTrack(track, quality)
+                            }) { Text("İndir") }
+                        },
+                        dismissButton = { TextButton(onClick = { trackToDownload = null }) { Text("Vazgeç") } }
                     )
                 }
             }

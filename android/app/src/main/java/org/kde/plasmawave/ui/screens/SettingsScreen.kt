@@ -42,6 +42,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -64,11 +67,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import org.kde.plasmawave.deezer.DeezerLoginDialog
+import org.kde.plasmawave.deezer.StreamingQuality
 import androidx.compose.ui.unit.dp
 import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.theme.parseHexColor
 import org.kde.plasmawave.ui.MainViewModel
+import org.kde.plasmawave.download.DownloadQuality
 
 @Composable
 fun SettingsScreen(
@@ -80,6 +85,10 @@ fun SettingsScreen(
 ) {
     val activeTheme by viewModel.activeTheme.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val downloadQuality by viewModel.downloadQuality.collectAsState()
+    val streamingQuality by viewModel.streamingQuality.collectAsState()
+    var showQualityMenu by remember { mutableStateOf(false) }
+    var showStreamingMenu by remember { mutableStateOf(false) }
     val customColors = LocalPlasmaColors.current
     val core = PlasmaWaveApp.core
 
@@ -340,11 +349,11 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.padding(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Offline Downloads Manager",
+                        text = "İndirilen şarkılar",
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
                     )
                     Text(
-                        text = "Manage downloaded audio and offline tracks",
+                        text = "Müzik/PlasmaWave • İlerleme ve çevrimdışı dinleme",
                         style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
                     )
                 }
@@ -366,6 +375,44 @@ fun SettingsScreen(
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CloudSync, contentDescription = null, tint = customColors.textSecondary)
+                    Spacer(modifier = Modifier.padding(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Dinleme kalitesi", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+                        Text("Sonraki şarkıda uygulanır", style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary))
+                    }
+                    Box {
+                        TextButton(onClick = { showStreamingMenu = true }) { Text(streamingQuality.label) }
+                        DropdownMenu(expanded = showStreamingMenu, onDismissRequest = { showStreamingMenu = false }) {
+                            StreamingQuality.entries.forEach { quality ->
+                                DropdownMenuItem(text = { Text(quality.label) }, onClick = {
+                                    viewModel.setStreamingQuality(quality); showStreamingMenu = false
+                                })
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider(color = customColors.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 12.dp))
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, tint = customColors.textSecondary)
+                    Spacer(modifier = Modifier.padding(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("İndirme kalitesi", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
+                        Text("Hesabının erişimine bağlıdır", style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary))
+                    }
+                    Box {
+                        TextButton(onClick = { showQualityMenu = true }) { Text(downloadQuality.label) }
+                        DropdownMenu(expanded = showQualityMenu, onDismissRequest = { showQualityMenu = false }) {
+                            DownloadQuality.entries.forEach { quality ->
+                                DropdownMenuItem(text = { Text(quality.label) }, onClick = {
+                                    viewModel.setDownloadQuality(quality); showQualityMenu = false
+                                })
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider(color = customColors.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 12.dp))
                 // Wi-Fi Only Switch
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -375,11 +422,11 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.padding(8.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Download on Wi-Fi Only",
+                            text = "Yalnızca Wi-Fi ile indir",
                             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
                         )
                         Text(
-                            text = "Prevent cellular data usage for media downloads",
+                            text = "Mobil veri yerine ölçülmeyen ağ kullan",
                             style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
                         )
                     }
@@ -387,7 +434,7 @@ fun SettingsScreen(
                         checked = settings.downloadsWifiOnly,
                         onCheckedChange = { checked ->
                             val updated = settings.copy(downloadsWifiOnly = checked)
-                            core.updateSettings(updated)
+                            viewModel.updateSettings(updated)
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
                     )
@@ -416,7 +463,7 @@ fun SettingsScreen(
                         checked = settings.showDevFixtures,
                         onCheckedChange = { checked ->
                             val updated = settings.copy(showDevFixtures = checked)
-                            core.updateSettings(updated)
+                            viewModel.updateSettings(updated)
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
                     )
