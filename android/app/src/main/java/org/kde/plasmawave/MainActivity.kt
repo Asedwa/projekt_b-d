@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
@@ -95,6 +96,10 @@ class MainActivity : ComponentActivity() {
             val fullPlayerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             val menuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             val scope = rememberCoroutineScope()
+
+            BackHandler(enabled = currentSubScreen != SubScreen.None && !isFullPlayerVisible && selectedTrackForMenu == null) {
+                currentSubScreen = SubScreen.None
+            }
 
             LaunchedEffect(statusMessage) {
                 statusMessage?.let {

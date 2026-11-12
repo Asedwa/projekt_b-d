@@ -99,4 +99,55 @@ class DeezerGatewayTest {
         assertEquals(102, gateway.favorites().length())
         assertEquals(listOf(0, 100), starts)
     }
+    @Test fun playlistUsesDeezerPageAndFollowsActualPageSize() {
+        val starts = mutableListOf<Int>()
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, body, _ ->
+            if (url.contains("getUserData")) DeezerGateway.Reply(login)
+            else {
+                assertTrue(url.contains("method=deezer.pagePlaylist"))
+                val request = JSONObject(body)
+                assertEquals("314", request.getString("playlist_id"))
+                val start = request.getInt("start")
+                starts.add(start)
+                val data = org.json.JSONArray()
+                repeat(minOf(50, 125 - start)) { data.put(JSONObject().put("SNG_ID", start + it)) }
+                val songs = JSONObject().put("data", data).put("total", 125)
+                DeezerGateway.Reply(JSONObject().put("error", JSONObject()).put("results", JSONObject().put("SONGS", songs)).toString())
+            }
+        })
+        assertEquals(125, gateway.playlistTracks("314").length())
+        assertEquals(listOf(0, 50, 100), starts)
+    }
+
+    @Test fun playlistFallsBackToLegacyEndpointAndReportsMissingData() {
+        val methods = mutableListOf<String>()
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, _, _ ->
+            when {
+                url.contains("getUserData") -> DeezerGateway.Reply(login)
+                url.contains("deezer.pagePlaylist") -> {
+                    methods.add("page")
+                    DeezerGateway.Reply("""{"error":{},"results":{}}""")
+                }
+                else -> {
+                    methods.add("legacy")
+                    DeezerGateway.Reply("""{"error":{},"results":{"data":[{"SNG_ID":"4"}],"total":1}}""")
+                }
+            }
+        })
+        assertEquals(1, gateway.playlistTracks("314").length())
+        assertEquals(listOf("page", "legacy"), methods)
+        val invalid = DeezerGateway("test", DeezerGateway.Transport { url, _, _ ->
+            if (url.contains("getUserData")) DeezerGateway.Reply(login)
+            else DeezerGateway.Reply("""{"error":{},"results":{}}""")
+        })
+        assertThrows(DeezerException::class.java) { invalid.playlistTracks("314") }
+    }
+
+    @Test fun playlistIsNotMisreportedEmptyWhenServerSaysTracksExist() {
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, _, _ ->
+            if (url.contains("getUserData")) DeezerGateway.Reply(login)
+            else DeezerGateway.Reply("""{"error":{},"results":{"SONGS":{"data":[],"total":2}}}""")
+        })
+        assertThrows(DeezerException::class.java) { gateway.playlistTracks("314") }
+    }
 }

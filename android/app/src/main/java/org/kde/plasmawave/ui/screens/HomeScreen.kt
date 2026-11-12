@@ -43,10 +43,8 @@ fun HomeScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier
 ) {
-    val deezerChart by viewModel.deezerChart.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
-    val deezerUser by viewModel.deezerUser.collectAsState()
     val playerState by viewModel.playbackManager.uiState.collectAsState()
     val customColors = LocalPlasmaColors.current
 
@@ -191,43 +189,6 @@ fun HomeScreen(
 
             item {
                 Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-
-        // Public Deezer Catalog Highlights
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Album,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (deezerUser != null) "Deezer Top Chart" else "Deezer Top Chart (Önizlemeler)",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        if (deezerChart.isEmpty()) {
-            item {
-                Text(
-                    text = "Loading top chart previews...",
-                    style = MaterialTheme.typography.bodyMedium.copy(color = customColors.textSecondary),
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-            }
-        } else {
-            items(deezerChart, key = { it.id }) { track ->
-                TrackListItem(
-                    track = track,
-                    isPlaying = playerState.currentEntry?.track?.id == track.id,
-                    onClick = { viewModel.playbackManager.playTrackList(deezerChart, deezerChart.indexOf(track)) },
-                    onLongClick = { viewModel.openTrackMenu(track) }
-                )
             }
         }
 

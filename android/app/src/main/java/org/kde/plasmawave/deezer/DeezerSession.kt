@@ -12,6 +12,9 @@ import org.json.JSONObject
 import uniffi.plasmawave_core.FfiDeezerUser
 import uniffi.plasmawave_core.FfiPlaylist
 import uniffi.plasmawave_core.FfiTrack
+import org.kde.plasmawave.ui.PlaylistTrackEntry
+import org.kde.plasmawave.ui.LibraryPlaylistEntry
+import org.kde.plasmawave.ui.parseAddedAt
 import java.io.IOException
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -67,15 +70,25 @@ class DeezerSession private constructor(context: Context) {
 
     internal fun resolve(trackId: String): DeezerGateway.Media = activeGateway().resolve(trackId)
     fun favorites(): List<FfiTrack> = tracks(activeGateway().favorites())
-    fun playlists(): List<FfiPlaylist> = objects(activeGateway().playlists()).mapNotNull { p ->
+    fun playlists(): List<LibraryPlaylistEntry> = objects(activeGateway().playlists()).mapNotNull { p ->
         val id = p.optString("PLAYLIST_ID")
-        if (id.isBlank() || !id.all(Char::isDigit)) null else FfiPlaylist(
-            id = "deezer:$id", name = p.optString("TITLE"), description = null, isLocal = false,
-            trackCount = p.optLong("NB_SONG").coerceAtLeast(0).toUInt(),
-            artworkUrl = playlistCover(id, p.optString("PLAYLIST_PICTURE"), p.optString("PICTURE_TYPE")), origin = "real"
-        )
+        if (id.isBlank() || !id.all(Char::isDigit)) null else {
+            val playlist = FfiPlaylist(
+                id = "deezer:$id", name = p.optString("TITLE"), description = null, isLocal = false,
+                trackCount = p.optLong("NB_SONG").coerceAtLeast(0).toUInt(),
+                artworkUrl = playlistCover(id, p.optString("PLAYLIST_PICTURE"), p.optString("PICTURE_TYPE")), origin = "real"
+            )
+            LibraryPlaylistEntry(
+                playlist = playlist,
+                addedAt = parseAddedAt(p.opt("DATE_FAVORITE")) ?: parseAddedAt(p.opt("DATE_ADD")),
+                modifiedAt = parseAddedAt(p.opt("DATE_MOD"))
+            )
+        }
     }
-    fun playlistTracks(id: String): List<FfiTrack> = tracks(activeGateway().playlistTracks(id.removePrefix("deezer:")))
+    fun playlistTrackEntries(id: String): List<PlaylistTrackEntry> =
+        objects(activeGateway().playlistTracks(id.removePrefix("deezer:"))).mapIndexedNotNull { index, json ->
+            track(json)?.let { PlaylistTrackEntry(it, parseAddedAt(json.opt("DATE_ADD")), index) }
+        }
 
     @Synchronized
     fun logout() {
@@ -90,9 +103,12 @@ class DeezerSession private constructor(context: Context) {
         nbPlaylists = 0u, isAuthenticated = true
     )
 
-    private fun tracks(array: JSONArray): List<FfiTrack> = objects(array).mapNotNull { t ->
+    private fun tracks(array: JSONArray): List<FfiTrack> = objects(array).mapNotNull(::track)
+
+    private fun track(t: JSONObject): FfiTrack? {
         val id = t.optString("SNG_ID")
-        if (id.isBlank() || !id.all(Char::isDigit)) null else FfiTrack(
+        if (id.isBlank() || !id.all(Char::isDigit)) return null
+        return FfiTrack(
             id = "deezer:$id", provider = "deezer", title = t.optString("SNG_TITLE"),
             artist = t.optString("ART_NAME"), album = t.optString("ALB_TITLE"),
             durationMs = (t.optLong("DURATION").coerceAtLeast(0) * 1000).toULong(),

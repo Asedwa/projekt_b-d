@@ -87,26 +87,57 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
         return Media(source, trackId, media.optString("format"))
     }
 
-    @Synchronized
     fun favorites(): JSONArray = pages { start ->
         callWithRefresh("favorite_song.getList", JSONObject()
             .put("user_id", getAccount().id).put("nb", 100).put("start", start)).optJSONArray("data")
     }
 
-    @Synchronized
     fun playlists(): JSONArray = pages { start ->
         callWithRefresh("deezer.pageProfile", JSONObject()
             .put("user_id", getAccount().id).put("tab", "playlists").put("nb", 100).put("index", start))
             .optJSONObject("TAB")?.optJSONObject("playlists")?.optJSONArray("data")
     }
 
-    @Synchronized
     fun playlistTracks(id: String): JSONArray {
         require(id.isNotEmpty() && id.all(Char::isDigit)) { "Geçersiz liste kimliği" }
-        return pages { start ->
-            callWithRefresh("playlist.getSongs", JSONObject().put("playlist_id", id).put("nb", 100).put("start", start))
-                .optJSONArray("data")
+        val all = JSONArray()
+        var start = 0
+        var useLegacyMethod = false
+        while (true) {
+            val page = try {
+                playlistPage(id, start, useLegacyMethod)
+            } catch (e: DeezerException) {
+                // Some accounts only expose the older playlist endpoint.
+                if (start != 0 || useLegacyMethod) throw e
+                useLegacyMethod = true
+                playlistPage(id, start, useLegacyMethod)
+            }
+            val count = page.data.length()
+            if (count == 0 && page.total != null && start < page.total) {
+                throw DeezerException("Çalma listesinin şarkıları alınamadı")
+            }
+            for (index in 0 until count) all.put(page.data.get(index))
+            start += count
+            if (count == 0 || (page.total != null && start >= page.total)) break
+            if (page.total == null && count < 100) break
         }
+        return all
+    }
+
+    private data class TrackPage(val data: JSONArray, val total: Int?)
+
+    private fun playlistPage(id: String, start: Int, legacy: Boolean): TrackPage {
+        val request = JSONObject().put("playlist_id", id).put("nb", 100).put("start", start)
+        val result = if (legacy) {
+            callWithRefresh("playlist.getSongs", request)
+        } else {
+            request.put("lang", "tr").put("tags", true)
+            callWithRefresh("deezer.pagePlaylist", request).optJSONObject("SONGS")
+                ?: throw DeezerException("Çalma listesi yanıtı okunamadı")
+        }
+        val data = result.optJSONArray("data") ?: throw DeezerException("Çalma listesi yanıtı okunamadı")
+        val total = if (result.has("total") && !result.isNull("total")) result.optInt("total", -1).takeIf { it >= 0 } else null
+        return TrackPage(data, total)
     }
 
     private fun pages(load: (Int) -> JSONArray?): JSONArray {
@@ -119,6 +150,7 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
         return all
     }
 
+    @Synchronized
     private fun callWithRefresh(method: String, body: JSONObject): JSONObject {
         try {
             return call(method, body, authenticated = true)

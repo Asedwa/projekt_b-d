@@ -59,6 +59,8 @@ class PlaybackManager private constructor(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
+    private var clearWhenConnected = false
+    private var pendingEntry: FfiQueueEntry? = null
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -77,13 +79,24 @@ class PlaybackManager private constructor(private val context: Context) {
         )
         controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
         controllerFuture?.addListener({
-            try {
-                mediaController = controllerFuture?.get()?.apply {
-                    addListener(playerListener)
+            scope.launch {
+                try {
+                    mediaController = controllerFuture?.get()?.apply {
+                        addListener(playerListener)
+                    }
+                    if (clearWhenConnected) {
+                        mediaController?.stop()
+                        mediaController?.clearMediaItems()
+                        clearWhenConnected = false
+                    }
+                    pendingEntry?.let { entry ->
+                        pendingEntry = null
+                        loadAndPlay(entry)
+                    }
+                    syncPlayerState()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to connect to MediaController", e)
                 }
-                syncPlayerState()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to connect to MediaController", e)
             }
         }, MoreExecutors.directExecutor())
     }
@@ -199,11 +212,32 @@ class PlaybackManager private constructor(private val context: Context) {
             refreshQueueSnapshot()
             if (currentRemoved == true) {
                 _uiState.value.currentEntry?.let { loadAndPlay(it) } ?: run {
+                    pendingEntry = null
                     mediaController?.stop()
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error removing queue entry", e)
+        }
+    }
+
+    fun clearQueue() {
+        try {
+            PlasmaWaveApp.core.queueReplace(emptyList(), 0u)
+            pendingEntry = null
+            val player = mediaController
+            if (player == null) {
+                clearWhenConnected = true
+            } else {
+                player.stop()
+                player.clearMediaItems()
+            }
+            stopProgressTicker()
+            refreshQueueSnapshot()
+            _uiState.value = _uiState.value.copy(currentEntry = null, isPlaying = false, positionMs = 0L, durationMs = 0L)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing queue", e)
+            Toast.makeText(context, "Kuyruk temizlenemedi", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -294,7 +328,10 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     private fun loadAndPlay(entry: FfiQueueEntry) {
-        val player = mediaController ?: return
+        val player = mediaController ?: run {
+            pendingEntry = entry
+            return
+        }
         val deezerSession = DeezerSession.get(context)
         val useFullDeezer = entry.track.provider == "deezer" && deezerSession.hasSavedSession
         // Old downloads may be preview clips: do not prefer them over an account's full stream.

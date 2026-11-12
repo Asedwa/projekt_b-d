@@ -19,10 +19,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,13 +56,21 @@ fun QueueScreen(
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text(
-            text = "PLAYBACK QUEUE (${entries.size})",
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = FontWeight.Bold,
-                color = customColors.textSecondary
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Çalma sırası (${entries.size})",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = customColors.textSecondary
+                )
             )
-        )
+            TextButton(onClick = playbackManager::clearQueue, enabled = entries.isNotEmpty()) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Temizle")
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -72,7 +82,7 @@ fun QueueScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Queue is empty. Play some songs from Home or Library!",
+                    text = "Çalma sırası boş.",
                     style = MaterialTheme.typography.bodyMedium.copy(color = customColors.textSecondary)
                 )
             }

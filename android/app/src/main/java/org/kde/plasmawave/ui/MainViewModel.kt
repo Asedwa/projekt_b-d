@@ -29,6 +29,8 @@ import uniffi.plasmawave_core.FfiSettings
 import uniffi.plasmawave_core.FfiTheme
 import uniffi.plasmawave_core.FfiTrack
 
+const val LOCAL_FAVORITES_ID = "local:favorite_tracks"
+
 enum class SearchCategory {
     TRACKS, ALBUMS, ARTISTS, PLAYLISTS
 }
@@ -65,14 +67,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _localTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
     val localTracks: StateFlow<List<FfiTrack>> = _localTracks.asStateFlow()
 
-    private val _deezerChart = MutableStateFlow<List<FfiTrack>>(emptyList())
-    val deezerChart: StateFlow<List<FfiTrack>> = _deezerChart.asStateFlow()
-
     private val _deezerUser = MutableStateFlow<FfiDeezerUser?>(null)
     val deezerUser: StateFlow<FfiDeezerUser?> = _deezerUser.asStateFlow()
 
-    private val _deezerPlaylists = MutableStateFlow<List<FfiPlaylist>>(emptyList())
-    val deezerPlaylists: StateFlow<List<FfiPlaylist>> = _deezerPlaylists.asStateFlow()
+    private val _deezerPlaylists = MutableStateFlow<List<LibraryPlaylistEntry>>(emptyList())
+    val deezerPlaylists: StateFlow<List<LibraryPlaylistEntry>> = _deezerPlaylists.asStateFlow()
+    private val _deezerLibraryLoading = MutableStateFlow(deezerSession.hasSavedSession)
+    val deezerLibraryLoading: StateFlow<Boolean> = _deezerLibraryLoading.asStateFlow()
 
     private val _deezerFavorites = MutableStateFlow<List<FfiTrack>>(emptyList())
     val deezerFavorites: StateFlow<List<FfiTrack>> = _deezerFavorites.asStateFlow()
@@ -125,7 +126,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             refreshFavorites()
             refreshLocalTracks()
             refreshDownloads()
-            loadDeezerChart()
             refreshDeezerData()
         }
     }
@@ -230,17 +230,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun loadDeezerChart() {
-        try {
-            _deezerChart.value = core.getDeezerChart()
-        } catch (e: Exception) {
-            Log.w("MainViewModel", "Deezer chart preview unavailable (offline or rate limited)")
-        }
-    }
-
     fun connectDeezerArl(arl: String) {
         if (_deezerBusy.value) return
         _deezerBusy.value = true
+        _deezerLibraryLoading.value = true
         _deezerLoginError.value = null
         val generation = deezerGeneration.incrementAndGet()
         viewModelScope.launch(Dispatchers.IO) {
@@ -262,7 +255,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _statusMessage.value = message
                 }
             } finally {
-                if (generation == deezerGeneration.get()) _deezerBusy.value = false
+                if (generation == deezerGeneration.get()) {
+                    _deezerBusy.value = false
+                    _deezerLibraryLoading.value = false
+                }
             }
         }
     }
@@ -273,6 +269,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playbackManager.stopPlayback()
         android.webkit.CookieManager.getInstance().removeAllCookies(null)
         _deezerUser.value = null
+        _deezerLibraryLoading.value = false
         _deezerPlaylists.value = emptyList()
         _deezerFavorites.value = emptyList()
         _deezerFlow.value = emptyList()
@@ -289,6 +286,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshDeezerData() {
         val generation = deezerGeneration.get()
+        _deezerLibraryLoading.value = deezerSession.hasSavedSession
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val user = deezerSession.restore()
@@ -299,6 +297,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (generation == deezerGeneration.get()) {
                     _statusMessage.value = "Deezer oturumu açılamadı: ${(e as? DeezerException)?.message ?: "Bağlantıyı kontrol et"}"
                 }
+            } finally {
+                if (generation == deezerGeneration.get()) _deezerLibraryLoading.value = false
             }
         }
     }
@@ -410,13 +410,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try { core.getDeezerArtistAlbums(artistId) } catch (e: Exception) { emptyList() }
     }
 
-    suspend fun getPlaylistTracks(playlistId: String): List<FfiTrack> = withContext(Dispatchers.IO) {
-        try {
-            if (playlistId.startsWith("deezer:") && deezerSession.hasSavedSession) deezerSession.playlistTracks(playlistId)
-            else core.getPlaylistTracks(playlistId)
-        } catch (e: Exception) {
-            _statusMessage.value = "Çalma listesi yüklenemedi"
-            emptyList()
+    suspend fun getPlaylistTracks(playlistId: String): List<FfiTrack> =
+        getPlaylistTrackEntries(playlistId).map { it.track }
+
+    suspend fun getPlaylistTrackEntries(playlistId: String): List<PlaylistTrackEntry> = withContext(Dispatchers.IO) {
+        if (playlistId.startsWith("deezer:") && deezerSession.hasSavedSession) {
+            deezerSession.playlistTrackEntries(playlistId)
+        } else {
+            val tracks = if (playlistId == LOCAL_FAVORITES_ID) core.getFavorites() else core.getPlaylistTracks(playlistId)
+            tracks.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
         }
     }
 

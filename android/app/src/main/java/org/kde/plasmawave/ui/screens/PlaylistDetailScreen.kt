@@ -1,6 +1,6 @@
 package org.kde.plasmawave.ui.screens
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,44 +10,65 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
+import android.content.Context
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.theme.LocalPlasmaColors
+import org.kde.plasmawave.ui.LOCAL_FAVORITES_ID
 import org.kde.plasmawave.ui.MainViewModel
-import org.kde.plasmawave.ui.components.TrackListItem
+import org.kde.plasmawave.ui.PlaylistTrackEntry
+import org.kde.plasmawave.ui.PlaylistTrackSort
+import org.kde.plasmawave.ui.sortPlaylistTracks
 import org.kde.plasmawave.ui.components.ArtworkImage
+import org.kde.plasmawave.ui.components.TrackListItem
 import uniffi.plasmawave_core.FfiPlaylist
-import uniffi.plasmawave_core.FfiTrack
+
+private sealed interface PlaylistLoadState {
+    data object Loading : PlaylistLoadState
+    data class Loaded(val entries: List<PlaylistTrackEntry>) : PlaylistLoadState
+    data object Failed : PlaylistLoadState
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,117 +78,144 @@ fun PlaylistDetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var tracks by remember { mutableStateOf<List<FfiTrack>>(emptyList()) }
+    var state by remember(playlist.id) { mutableStateOf<PlaylistLoadState>(PlaylistLoadState.Loading) }
+    var retry by remember(playlist.id) { mutableIntStateOf(0) }
+    val sortPrefs = LocalContext.current.getSharedPreferences("playlist_sort", Context.MODE_PRIVATE)
+    val sortKey = "tracks:${playlist.id}"
+    var sort by rememberSaveable(playlist.id) {
+        mutableStateOf(runCatching { PlaylistTrackSort.valueOf(sortPrefs.getString(sortKey, null) ?: "ORIGINAL") }.getOrDefault(PlaylistTrackSort.ORIGINAL))
+    }
+    var showSort by remember { mutableStateOf(false) }
     val playerState by viewModel.playbackManager.uiState.collectAsState()
-    val customColors = LocalPlasmaColors.current
-    val core = PlasmaWaveApp.core
+    val colors = LocalPlasmaColors.current
+    val entries = (state as? PlaylistLoadState.Loaded)?.entries.orEmpty()
+    val sortedEntries = remember(entries, sort) { sortPlaylistTracks(entries, sort) }
+    val tracks = remember(sortedEntries) { sortedEntries.map { it.track } }
+    val hasAddedDates = remember(entries) { entries.any { it.addedAt != null } }
 
-    LaunchedEffect(playlist.id) {
+    LaunchedEffect(playlist.id, retry) {
+        state = PlaylistLoadState.Loading
         try {
-            tracks = viewModel.getPlaylistTracks(playlist.id)
-        } catch (_: Exception) {}
+            val loaded = viewModel.getPlaylistTrackEntries(playlist.id)
+            // A previously populated list should not be presented as empty after a failed fetch.
+            state = if (loaded.isEmpty() && playlist.trackCount > 0u) PlaylistLoadState.Failed
+            else PlaylistLoadState.Loaded(loaded)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            state = PlaylistLoadState.Failed
+        }
     }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(playlist.name) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
+                title = { Text(playlist.name, maxLines = 1) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri") } },
                 actions = {
-                    if (playlist.isLocal) {
+                    if (playlist.isLocal && playlist.id != LOCAL_FAVORITES_ID) {
                         IconButton(onClick = {
-                            core.deletePlaylist(playlist.id)
+                            PlasmaWaveApp.core.deletePlaylist(playlist.id)
                             viewModel.refreshPlaylists()
                             onBack()
-                        }) {
-                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete Playlist", tint = customColors.negative)
-                        }
+                        }) { Icon(Icons.Default.Delete, contentDescription = "Listeyi sil", tint = colors.negative) }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-        ) {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(modifier = Modifier.height(12.dp))
                     ArtworkImage(
                         url = playlist.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
-                        modifier = Modifier.size(72.dp),
-                        fallback = Icons.Default.Folder,
-                        shape = RoundedCornerShape(12.dp),
-                        background = customColors.card
+                        modifier = Modifier.size(200.dp),
+                        fallback = if (playlist.id == LOCAL_FAVORITES_ID) Icons.Default.Favorite else Icons.AutoMirrored.Filled.PlaylistPlay,
+                        shape = RoundedCornerShape(10.dp),
+                        background = colors.card
                     )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = playlist.name,
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Text(
-                            text = "${tracks.size} tracks • ${if (playlist.isLocal) "Local Playlist" else "Remote Playlist"}",
-                            style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                        )
-                    }
-
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Text(playlist.name, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val count = if (state is PlaylistLoadState.Loaded) tracks.size else playlist.trackCount.toInt()
+                    Text(
+                        "Çalma listesi • $count şarkı" + if (playlist.isLocal) " • Bu cihaz" else " • Deezer",
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodyMedium.copy(color = colors.textSecondary)
+                    )
                     if (tracks.isNotEmpty()) {
-                        Button(
-                            onClick = { viewModel.playbackManager.playTrackList(tracks) },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Play All")
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(onClick = { viewModel.playbackManager.playTrackList(tracks) }, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                                Text("Tümünü çal")
+                            }
+                            OutlinedButton(onClick = { viewModel.playbackManager.playTrackList(tracks.shuffled()) }, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.Shuffle, contentDescription = null)
+                                Text("Karıştır")
+                            }
+                        }
+                    }
+                    if (tracks.isNotEmpty()) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Şarkılar", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
+                            Box {
+                                TextButton(onClick = { showSort = true }) {
+                                    Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text(" Sırala")
+                                }
+                                DropdownMenu(expanded = showSort, onDismissRequest = { showSort = false }) {
+                                    PlaylistTrackSort.entries.forEach { option ->
+                                        val needsDate = option == PlaylistTrackSort.DATE_NEWEST || option == PlaylistTrackSort.DATE_OLDEST
+                                        DropdownMenuItem(
+                                            text = { Text(option.label) },
+                                            enabled = !needsDate || hasAddedDates,
+                                            leadingIcon = { if (sort == option) Icon(Icons.Default.Check, contentDescription = null) },
+                                            onClick = { sort = option; sortPrefs.edit().putString(sortKey, option.name).apply(); showSort = false }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+            when (state) {
+                PlaylistLoadState.Loading -> item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Şarkılar yükleniyor…", color = colors.textSecondary)
                         }
                     }
                 }
-            }
-
-            if (tracks.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "This playlist is empty.",
-                            style = MaterialTheme.typography.bodyMedium.copy(color = customColors.textSecondary)
+                PlaylistLoadState.Failed -> item {
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Çalma listesi yüklenemedi. Bağlantını kontrol edip tekrar dene.", color = colors.textSecondary, textAlign = TextAlign.Center)
+                        TextButton(onClick = { retry++ }) { Text("Tekrar dene") }
+                    }
+                }
+                is PlaylistLoadState.Loaded -> {
+                    if (tracks.isEmpty()) item {
+                        Text("Bu çalma listesi boş.", modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), color = colors.textSecondary, textAlign = TextAlign.Center)
+                    }
+                    else itemsIndexed(sortedEntries, key = { _, entry -> "${entry.originalIndex}:${entry.track.id}" }) { index, entry ->
+                        val track = entry.track
+                        TrackListItem(
+                            track = track,
+                            isPlaying = playerState.currentEntry?.track?.id == track.id,
+                            onClick = { viewModel.playbackManager.playTrackList(tracks, index) },
+                            onLongClick = { viewModel.openTrackMenu(track) }
                         )
                     }
                 }
-            } else {
-                items(tracks, key = { it.id }) { track ->
-                    TrackListItem(
-                        track = track,
-                        isPlaying = playerState.currentEntry?.track?.id == track.id,
-                        onClick = { viewModel.playbackManager.playTrackList(tracks, tracks.indexOf(track)) },
-                        onLongClick = { viewModel.openTrackMenu(track) }
-                    )
-                }
             }
-
             item { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }

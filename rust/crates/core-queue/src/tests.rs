@@ -39,6 +39,20 @@ fn replace_starts_at_index() {
 }
 
 #[test]
+fn clearing_a_shuffled_queue_removes_current_and_all_entries() {
+    let mut q = Queue::new(42);
+    q.replace(tracks(4), 1);
+    q.set_shuffle(true);
+    q.replace(Vec::new(), 0);
+    assert!(q.is_empty());
+    assert!(q.current().is_none());
+    assert!(q.snapshot().entries.is_empty());
+    assert!(q.advance(AdvanceReason::TrackEnded).is_none());
+    q.add_to_queue(vec![track(9)]);
+    assert_eq!(cur_title(&q).as_deref(), Some("Track 9"));
+}
+
+#[test]
 fn advance_respects_repeat_modes() {
     let mut q = Queue::default();
     q.replace(tracks(2), 0);
