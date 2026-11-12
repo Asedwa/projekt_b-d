@@ -1,0 +1,17 @@
+[package]
+name = "core-queue"
+description = "Logical playback queue: ordering, repeat, shuffle and play-next."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+core-domain.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

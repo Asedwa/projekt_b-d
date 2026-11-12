@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "org.kde.breeze-dark",
+  "name": "Breeze Dark",
+  "author": "PlasmaWave",
+  "description": "Default theme inspired by KDE Plasma's Breeze Dark color scheme.",
+  "dark": true,
+  "colors": {
+    "background": "#1B1E20",
+    "surface": "#202326",
+    "surfaceVariant": "#292C30",
+    "card": "#2A2E32",
+    "cardPressed": "#31363B",
+    "accent": "#3DAEE9",
+    "accentMuted": "#1D5A7A",
+    "onAccent": "#FCFCFC",
+    "text": "#FCFCFC",
+    "textSecondary": "#A1A9B1",
+    "textDisabled": "#6E757C",
+    "border": "#3B4045",
+    "divider": "#2F3337",
+    "positive": "#27AE60",
+    "warning": "#F67400",
+    "negative": "#DA4453",
+    "scrim": "#B3000000"
+  },
+  "shapes": { "smallRadius": 6, "mediumRadius": 10, "largeRadius": 18 },
+  "spacing": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "typography": { "fontFamily": "system", "scale": 1.0 },
+  "elevation": { "low": 1, "medium": 4, "high": 12 },
+  "motion": { "shortMs": 120, "mediumMs": 220, "longMs": 360 }
+}

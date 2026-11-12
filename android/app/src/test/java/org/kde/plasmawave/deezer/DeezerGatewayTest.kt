@@ -1,0 +1,102 @@
+package org.kde.plasmawave.deezer
+
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Test
+import java.io.IOException
+
+class DeezerGatewayTest {
+    private val login = """{"error":{},"results":{"checkForm":"csrf","USER":{"USER_ID":42,"BLOG_NAME":"Listener","OPTIONS":{"license_token":"license","web_hq":true}}}}"""
+
+    @Test fun loginAndResolveFullTrackUseAccountAndNotPreview() {
+        val calls = mutableListOf<Triple<String, String, String?>>()
+        val gateway = DeezerGateway("test-session", DeezerGateway.Transport { url, body, cookie ->
+            calls.add(Triple(url, body, cookie))
+            when {
+                url.contains("deezer.getUserData") -> DeezerGateway.Reply(login, listOf("sid=session-id; Path=/"))
+                url.contains("song.getData") -> DeezerGateway.Reply("""{"error":{},"results":{"TRACK_TOKEN":"track-token"}}""")
+                else -> DeezerGateway.Reply("""{"data":[{"media":[{"format":"MP3_320","sources":[{"url":"https://test.dzcdn.net/audio"}]}]}]}""")
+            }
+        })
+        assertEquals("Listener", gateway.login().name)
+        val media = gateway.resolve("1234")
+        assertEquals("https://test.dzcdn.net/audio", media.url)
+        assertEquals("1234", media.trackId)
+        assertTrue(calls[1].third!!.contains("sid=session-id"))
+        val payload = JSONObject(calls[2].second)
+        assertEquals("license", payload.getString("license_token"))
+        assertEquals("track-token", payload.getJSONArray("track_tokens").getString(0))
+        assertEquals("FULL", payload.getJSONArray("media").getJSONObject(0).getString("type"))
+        assertNull(calls[2].third)
+    }
+
+    @Test fun expiredGatewayTokenIsRefreshedAndRetried() {
+        var logins = 0
+        var songs = 0
+        val gateway = DeezerGateway("test-session", DeezerGateway.Transport { url, _, _ ->
+            when {
+                url.contains("deezer.getUserData") -> { logins++; DeezerGateway.Reply(login) }
+                url.contains("song.getData") -> {
+                    songs++
+                    if (songs == 1) DeezerGateway.Reply("""{"error":{"VALID_TOKEN_REQUIRED":"expired"}}""")
+                    else DeezerGateway.Reply("""{"error":{},"results":{"TRACK_TOKEN":"t"}}""")
+                }
+                else -> DeezerGateway.Reply("""{"data":[{"media":[{"format":"MP3_128","sources":[{"url":"https://test.dzcdn.net/audio"}]}]}]}""")
+            }
+        })
+        gateway.login()
+        gateway.resolve("42")
+        assertEquals(2, logins)
+        assertEquals(2, songs)
+    }
+
+    @Test fun invalidSessionAndUntrustedMediaAreRejected() {
+        val invalid = DeezerGateway("bad", DeezerGateway.Transport { _, _, _ ->
+            DeezerGateway.Reply("""{"error":{},"results":{"checkForm":"x","USER":{"USER_ID":0}}}""")
+        })
+        assertThrows(IOException::class.java) { invalid.login() }
+        val untrusted = DeezerGateway("x", DeezerGateway.Transport { url, _, _ ->
+            when {
+                url.contains("getUserData") -> DeezerGateway.Reply(login)
+                url.contains("song.getData") -> DeezerGateway.Reply("""{"error":{},"results":{"TRACK_TOKEN":"t"}}""")
+                else -> DeezerGateway.Reply("""{"data":[{"media":[{"sources":[{"url":"https://evil.example/audio"}]}]}]}""")
+            }
+        })
+        untrusted.login()
+        assertThrows(IOException::class.java) { untrusted.resolve("123") }
+    }
+    @Test fun fallbackStreamUsesFallbackTrackIdForDecryption() {
+        var mediaRequests = 0
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, _, _ ->
+            when {
+                url.contains("getUserData") -> DeezerGateway.Reply(login)
+                url.contains("song.getData") -> DeezerGateway.Reply("""{"error":{},"results":{"TRACK_TOKEN":"original","FALLBACK":{"SNG_ID":"987","TRACK_TOKEN":"fallback"}}}""")
+                else -> {
+                    mediaRequests++
+                    if (mediaRequests == 1) DeezerGateway.Reply("""{"data":[{"errors":[{"code":1}]}]}""")
+                    else DeezerGateway.Reply("""{"data":[{"media":[{"format":"MP3_128","sources":[{"url":"https://test.dzcdn.net/audio"}]}]}]}""")
+                }
+            }
+        })
+        gateway.login()
+        assertEquals("987", gateway.resolve("123").trackId)
+        assertEquals(2, mediaRequests)
+    }
+
+    @Test fun favoritesLoadMultiplePages() {
+        val starts = mutableListOf<Int>()
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, body, _ ->
+            if (url.contains("getUserData")) DeezerGateway.Reply(login)
+            else {
+                val start = JSONObject(body).getInt("start")
+                starts.add(start)
+                val size = if (start == 0) 100 else 2
+                val data = org.json.JSONArray()
+                repeat(size) { data.put(JSONObject().put("SNG_ID", start + it)) }
+                DeezerGateway.Reply(JSONObject().put("error", JSONObject()).put("results", JSONObject().put("data", data)).toString())
+            }
+        })
+        assertEquals(102, gateway.favorites().length())
+        assertEquals(listOf(0, 100), starts)
+    }
+}

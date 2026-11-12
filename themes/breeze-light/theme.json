@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "org.kde.breeze-light",
+  "name": "Breeze Light",
+  "author": "PlasmaWave",
+  "description": "Light variant inspired by KDE Plasma's Breeze color scheme.",
+  "dark": false,
+  "colors": {
+    "background": "#EFF0F1",
+    "surface": "#FCFCFC",
+    "surfaceVariant": "#E3E5E7",
+    "card": "#FFFFFF",
+    "cardPressed": "#DDE1E4",
+    "accent": "#3DAEE9",
+    "accentMuted": "#C4E6F8",
+    "onAccent": "#FCFCFC",
+    "text": "#232629",
+    "textSecondary": "#5E6366",
+    "textDisabled": "#A0A4A8",
+    "border": "#CBCDCF",
+    "divider": "#DEE0E2",
+    "positive": "#27AE60",
+    "warning": "#F67400",
+    "negative": "#DA4453",
+    "scrim": "#80000000"
+  },
+  "shapes": { "smallRadius": 6, "mediumRadius": 10, "largeRadius": 18 }
+}

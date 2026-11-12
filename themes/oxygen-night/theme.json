@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "org.plasmawave.oxygen-night",
+  "name": "Oxygen Night",
+  "author": "PlasmaWave",
+  "description": "Deep blue-black variant with a softer accent, inspired by KDE's Oxygen heritage.",
+  "dark": true,
+  "colors": {
+    "background": "#11151C",
+    "surface": "#171C25",
+    "surfaceVariant": "#1F2632",
+    "card": "#1C2330",
+    "cardPressed": "#263043",
+    "accent": "#7AA2F7",
+    "accentMuted": "#2E4373",
+    "onAccent": "#0B0E14",
+    "text": "#E6E9EF",
+    "textSecondary": "#9AA5B8",
+    "textDisabled": "#5D6779",
+    "border": "#2A3343",
+    "divider": "#202838"
+  },
+  "shapes": { "smallRadius": 8, "mediumRadius": 14, "largeRadius": 22 }
+}

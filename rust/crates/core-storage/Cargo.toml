@@ -1,0 +1,22 @@
+[package]
+name = "core-storage"
+description = "SQLite storage, schema migrations and repositories for PlasmaWave."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+core-domain.workspace = true
+core-library.workspace = true
+core-downloads.workspace = true
+core-settings.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

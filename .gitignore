@@ -1,0 +1,33 @@
+# Rust build products
+/rust/target/
+
+# Android and Gradle build products
+/android/.gradle/
+/android/.kotlin/
+/android/**/build/
+/android/local.properties
+/android/app/src/main/jniLibs/
+*.apk
+*.aab
+*.ap_
+
+# IDE, OS, and local logs
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.log
+
+# Credentials and signing material
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+key.properties
+credentials.json

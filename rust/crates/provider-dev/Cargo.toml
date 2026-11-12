@@ -1,0 +1,18 @@
+[package]
+name = "provider-dev"
+description = "Clearly-labeled development fixture provider for UI testing."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+core-domain.workspace = true
+core-providers.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

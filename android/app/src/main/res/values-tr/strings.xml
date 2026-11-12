@@ -1,0 +1,54 @@
+<resources>
+    <string name="app_name">PlasmaWave</string>
+    <string name="nav_home">Ana Sayfa</string>
+    <string name="nav_library">Kitaplık</string>
+    <string name="nav_search">Ara</string>
+    <string name="nav_queue">Sıra</string>
+    <string name="nav_settings">Ayarlar</string>
+
+    <!-- Player -->
+    <string name="play">Oynat</string>
+    <string name="pause">Duraklat</string>
+    <string name="next">Sonraki</string>
+    <string name="previous">Önceki</string>
+    <string name="repeat_off">Tekrar Kapalı</string>
+    <string name="repeat_all">Tümünü Tekrarla</string>
+    <string name="repeat_one">Tek Parçayı Tekrarla</string>
+    <string name="shuffle">Karıştır</string>
+
+    <!-- Long Press Menu -->
+    <string name="action_play_next">Sonrakini çal</string>
+    <string name="action_add_to_queue">Kuyruğa ekle</string>
+    <string name="action_add_favorite">Favorilere ekle</string>
+    <string name="action_remove_favorite">Favorilerden çıkar</string>
+    <string name="action_add_to_playlist">Çalma listesine ekle</string>
+    <string name="action_download">İndir</string>
+    <string name="action_offline_status">Çevrimdışı Durumu</string>
+    <string name="action_unavailable_reason">Bu özellik medya sağlayıcısı tarafından desteklenmiyor.</string>
+
+    <!-- Library & Playlists -->
+    <string name="tab_tracks">Parçalar</string>
+    <string name="tab_playlists">Çalma Listeleri</string>
+    <string name="tab_favorites">Favoriler</string>
+    <string name="create_playlist">Çalma Listesi Oluştur</string>
+    <string name="playlist_name_hint">Çalma Listesi Adı</string>
+    <string name="empty_library">Parça bulunamadı. Cihazdaki müzikleri yüklemek için Tara\'ya dokunun.</string>
+    <string name="scan_local_music">Cihaz Müziklerini Tara</string>
+
+    <!-- Settings & Customization -->
+    <string name="settings_appearance">Görünüm ve Temalar</string>
+    <string name="settings_active_theme">Aktif Tema</string>
+    <string name="settings_language">Dil</string>
+    <string name="settings_mods">WebAssembly Modları</string>
+    <string name="settings_downloads">İndirmeler</string>
+    <string name="settings_wifi_only">Yalnızca Wi-Fi üzerinden indir</string>
+    <string name="settings_dev_fixtures">Geliştirici Örneklerini Göster</string>
+    <string name="settings_import_theme">Tema JSON İçe Aktar</string>
+
+    <!-- Mod Manager -->
+    <string name="mod_manager_title">Mod Yöneticisi</string>
+    <string name="mod_builtin_tag">Dahili</string>
+    <string name="mod_permissions">İzinler</string>
+    <string name="mod_enable">Etkinleştir</string>
+    <string name="mod_disable">Devre Dışı Bırak</string>
+</resources>

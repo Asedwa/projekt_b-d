@@ -1,0 +1,15 @@
+[package]
+name = "core-themes"
+description = "Versioned, validated, code-free theme manifests and theme registry."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+core-domain.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,143 @@
+package org.kde.plasmawave.deezer
+
+import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import uniffi.plasmawave_core.FfiDeezerUser
+import uniffi.plasmawave_core.FfiPlaylist
+import uniffi.plasmawave_core.FfiTrack
+import java.io.IOException
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+
+/** Owns the user's session. ARL is encrypted by a non-exportable Android Keystore key. */
+class DeezerSession private constructor(context: Context) {
+    companion object {
+        @Volatile private var instance: DeezerSession? = null
+        fun get(context: Context): DeezerSession = instance ?: synchronized(this) {
+            instance ?: DeezerSession(context.applicationContext).also { instance = it }
+        }
+    }
+
+    private val prefs = context.getSharedPreferences("deezer_session", Context.MODE_PRIVATE)
+    private val _connected = MutableStateFlow(false)
+    val connected: StateFlow<Boolean> = _connected.asStateFlow()
+    private var gateway: DeezerGateway? = null
+    val hasSavedSession: Boolean get() = prefs.contains("session")
+
+    @Synchronized
+    fun login(arl: String): FfiDeezerUser {
+        val value = arl.trim()
+        if (value.isEmpty() || value.length > 1024 || value.any { it == ';' || it.isWhitespace() }) {
+            throw DeezerException("Geçerli bir Deezer ARL oturumu gir")
+        }
+        val candidate = DeezerGateway(value)
+        val user = candidate.login()
+        saveSecret(value)
+        gateway = candidate
+        _connected.value = true
+        return user.toFfi()
+    }
+
+    @Synchronized
+    fun restore(): FfiDeezerUser? {
+        if (gateway != null) return gateway!!.getAccount().toFfi()
+        val secret = readSecret() ?: return null
+        val candidate = DeezerGateway(secret)
+        val user = candidate.login()
+        gateway = candidate
+        _connected.value = true
+        return user.toFfi()
+    }
+
+    @Synchronized
+    private fun activeGateway(): DeezerGateway {
+        if (gateway == null) restore()
+        return gateway ?: throw DeezerException("Tam şarkıları dinlemek için Deezer'a giriş yap")
+    }
+
+    internal fun resolve(trackId: String): DeezerGateway.Media = activeGateway().resolve(trackId)
+    fun favorites(): List<FfiTrack> = tracks(activeGateway().favorites())
+    fun playlists(): List<FfiPlaylist> = objects(activeGateway().playlists()).mapNotNull { p ->
+        val id = p.optString("PLAYLIST_ID")
+        if (id.isBlank() || !id.all(Char::isDigit)) null else FfiPlaylist(
+            id = "deezer:$id", name = p.optString("TITLE"), description = null, isLocal = false,
+            trackCount = p.optLong("NB_SONG").coerceAtLeast(0).toUInt(),
+            artworkUrl = playlistCover(id, p.optString("PLAYLIST_PICTURE"), p.optString("PICTURE_TYPE")), origin = "real"
+        )
+    }
+    fun playlistTracks(id: String): List<FfiTrack> = tracks(activeGateway().playlistTracks(id.removePrefix("deezer:")))
+
+    @Synchronized
+    fun logout() {
+        gateway = null
+        _connected.value = false
+        prefs.edit().clear().commit()
+    }
+
+    private fun DeezerGateway.Account.toFfi() = FfiDeezerUser(
+        id = id, name = name, email = null, statusLabel = plan, isPremium = highQuality,
+        link = "https://www.deezer.com/profile/$id", pictureMedium = null,
+        nbPlaylists = 0u, isAuthenticated = true
+    )
+
+    private fun tracks(array: JSONArray): List<FfiTrack> = objects(array).mapNotNull { t ->
+        val id = t.optString("SNG_ID")
+        if (id.isBlank() || !id.all(Char::isDigit)) null else FfiTrack(
+            id = "deezer:$id", provider = "deezer", title = t.optString("SNG_TITLE"),
+            artist = t.optString("ART_NAME"), album = t.optString("ALB_TITLE"),
+            durationMs = (t.optLong("DURATION").coerceAtLeast(0) * 1000).toULong(),
+            artworkUrl = cover("cover", t.optString("ALB_PICTURE")), playbackUri = null,
+            isPreview = false, origin = "real"
+        )
+    }
+
+    private fun objects(array: JSONArray): List<JSONObject> = (0 until array.length()).mapNotNull { array.optJSONObject(it) }
+    private fun playlistCover(id: String, hash: String, pictureType: String): String =
+        cover(pictureType.takeIf { it == "cover" || it == "playlist" } ?: "playlist", hash)
+            ?: "https://api.deezer.com/playlist/$id/image?size=medium"
+
+    private fun cover(type: String, hash: String): String? =
+        hash.takeIf { it.matches(Regex("[a-fA-F0-9]{32}")) }
+            ?.let { "https://e-cdns-images.dzcdn.net/images/$type/$it/250x250-000000-80-0-0.jpg" }
+
+    private fun secretKey(): SecretKey {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (store.getKey("plasmawave_deezer_session", null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
+            init(KeyGenParameterSpec.Builder("plasmawave_deezer_session", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
+        }.generateKey()
+    }
+
+    private fun saveSecret(secret: String) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+        val encrypted = cipher.iv + cipher.doFinal(secret.toByteArray(Charsets.UTF_8))
+        if (!prefs.edit().putString("session", Base64.encodeToString(encrypted, Base64.NO_WRAP)).commit()) {
+            throw DeezerException("Deezer oturumu cihaza kaydedilemedi")
+        }
+    }
+
+    private fun readSecret(): String? {
+        val value = prefs.getString("session", null) ?: return null
+        try {
+            val bytes = Base64.decode(value, Base64.NO_WRAP)
+            if (bytes.size <= 12) throw DeezerException("Geçersiz kayıt")
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+            return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+        } catch (_: Exception) {
+            throw DeezerException("Kayıtlı Deezer oturumu okunamadı; yeniden giriş yap")
+        }
+    }
+}

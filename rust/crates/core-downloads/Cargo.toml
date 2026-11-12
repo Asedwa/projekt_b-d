@@ -1,0 +1,25 @@
+[package]
+name = "core-downloads"
+description = "Authorized download queue with progress, resume, integrity checks and persistence."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+core-domain.workspace = true
+core-providers.workspace = true
+serde.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true
+sha2.workspace = true
+hex.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+wiremock.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

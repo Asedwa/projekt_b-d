@@ -1,0 +1,13 @@
+[package]
+name = "core-library"
+description = "Library services: tracks, favorites and local playlists."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+core-domain.workspace = true
+
+[lints]
+workspace = true

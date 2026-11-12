@@ -1,0 +1,39 @@
+[package]
+name = "android-ffi"
+description = "UniFFI exports and typed interfaces for Android."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["lib", "cdylib"]
+name = "plasmawave_core"
+
+[dependencies]
+core-domain.workspace = true
+core-queue.workspace = true
+core-library.workspace = true
+core-providers.workspace = true
+provider-deezer.workspace = true
+provider-local.workspace = true
+provider-dev.workspace = true
+core-downloads.workspace = true
+core-storage.workspace = true
+core-themes.workspace = true
+core-mods.workspace = true
+core-settings.workspace = true
+uniffi = { workspace = true, features = ["cli"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+uniffi = { workspace = true, features = ["build"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,71 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core-domain",
+    "crates/core-queue",
+    "crates/core-library",
+    "crates/core-providers",
+    "crates/provider-deezer",
+    "crates/provider-local",
+    "crates/provider-dev",
+    "crates/core-downloads",
+    "crates/core-storage",
+    "crates/core-themes",
+    "crates/core-mods",
+    "crates/core-settings",
+    "crates/android-ffi",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+rust-version = "1.80"
+repository = "https://example.invalid/plasmawave"
+
+[workspace.dependencies]
+# Internal crates
+core-domain = { path = "crates/core-domain" }
+core-queue = { path = "crates/core-queue" }
+core-library = { path = "crates/core-library" }
+core-providers = { path = "crates/core-providers" }
+provider-deezer = { path = "crates/provider-deezer" }
+provider-local = { path = "crates/provider-local" }
+provider-dev = { path = "crates/provider-dev" }
+core-downloads = { path = "crates/core-downloads" }
+core-storage = { path = "crates/core-storage" }
+core-themes = { path = "crates/core-themes" }
+core-mods = { path = "crates/core-mods" }
+core-settings = { path = "crates/core-settings" }
+
+# External crates
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+url = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+wasmi = "0.40"
+wat = "1"
+sha2 = "0.10"
+hex = "0.4"
+log = "0.4"
+uniffi = "0.28.3"
+tempfile = "3"
+wiremock = "0.6"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = "z"
+strip = "debuginfo"
+panic = "unwind"
