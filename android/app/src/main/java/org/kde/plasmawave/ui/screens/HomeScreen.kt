@@ -68,19 +68,17 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
                 Icon(Icons.Default.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("PlasmaWave", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = onDownloadsClick) { Icon(Icons.Default.Download, contentDescription = "İndirmeler") }
-            }
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(12.dp))
-                .background(colors.card.copy(alpha = 0.85f)).clickable(onClick = onDownloadsClick).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.DownloadForOffline, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("İndirilenler", fontWeight = FontWeight.Bold)
-                    Text(if (active > 0) "$active şarkı sırada veya indiriliyor" else "$completed şarkı indirildi", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                IconButton(onClick = onDownloadsClick) {
+                    if (active > 0) {
+                        BadgedBox(badge = { Badge { Text("$active") } }) {
+                            Icon(Icons.Default.Download, contentDescription = "İndirmeler")
+                        }
+                    } else {
+                        Icon(Icons.Default.Download, contentDescription = "İndirmeler")
+                    }
                 }
-                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = colors.textSecondary)
             }
-            Spacer(Modifier.height(26.dp))
+            Spacer(Modifier.height(8.dp))
             Text("Hızlı erişim", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Sevdiğin şarkılar ve sabitlediklerin", modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)

@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import org.kde.plasmawave.BuildConfig
 import org.kde.plasmawave.deezer.DeezerLoginDialog
 import org.kde.plasmawave.deezer.StreamingQuality
 import org.kde.plasmawave.download.DownloadQuality
@@ -134,7 +135,7 @@ fun SettingsScreen(
         }
         if (matches("hakkında", "sürüm", "plasmawave")) {
             SettingsSection("Hakkında")
-            SettingsInfo(Icons.Default.Info, "PlasmaWave", "0.1.0-alpha")
+            SettingsInfo(Icons.Default.Info, "PlasmaWave", BuildConfig.VERSION_NAME)
         }
         Spacer(Modifier.height(80.dp))
     }

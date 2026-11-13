@@ -30,11 +30,19 @@ data class SavedDownload(
 
 data class EnqueueResult(val added: Int, val skipped: Int)
 
-internal fun selectTracksToEnqueue(tracks: List<FfiTrack>, quality: DownloadQuality, existing: List<SavedDownload>): List<FfiTrack> {
-    val known = existing.asSequence().filter { it.quality == quality && it.state in listOf("queued", "running", "completed") }
-        .map { it.track.id }.toMutableSet()
-    return tracks.filter { it.provider == "deezer" && it.id.removePrefix("deezer:").let { id -> id.isNotBlank() && id.all(Char::isDigit) } }
-        .filter { known.add(it.id) }
+internal fun selectTracksToEnqueue(
+    tracks: List<FfiTrack>,
+    quality: DownloadQuality,
+    existing: List<SavedDownload>,
+    onDiskIds: Set<String> = emptySet()
+): List<FfiTrack> {
+    val known = existing.asSequence()
+        .filter { it.quality == quality && it.state in listOf("queued", "running", "completed") }
+        .map { DownloadStorage.normalizeTrackId(it.track.id) }
+        .toMutableSet()
+    known.addAll(onDiskIds)
+    return tracks.filter { it.provider == "deezer" && DownloadStorage.normalizeTrackId(it.id).let { id -> id.isNotBlank() && id.all(Char::isDigit) } }
+        .filter { known.add(DownloadStorage.normalizeTrackId(it.id)) }
 }
 
 internal fun mayUseDownloadNetwork(mobileAllowed: Boolean, unmetered: Boolean, wifi: Boolean, ethernet: Boolean, cellular: Boolean): Boolean =
@@ -74,7 +82,8 @@ class Downloads private constructor(private val context: Context) {
     }
 
     @Synchronized fun enqueueAll(tracks: List<FfiTrack>, quality: DownloadQuality): EnqueueResult {
-        val added = selectTracksToEnqueue(tracks, quality, _items.value).map { SavedDownload(UUID.randomUUID().toString(), it, quality) }
+        val diskIds = DownloadStorage.scanDownloadedTrackIds(context)
+        val added = selectTracksToEnqueue(tracks, quality, _items.value, diskIds).map { SavedDownload(UUID.randomUUID().toString(), it, quality) }
         if (added.isEmpty()) return EnqueueResult(0, tracks.size)
         database.insertAll(added)
         _items.value = _items.value + added
@@ -105,6 +114,8 @@ class Downloads private constructor(private val context: Context) {
 
     @Synchronized fun find(id: String): SavedDownload? = _items.value.firstOrNull { it.id == id }
     @Synchronized fun firstPending(): SavedDownload? = _items.value.firstOrNull { it.state == "running" || it.state == "queued" }
+    @Synchronized fun nextPending(excludeId: String): SavedDownload? =
+        _items.value.firstOrNull { it.id != excludeId && it.state == "queued" }
     fun isCancelled(id: String): Boolean = cancelled.contains(id)
 
     @Synchronized fun update(id: String, change: (SavedDownload) -> SavedDownload) {

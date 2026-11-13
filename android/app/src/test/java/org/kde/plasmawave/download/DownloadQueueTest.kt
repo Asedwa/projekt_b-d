@@ -27,4 +27,31 @@ class DownloadQueueTest {
         assertTrue(mayUseDownloadNetwork(false, unmetered = true, wifi = true, ethernet = false, cellular = false))
         assertTrue(mayUseDownloadNetwork(true, unmetered = false, wifi = false, ethernet = false, cellular = true))
     }
+
+    @Test fun fastSkipNormalizesTrackIdsAndRecognizesOnDiskTracks() {
+        val quality = DownloadQuality.MP3_320
+        // Existing has "deezer:100"
+        val existing = listOf(SavedDownload("x", track("deezer:100"), quality, "completed"))
+        // On disk has track 200
+        val onDisk = setOf("200")
+
+        // Input contains "100" without prefix, "200" with prefix, and a new track "300"
+        val input = listOf(track("100"), track("deezer:200"), track("300"))
+        val selected = selectTracksToEnqueue(input, quality, existing, onDisk)
+
+        assertEquals(listOf("300"), selected.map { it.id })
+    }
+
+    @Test fun largePlaylistWith500AlreadyDownloadedTracksSkipsInstantly() {
+        val quality = DownloadQuality.MP3_320
+        val onDisk = (1..500).map { it.toString() }.toSet()
+        val playlist = (1..500).map { track("deezer:$it") }
+
+        val start = System.currentTimeMillis()
+        val selected = selectTracksToEnqueue(playlist, quality, emptyList(), onDisk)
+        val elapsed = System.currentTimeMillis() - start
+
+        assertTrue("Should skip all 500 tracks", selected.isEmpty())
+        assertTrue("Execution should be near-instant (< 50ms), was ${elapsed}ms", elapsed < 50)
+    }
 }

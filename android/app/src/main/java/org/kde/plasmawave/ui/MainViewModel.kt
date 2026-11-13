@@ -28,6 +28,7 @@ import org.kde.plasmawave.download.Downloads
 import org.kde.plasmawave.download.DownloadQuality
 import org.kde.plasmawave.download.SavedDownload
 import org.kde.plasmawave.ui.components.SeekbarStyle
+import org.kde.plasmawave.ui.components.AlbumCoverFrame
 import java.util.concurrent.atomic.AtomicLong
 import java.time.Instant
 import uniffi.plasmawave_core.FfiAlbum
@@ -77,6 +78,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setSeekbarStyle(style: SeekbarStyle) {
         displayPrefs.edit().putString("seekbar_style", style.name).apply()
         _seekbarStyle.value = style
+    }
+
+    private val _albumFrame = MutableStateFlow(
+        runCatching {
+            AlbumCoverFrame.valueOf(displayPrefs.getString("album_frame", null) ?: "MODERN_ROUNDED")
+        }.getOrDefault(AlbumCoverFrame.MODERN_ROUNDED)
+    )
+    val albumFrame = _albumFrame.asStateFlow()
+    fun setAlbumFrame(frame: AlbumCoverFrame) {
+        displayPrefs.edit().putString("album_frame", frame.name).apply()
+        _albumFrame.value = frame
+    }
+
+    private val _swipeToSkipEnabled = MutableStateFlow(
+        displayPrefs.getBoolean("swipe_to_skip", true)
+    )
+    val swipeToSkipEnabled = _swipeToSkipEnabled.asStateFlow()
+    fun setSwipeToSkipEnabled(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("swipe_to_skip", enabled).apply()
+        _swipeToSkipEnabled.value = enabled
+    }
+
+    private val _externalSearchTrigger = MutableStateFlow<Pair<String, SearchCategory>?>(null)
+    val externalSearchTrigger = _externalSearchTrigger.asStateFlow()
+    fun navigateToSearch(query: String, category: SearchCategory) {
+        _searchCategory.value = category
+        _externalSearchTrigger.value = Pair(query, category)
+        search(query, category, immediate = true)
+    }
+    fun clearExternalSearchTrigger() {
+        _externalSearchTrigger.value = null
     }
     val playbackManager = PlaybackManager.getInstance(application)
     private val deezerSession = DeezerSession.get(application)
@@ -493,8 +525,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = fullDownloadManager.enqueueAll(tracks, downloadQuality.value)
                 _statusMessage.value = if (result.added > 0) "${result.added} şarkı indirme sırasına eklendi" +
-                    if (result.skipped > 0) " • ${result.skipped} zaten var veya desteklenmiyor" else ""
-                    else "Seçilen şarkılar zaten indirildi, sırada veya desteklenmiyor"
+                    if (result.skipped > 0) " • ${result.skipped} zaten var veya cihazda mevcut" else ""
+                    else if (result.skipped > 0) "Seçilen şarkıların tümü (${result.skipped}) zaten indirildi veya cihazda mevcut"
+                    else "İndirilecek şarkı bulunamadı"
             } catch (_: Exception) { _statusMessage.value = "İndirme başlatılamadı" }
         }
     }

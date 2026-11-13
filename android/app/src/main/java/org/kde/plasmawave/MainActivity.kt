@@ -40,6 +40,7 @@ import org.kde.plasmawave.player.summaryLabel
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.theme.PlasmaTheme
 import org.kde.plasmawave.ui.MainViewModel
+import org.kde.plasmawave.ui.SearchCategory
 import org.kde.plasmawave.ui.components.FullPlayerSheet
 import org.kde.plasmawave.ui.components.LocalDeezerConnected
 import org.kde.plasmawave.ui.components.MiniPlayer
@@ -178,6 +179,25 @@ class MainActivity : ComponentActivity() {
                             onOpenMenu = { track ->
                                 isFullPlayerVisible = false
                                 viewModel.openTrackMenu(track)
+                            },
+                            onShowSleepTimer = { showSleepTimerDialog = true },
+                            onArtistClick = { artistName ->
+                                scope.launch {
+                                    fullPlayerSheetState.hide()
+                                    isFullPlayerVisible = false
+                                    currentScreen = Screen.Search
+                                    currentSubScreen = SubScreen.None
+                                    viewModel.navigateToSearch(artistName, SearchCategory.ARTISTS)
+                                }
+                            },
+                            onAlbumClick = { albumName, _ ->
+                                scope.launch {
+                                    fullPlayerSheetState.hide()
+                                    isFullPlayerVisible = false
+                                    currentScreen = Screen.Search
+                                    currentSubScreen = SubScreen.None
+                                    viewModel.navigateToSearch(albumName, SearchCategory.ALBUMS)
+                                }
                             }
                         )
                     }
@@ -239,7 +259,10 @@ private fun FullPlayerHost(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onAddToPlaylist: (FfiTrack) -> Unit,
-    onOpenMenu: (FfiTrack) -> Unit
+    onOpenMenu: (FfiTrack) -> Unit,
+    onShowSleepTimer: () -> Unit,
+    onArtistClick: (String) -> Unit,
+    onAlbumClick: (String, String) -> Unit
 ) {
     val state by viewModel.playbackManager.overview.collectAsState()
     val deezerUser by viewModel.deezerUser.collectAsState()
@@ -247,7 +270,14 @@ private fun FullPlayerHost(
     val favorites by viewModel.favorites.collectAsState()
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
-    val nowPlaying = state.currentEntry?.track ?: return
+    val albumFrame by viewModel.albumFrame.collectAsState()
+    val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
+
+    var lastTrack by remember { mutableStateOf<FfiTrack?>(null) }
+    val nowPlaying = state.currentEntry?.track ?: lastTrack ?: return
+    LaunchedEffect(state.currentEntry?.track) {
+        state.currentEntry?.track?.let { lastTrack = it }
+    }
 
     val isFav = if (nowPlaying.provider == "deezer" && deezerUser != null) {
         deezerFavorites.any { it.id == nowPlaying.id }
@@ -261,6 +291,8 @@ private fun FullPlayerHost(
         sheetState = sheetState,
         dynamicColorEnabled = dynamicColorEnabled,
         seekbarStyle = seekbarStyle,
+        albumFrame = albumFrame,
+        swipeToSkipEnabled = swipeToSkipEnabled,
         onDismiss = onDismiss,
         onTogglePlayPause = { viewModel.playbackManager.togglePlayPause() },
         onSkipNext = { viewModel.playbackManager.skipNext() },
@@ -273,7 +305,10 @@ private fun FullPlayerHost(
         onAddToPlaylist = { onAddToPlaylist(nowPlaying) },
         onOpenMenu = { onOpenMenu(nowPlaying) },
         onStartMix = { viewModel.startTrackMix(nowPlaying) },
-        canStartMix = nowPlaying.provider == "deezer" && deezerUser != null
+        canStartMix = nowPlaying.provider == "deezer" && deezerUser != null,
+        onShowSleepTimer = onShowSleepTimer,
+        onArtistClick = onArtistClick,
+        onAlbumClick = onAlbumClick
     )
 }
 

@@ -23,5 +23,9 @@ enum class SeekbarStyle(
     BARS(
         title = "Ses Spektrumu Barları",
         subtitle = "Ekolayzır frekans barları ve ses dalgası deseni"
+    ),
+    NYAN_CAT(
+        title = "Nyan Cat & Gökkuşağı",
+        subtitle = "Piksel Nyan Cat, parıldayan uzay ve dalgalanan gökkuşağı izi"
     )
 }

@@ -28,41 +28,46 @@ internal class StripeInput(
     private val iv = IvParameterSpec(byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7))
     private var chunkIndex = alignedPosition / CHUNK_SIZE
     private var skip = initialSkip
-    private var data = ByteArray(0)
+    private val rawBuffer = ByteArray(CHUNK_SIZE)
+    private val decryptedBuffer = ByteArray(CHUNK_SIZE)
+    private var activeBuffer = rawBuffer
+    private var dataSize = 0
     private var offset = 0
     private var eof = false
 
     fun read(target: ByteArray, targetOffset: Int, length: Int): Int {
         if (length == 0) return 0
         if (remaining == 0L) return -1
-        while (offset >= data.size) {
+        while (offset >= dataSize) {
             if (eof) return -1
             fill()
         }
-        val count = minOf(length.toLong(), (data.size - offset).toLong(), if (remaining < 0) Long.MAX_VALUE else remaining).toInt()
-        System.arraycopy(data, offset, target, targetOffset, count)
+        val count = minOf(length.toLong(), (dataSize - offset).toLong(), if (remaining < 0) Long.MAX_VALUE else remaining).toInt()
+        System.arraycopy(activeBuffer, offset, target, targetOffset, count)
         offset += count
         if (remaining >= 0) remaining -= count
         return count
     }
 
     private fun fill() {
-        val buffer = ByteArray(CHUNK_SIZE)
         var count = 0
-        while (count < buffer.size) {
-            val n = input.read(buffer, count, buffer.size - count)
+        while (count < CHUNK_SIZE) {
+            val n = input.read(rawBuffer, count, CHUNK_SIZE - count)
             if (n < 0) { eof = true; break }
             if (n == 0) continue
             count += n
         }
         if (count == CHUNK_SIZE && chunkIndex % 3L == 0L) {
             cipher.init(Cipher.DECRYPT_MODE, keySpec, iv)
-            data = cipher.doFinal(buffer)
+            cipher.doFinal(rawBuffer, 0, count, decryptedBuffer, 0)
+            activeBuffer = decryptedBuffer
+            dataSize = CHUNK_SIZE
         } else {
-            data = buffer.copyOf(count)
+            activeBuffer = rawBuffer
+            dataSize = count
         }
         chunkIndex++
-        offset = minOf(skip, data.size)
+        offset = minOf(skip, dataSize)
         skip -= offset
     }
 }

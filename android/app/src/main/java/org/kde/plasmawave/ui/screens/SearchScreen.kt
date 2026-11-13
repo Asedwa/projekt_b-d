@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -89,6 +90,15 @@ fun SearchScreen(
     var artistTopTracks by remember { mutableStateOf<List<FfiTrack>>(emptyList()) }
 
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val externalTrigger by viewModel.externalSearchTrigger.collectAsState()
+    LaunchedEffect(externalTrigger) {
+        externalTrigger?.let { (newQuery, newCat) ->
+            query = newQuery
+            viewModel.search(newQuery, newCat, immediate = true)
+            viewModel.clearExternalSearchTrigger()
+        }
+    }
 
     Column(
         modifier = modifier
