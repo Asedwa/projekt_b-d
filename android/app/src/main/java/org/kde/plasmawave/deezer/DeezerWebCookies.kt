@@ -8,7 +8,10 @@ internal object DeezerWebCookies {
         val manager = CookieManager.getInstance()
         return extractArl(listOfNotNull(
             manager.getCookie("https://www.deezer.com/"),
-            manager.getCookie("https://deezer.com/")
+            manager.getCookie("https://deezer.com/"),
+            manager.getCookie("https://connect.deezer.com/"),
+            manager.getCookie("https://auth.deezer.com/"),
+            manager.getCookie(".deezer.com")
         ))
     }
 
