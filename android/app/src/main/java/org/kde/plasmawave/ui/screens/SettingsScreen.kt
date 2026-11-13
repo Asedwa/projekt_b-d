@@ -133,7 +133,7 @@ fun SettingsScreen(
                 viewModel.updateSettings(settings.copy(showDevFixtures = it))
             }
         }
-        if (matches("hakkında", "sürüm", "plasmawave")) {
+        if (matches("hakkında", "sürüm", "projekt_b-d", "plasmawave")) {
             SettingsSection("Hakkında")
             SettingsInfo(Icons.Default.Info, "projekt_b-d", BuildConfig.VERSION_NAME)
         }

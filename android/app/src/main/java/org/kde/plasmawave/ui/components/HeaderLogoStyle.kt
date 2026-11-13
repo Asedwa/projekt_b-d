@@ -18,10 +18,10 @@ enum class HeaderLogoStyle(
         subtitle = "My Little Pony neşeli pembe logo",
         drawableRes = R.drawable.ic_header_pinkie
     ),
-    SYM_S(
-        title = "S Müzik Logosu",
-        subtitle = "Symfonium tarzı zarif S arması",
-        drawableRes = R.drawable.ic_header_sym_s
+    CUSTOM(
+        title = "Özel PNG Logosu",
+        subtitle = "Kendi yükleyip kırptığınız PNG logosu",
+        drawableRes = null
     ),
     ORIGINAL(
         title = "Orijinal Başlık",

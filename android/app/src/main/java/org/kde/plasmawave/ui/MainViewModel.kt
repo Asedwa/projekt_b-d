@@ -30,6 +30,12 @@ import org.kde.plasmawave.download.SavedDownload
 import org.kde.plasmawave.ui.components.SeekbarStyle
 import org.kde.plasmawave.ui.components.AlbumCoverFrame
 import org.kde.plasmawave.ui.components.HeaderLogoStyle
+import org.kde.plasmawave.ui.components.HomeFeedType
+import org.kde.plasmawave.ui.components.AppLauncherIcon
+import org.kde.plasmawave.ui.components.LauncherIconManager
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import java.time.Instant
 import uniffi.plasmawave_core.FfiAlbum
@@ -131,6 +137,74 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setHeaderLogoStyle(style: HeaderLogoStyle) {
         displayPrefs.edit().putString("header_logo_style", style.name).apply()
         _headerLogoStyle.value = style
+    }
+
+    private val _customHeaderLogoTimestamp = MutableStateFlow(System.currentTimeMillis())
+    val customHeaderLogoTimestamp = _customHeaderLogoTimestamp.asStateFlow()
+    fun refreshCustomHeaderLogo() {
+        _customHeaderLogoTimestamp.value = System.currentTimeMillis()
+    }
+    fun updateCustomHeaderLogo() {
+        refreshCustomHeaderLogo()
+    }
+
+    private val _homeFeedType = MutableStateFlow(
+        runCatching {
+            HomeFeedType.valueOf(displayPrefs.getString("home_feed_type", null) ?: "FOR_YOU")
+        }.getOrDefault(HomeFeedType.FOR_YOU)
+    )
+    val homeFeedType = _homeFeedType.asStateFlow()
+    fun setHomeFeedType(feed: HomeFeedType) {
+        displayPrefs.edit().putString("home_feed_type", feed.name).apply()
+        _homeFeedType.value = feed
+    }
+
+    private val _launcherIcon = MutableStateFlow(LauncherIconManager.getSelectedIcon(application))
+    val launcherIcon = _launcherIcon.asStateFlow()
+    fun setLauncherIcon(icon: AppLauncherIcon) {
+        LauncherIconManager.setLauncherIcon(getApplication(), icon)
+        _launcherIcon.value = icon
+    }
+
+    private val historyPrefs = application.getSharedPreferences("playback_history_v2", android.content.Context.MODE_PRIVATE)
+    private val _recentTracks = MutableStateFlow<List<FfiTrack>>(readRecentTracks())
+    val recentTracks: StateFlow<List<FfiTrack>> = _recentTracks.asStateFlow()
+
+    private val _mostPlayedTracks = MutableStateFlow<List<FfiTrack>>(readMostPlayedTracks())
+    val mostPlayedTracks: StateFlow<List<FfiTrack>> = _mostPlayedTracks.asStateFlow()
+
+    private fun readHistoryEntries(): List<Pair<FfiTrack, Int>> = try {
+        val raw = historyPrefs.getString("entries", "[]") ?: "[]"
+        val array = JSONArray(raw)
+        (0 until array.length()).mapNotNull { i ->
+            runCatching {
+                val obj = array.getJSONObject(i)
+                val track = jsonTrack(obj.getJSONObject("track"))
+                val count = obj.optInt("count", 1)
+                Pair(track, count)
+            }.getOrNull()
+        }
+    } catch (_: Exception) { emptyList() }
+
+    private fun readRecentTracks(): List<FfiTrack> = readHistoryEntries().map { it.first }
+    private fun readMostPlayedTracks(): List<FfiTrack> = readHistoryEntries().sortedByDescending { it.second }.map { it.first }
+
+    fun recordTrackPlay(track: FfiTrack) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = readHistoryEntries().toMutableList()
+            val existingIdx = list.indexOfFirst { it.first.id == track.id }
+            val count = if (existingIdx >= 0) list[existingIdx].second + 1 else 1
+            if (existingIdx >= 0) list.removeAt(existingIdx)
+            list.add(0, Pair(track, count))
+            val trimmed = list.take(100)
+            val jsonArray = JSONArray()
+            trimmed.forEach { (t, c) ->
+                jsonArray.put(JSONObject().put("count", c).put("track", trackJson(t)))
+            }
+            historyPrefs.edit().putString("entries", jsonArray.toString()).apply()
+            _recentTracks.value = trimmed.map { it.first }
+            _mostPlayedTracks.value = trimmed.sortedByDescending { it.second }.map { it.first }
+        }
     }
 
     private val _externalSearchTrigger = MutableStateFlow<Pair<String, SearchCategory>?>(null)
@@ -260,6 +334,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } catch (_: Exception) { }
             }
         }
+        viewModelScope.launch {
+            playbackManager.currentTrackId.collect { id ->
+                if (id != null) {
+                    playbackManager.uiState.value.currentEntry?.track?.let { recordTrackPlay(it) }
+                }
+            }
+        }
         loadData()
     }
 
@@ -356,6 +437,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setTheme(themeId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                try { core.setCustomAccentColor(null) } catch (_: Exception) { }
                 val theme = core.setTheme(themeId)
                 _activeTheme.value = theme
                 _settings.value = core.getSettings()

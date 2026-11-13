@@ -1,5 +1,6 @@
 package org.kde.plasmawave.ui.screens
 
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,29 +9,33 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
+import java.io.File
 import org.kde.plasmawave.R
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
@@ -38,12 +43,17 @@ import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PinnedItem
 import org.kde.plasmawave.ui.components.ArtworkImage
 import org.kde.plasmawave.ui.components.HeaderLogoStyle
+import org.kde.plasmawave.ui.components.HomeFeedType
 import org.kde.plasmawave.ui.components.TrackListItem
 import uniffi.plasmawave_core.FfiPlaylist
 
 @Composable
-fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit, onDownloadsClick: () -> Unit,
-               modifier: Modifier = Modifier) {
+fun HomeScreen(
+    viewModel: MainViewModel,
+    onPlaylistClick: (FfiPlaylist) -> Unit,
+    onDownloadsClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val favorites by viewModel.favorites.collectAsState()
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
     val deezerUser by viewModel.deezerUser.collectAsState()
@@ -51,14 +61,32 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
     val flowHeroCardEnabled by viewModel.flowHeroCardEnabled.collectAsState()
     val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
     val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
+    val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
+    val homeFeedType by viewModel.homeFeedType.collectAsState()
+    val recentTracks by viewModel.recentTracks.collectAsState()
+    val mostPlayedTracks by viewModel.mostPlayedTracks.collectAsState()
     val pins by viewModel.pins.collectAsState()
     val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
     val localPlaylists by viewModel.playlists.collectAsState()
     val downloads by viewModel.fullDownloads.collectAsState()
     val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
     val colors = LocalPlasmaColors.current
-    val likedPlaylist = if (deezerFavorites.isNotEmpty()) FfiPlaylist(DEEZER_FAVORITES_ID, "Sevdiğim Şarkılar", null, false,
-        deezerFavorites.size.toUInt(), null, "real") else null
+    val context = LocalContext.current
+
+    val customLogoBitmap = remember(customLogoTimestamp, headerLogoStyle) {
+        if (headerLogoStyle == HeaderLogoStyle.CUSTOM) {
+            val file = File(context.filesDir, "custom_header_logo.png")
+            if (file.exists()) {
+                BitmapFactory.decodeFile(file.absolutePath)
+            } else null
+        } else null
+    }
+
+    val likedPlaylist = if (deezerFavorites.isNotEmpty()) FfiPlaylist(
+        DEEZER_FAVORITES_ID, "Sevdiğim Şarkılar", null, false,
+        deezerFavorites.size.toUInt(), null, "real"
+    ) else null
+
     val quick = remember(pins, likedPlaylist, deezerPlaylists, localPlaylists, flowQuickAccessPinned, deezerUser) {
         val currentPlaylists = (deezerPlaylists.map { it.playlist } + localPlaylists).associateBy { it.id }
         val refreshed = pins.map { pin ->
@@ -75,69 +103,182 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
         if (flowQuickAccessPinned) set.add(PinnedItem.Flow.id)
         set
     }
+
     val primary = MaterialTheme.colorScheme.primary
     val bg = MaterialTheme.colorScheme.background
     val bgBrush = remember(primary, bg) {
         Brush.verticalGradient(listOf(primary.copy(alpha = 0.16f), bg, bg))
     }
-    LazyColumn(modifier = modifier.fillMaxSize().background(bgBrush), contentPadding = PaddingValues(bottom = 80.dp)) {
-        item {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 12.dp, top = 16.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                when (headerLogoStyle) {
-                    HeaderLogoStyle.TWILIGHT -> {
-                        Image(
-                            painter = painterResource(R.drawable.ic_header_twilight),
-                            contentDescription = "Twilight Sparkle",
-                            modifier = Modifier
-                                .height(54.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-                    HeaderLogoStyle.PINKIE -> {
-                        Image(
-                            painter = painterResource(R.drawable.ic_header_pinkie),
-                            contentDescription = "Pinkie Pie",
-                            modifier = Modifier
-                                .height(54.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-                    HeaderLogoStyle.SYM_S -> {
-                        Image(
-                            painter = painterResource(R.drawable.ic_header_sym_s),
-                            contentDescription = "S Logo",
-                            modifier = Modifier
-                                .height(46.dp)
-                                .clip(RoundedCornerShape(6.dp)),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-                    HeaderLogoStyle.ORIGINAL -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.GraphicEq,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(30.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "projekt_b-d",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold
-                            )
+
+    val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    val maxCollapseDistancePx = with(density) { 92.dp.toPx() }
+
+    val collapseFraction by remember {
+        derivedStateOf {
+            if (listState.firstVisibleItemIndex > 0) 1f
+            else (listState.firstVisibleItemScrollOffset / maxCollapseDistancePx).coerceIn(0f, 1f)
+        }
+    }
+
+    val headerHeight = lerp(148.dp, 58.dp, collapseFraction)
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    Box(modifier = modifier.fillMaxSize().background(bgBrush)) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = statusBarTop + 148.dp, bottom = 80.dp)
+        ) {
+            if (deezerUser != null && flowHeroCardEnabled) {
+                item {
+                    DeezerFlowHeroCard(
+                        isLoading = flowLoading,
+                        onStartFlow = { viewModel.startFlow() },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+            item {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Hızlı erişim",
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Sevdiğin şarkılar ve sabitlediklerin",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary
+                )
+                Spacer(Modifier.height(10.dp))
+            }
+            if (quick.isNotEmpty()) item {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val isLandscape = maxWidth > 600.dp
+                    val cardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(quick.chunked(9), key = { page -> page.first().id }) { page ->
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                page.chunked(3).forEach { row ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        row.forEach { pin ->
+                                            QuickCard(pin, pin.id in pinnedIds, viewModel, onPlaylistClick, cardSize)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = onDownloadsClick) {
+            } else item {
+                Text(
+                    "Şarkı veya listelerin menüsünden ana sayfaya sabitleyebilirsin.",
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)
+                )
+            }
+
+            // Customizable Feed (Senin İçin / Son Çalınanlar / En Çok Dinlenenler)
+            val feedTracks = when (homeFeedType) {
+                HomeFeedType.FOR_YOU -> if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites
+                HomeFeedType.RECENTLY_PLAYED -> if (recentTracks.isNotEmpty()) recentTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
+                HomeFeedType.MOST_PLAYED -> if (mostPlayedTracks.isNotEmpty()) mostPlayedTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
+            }
+
+            if (feedTracks.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(28.dp))
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                homeFeedType.title,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                homeFeedType.subtitle,
+                                color = colors.textSecondary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        if (likedPlaylist != null && homeFeedType == HomeFeedType.FOR_YOU) {
+                            TextButton(onClick = { onPlaylistClick(likedPlaylist) }) { Text("Tümünü gör") }
+                        }
+                    }
+                }
+                itemsIndexed(feedTracks.take(6), key = { _, it -> "feed:${homeFeedType.name}:${it.id}" }) { index, track ->
+                    TrackListItem(
+                        track,
+                        isPlaying = currentTrackId == track.id,
+                        onClick = { viewModel.playbackManager.playTrackList(feedTracks, index) },
+                        onLongClick = { viewModel.openTrackMenu(track) }
+                    )
+                }
+            }
+
+            if (favorites.isNotEmpty() && homeFeedType == HomeFeedType.FOR_YOU && deezerFavorites.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        "Bu cihazda beğendiklerin",
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                itemsIndexed(favorites.take(5), key = { _, it -> "localfav:${it.id}" }) { index, track ->
+                    TrackListItem(
+                        track,
+                        isPlaying = currentTrackId == track.id,
+                        onClick = { viewModel.playbackManager.playTrackList(favorites, index) },
+                        onLongClick = { viewModel.openTrackMenu(track) }
+                    )
+                }
+            }
+        }
+
+        // Pinned Collapsing Header with status bar protection
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter),
+            color = if (collapseFraction > 0.03f) {
+                bg.copy(alpha = (collapseFraction * 0.98f).coerceIn(0f, 0.98f))
+            } else Color.Transparent
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .height(headerHeight)
+            ) {
+                if (collapseFraction > 0.85f) {
+                    HorizontalDivider(
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        thickness = 0.5.dp,
+                        color = colors.border.copy(alpha = (collapseFraction - 0.85f) * 6.6f)
+                    )
+                }
+
+                // Top Right Downloads Button
+                IconButton(
+                    onClick = onDownloadsClick,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 12.dp)
+                ) {
                     if (active > 0) {
                         BadgedBox(badge = { Badge { Text("$active") } }) {
                             Icon(Icons.Default.Download, contentDescription = "İndirmeler")
@@ -146,69 +287,96 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
                         Icon(Icons.Default.Download, contentDescription = "İndirmeler")
                     }
                 }
+
+                // Animated Collapsible Logo and Title
+                val hBias = lerp(0f, -1f, collapseFraction)
+                val vBias = lerp(-0.25f, 0f, collapseFraction)
+                val logoSize = lerp(76.dp, 38.dp, collapseFraction)
+                val startPad = lerp(0.dp, 16.dp, collapseFraction)
+                val textAlpha = (1f - collapseFraction * 2.2f).coerceIn(0f, 1f)
+
+                Column(
+                    modifier = Modifier
+                        .align(BiasAlignment(horizontalBias = hBias, verticalBias = vBias))
+                        .padding(start = startPad),
+                    horizontalAlignment = if (collapseFraction < 0.5f) Alignment.CenterHorizontally else Alignment.Start
+                ) {
+                    HeaderLogoView(
+                        style = headerLogoStyle,
+                        customBitmap = customLogoBitmap,
+                        size = logoSize
+                    )
+
+                    if (textAlpha > 0.01f) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "projekt_b-d",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = textAlpha)
+                        )
+                    }
+                }
             }
         }
-        if (deezerUser != null && flowHeroCardEnabled) {
-            item {
-                DeezerFlowHeroCard(
-                    isLoading = flowLoading,
-                    onStartFlow = { viewModel.startFlow() },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+    }
+}
+
+@Composable
+private fun HeaderLogoView(
+    style: HeaderLogoStyle,
+    customBitmap: android.graphics.Bitmap?,
+    size: Dp
+) {
+    when (style) {
+        HeaderLogoStyle.TWILIGHT -> {
+            Image(
+                painter = painterResource(R.drawable.ic_header_twilight),
+                contentDescription = "Twilight Sparkle",
+                modifier = Modifier
+                    .size(size)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Fit
+            )
+        }
+        HeaderLogoStyle.PINKIE -> {
+            Image(
+                painter = painterResource(R.drawable.ic_header_pinkie),
+                contentDescription = "Pinkie Pie",
+                modifier = Modifier
+                    .size(size)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Fit
+            )
+        }
+        HeaderLogoStyle.CUSTOM -> {
+            if (customBitmap != null) {
+                Image(
+                    bitmap = customBitmap.asImageBitmap(),
+                    contentDescription = "Özel Logo",
+                    modifier = Modifier
+                        .size(size)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Fit
                 )
-                Spacer(Modifier.height(10.dp))
+            } else {
+                Icon(
+                    Icons.Default.AddPhotoAlternate,
+                    contentDescription = "Özel Logo Ekle",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(size * 0.75f)
+                )
             }
         }
-        item {
-            Spacer(Modifier.height(4.dp))
-            Text("Hızlı erişim", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Sevdiğin şarkılar ve sabitlediklerin", modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-            Spacer(Modifier.height(10.dp))
-        }
-        if (quick.isNotEmpty()) item {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val isLandscape = maxWidth > 600.dp
-                val cardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(quick.chunked(9), key = { page -> page.first().id }) { page ->
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            page.chunked(3).forEach { row ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    row.forEach { pin -> QuickCard(pin, pin.id in pinnedIds, viewModel, onPlaylistClick, cardSize) }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else item {
-            Text("Şarkı veya listelerin menüsünden ana sayfaya sabitleyebilirsin.",
-                color = colors.textSecondary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp))
-        }
-        if (deezerFavorites.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(28.dp))
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Senin için", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("Deezer • Sevdiğin şarkılar", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                    }
-                    TextButton(onClick = { likedPlaylist?.let(onPlaylistClick) }) { Text("Tümünü gör") }
-                }
-            }
-            itemsIndexed(deezerFavorites.take(6), key = { _, it -> "loved:${it.id}" }) { index, track ->
-                TrackListItem(track, isPlaying = currentTrackId == track.id,
-                    onClick = { viewModel.playbackManager.playTrackList(deezerFavorites, index) },
-                    onLongClick = { viewModel.openTrackMenu(track) })
-            }
-        }
-        if (favorites.isNotEmpty()) {
-            item { Spacer(Modifier.height(24.dp)); Text("Bu cihazda beğendiklerin", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-            itemsIndexed(favorites.take(5), key = { _, it -> "localfav:${it.id}" }) { index, track ->
-                TrackListItem(track, isPlaying = currentTrackId == track.id,
-                    onClick = { viewModel.playbackManager.playTrackList(favorites, index) },
-                    onLongClick = { viewModel.openTrackMenu(track) })
-            }
+        HeaderLogoStyle.ORIGINAL -> {
+            Icon(
+                Icons.Default.GraphicEq,
+                contentDescription = "projekt_b-d",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(size * 0.75f)
+            )
         }
     }
 }

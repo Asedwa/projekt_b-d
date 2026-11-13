@@ -35,6 +35,34 @@
             </intent-filter>
         </activity>
 
+        <activity-alias
+            android:name=".MainActivityTwilight"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_twilight"
+            android:roundIcon="@mipmap/ic_launcher_twilight_round"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MainActivityPinkie"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_pinkie"
+            android:roundIcon="@mipmap/ic_launcher_pinkie_round"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <service
             android:name=".player.PlasmaPlaybackService"
             android:exported="true"

@@ -1,73 +1,39 @@
 package org.kde.plasmawave.ui.screens
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.AllInclusive
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ColorLens
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.io.File
 import org.kde.plasmawave.R
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.MainViewModel
-import org.kde.plasmawave.ui.components.AlbumCoverFrame
-import org.kde.plasmawave.ui.components.ArtworkFramedView
-import org.kde.plasmawave.ui.components.CustomSeekbar
-import org.kde.plasmawave.ui.components.HeaderLogoStyle
-import org.kde.plasmawave.ui.components.SeekbarStyle
+import org.kde.plasmawave.ui.components.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,9 +50,55 @@ fun CustomizationScreen(
     val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
     val flowLibraryPinned by viewModel.flowLibraryPinned.collectAsState()
     val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
+    val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
+    val launcherIcon by viewModel.launcherIcon.collectAsState()
+    val homeFeedType by viewModel.homeFeedType.collectAsState()
     val activeTheme by viewModel.activeTheme.collectAsState()
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val context = LocalContext.current
+
+    // Cropper Dialog State
+    var selectedCropUri by remember { mutableStateOf<Uri?>(null) }
+
+    val customFile = remember(customLogoTimestamp) {
+        File(context.filesDir, "custom_header_logo.png")
+    }
+    val customBitmap = remember(customLogoTimestamp) {
+        if (customFile.exists()) {
+            BitmapFactory.decodeFile(customFile.absolutePath)
+        } else null
+    }
+
+    // Image Picker for PNG custom logo
+    val pngPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            if (isPngUri(context, uri)) {
+                selectedCropUri = uri
+            } else {
+                Toast.makeText(
+                    context,
+                    "Seçilen dosya geçerli bir PNG formatında değil! Lütfen PNG formatında bir görsel seçin.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    if (selectedCropUri != null) {
+        ImageCropperDialog(
+            imageUri = selectedCropUri!!,
+            onDismiss = { selectedCropUri = null },
+            onCroppedSaved = {
+                viewModel.updateCustomHeaderLogo()
+                viewModel.setHeaderLogoStyle(HeaderLogoStyle.CUSTOM)
+                selectedCropUri = null
+                Toast.makeText(context, "PNG logo başarıyla kaydedildi ve uygulandı!", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -124,7 +136,7 @@ fun CustomizationScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Ana sayfanın sol üstünde gösterilecek karakter veya arma logosunu seçin:",
+                    text = "Ana sayfanın üstünde gösterilecek karakteri veya özel PNG logonuzu seçin:",
                     style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -147,6 +159,169 @@ fun CustomizationScreen(
                         ),
                     colors = CardDefaults.cardColors(containerColor = colors.card)
                 ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { viewModel.setHeaderLogoStyle(style) },
+                                colors = RadioButtonDefaults.colors(selectedColor = primary)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            // Preview Box
+                            Box(
+                                modifier = Modifier
+                                    .size(50.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.6f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                when (style) {
+                                    HeaderLogoStyle.TWILIGHT -> {
+                                        Image(
+                                            painter = painterResource(R.drawable.ic_header_twilight),
+                                            contentDescription = style.title,
+                                            modifier = Modifier.size(42.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    }
+                                    HeaderLogoStyle.PINKIE -> {
+                                        Image(
+                                            painter = painterResource(R.drawable.ic_header_pinkie),
+                                            contentDescription = style.title,
+                                            modifier = Modifier.size(42.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    }
+                                    HeaderLogoStyle.CUSTOM -> {
+                                        if (customBitmap != null) {
+                                            Image(
+                                                bitmap = customBitmap.asImageBitmap(),
+                                                contentDescription = style.title,
+                                                modifier = Modifier.size(42.dp),
+                                                contentScale = ContentScale.Fit
+                                            )
+                                        } else {
+                                            Icon(
+                                                Icons.Default.AddPhotoAlternate,
+                                                contentDescription = null,
+                                                tint = primary,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+                                    HeaderLogoStyle.ORIGINAL -> {
+                                        Icon(
+                                            Icons.Default.GraphicEq,
+                                            contentDescription = null,
+                                            tint = primary,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = style.title,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) primary else MaterialTheme.colorScheme.onBackground
+                                    )
+                                )
+                                Text(
+                                    text = style.subtitle,
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                            }
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(primary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Seçili",
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // For CUSTOM option: button to pick & crop PNG
+                        if (style == HeaderLogoStyle.CUSTOM) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Button(
+                                onClick = { pngPickerLauncher.launch("image/png") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = primary.copy(alpha = 0.15f),
+                                    contentColor = primary
+                                )
+                            ) {
+                                Icon(Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    if (customBitmap != null) "PNG Değiştir, Kırp & Ayarla" else "PNG Yükle, Kırp & Ayarla",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 1. TELEFON UYGULAMA İKONU (BAŞLATICI)
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "TELEFON UYGULAMA İKONU (BAŞLATICI)",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Telefonunuzun ana ekranında ve menüsünde görünecek uygulama simgesini seçin:",
+                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            items(AppLauncherIcon.entries.size) { index ->
+                val iconOption = AppLauncherIcon.entries[index]
+                val isSelected = iconOption == launcherIcon
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            viewModel.setLauncherIcon(iconOption)
+                            Toast.makeText(
+                                context,
+                                "${iconOption.title} simgesi uygulandı. Başlatıcınızda birkaç saniye içinde değişecektir.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) primary else colors.border,
+                            shape = RoundedCornerShape(12.dp)
+                        ),
+                    colors = CardDefaults.cardColors(containerColor = colors.card)
+                ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -155,47 +330,152 @@ fun CustomizationScreen(
                     ) {
                         RadioButton(
                             selected = isSelected,
-                            onClick = { viewModel.setHeaderLogoStyle(style) },
+                            onClick = {
+                                viewModel.setLauncherIcon(iconOption)
+                                Toast.makeText(
+                                    context,
+                                    "${iconOption.title} simgesi uygulandı.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
                             colors = RadioButtonDefaults.colors(selectedColor = primary)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
+
                         Box(
                             modifier = Modifier
-                                .size(50.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.6f)),
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    when (iconOption) {
+                                        AppLauncherIcon.DEFAULT -> Color(0xFF232629)
+                                        AppLauncherIcon.TWILIGHT -> Color(0xFF282348)
+                                        AppLauncherIcon.PINKIE -> Color(0xFF3E1C32)
+                                    }
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (style.drawableRes != null) {
-                                Image(
-                                    painter = painterResource(style.drawableRes),
-                                    contentDescription = style.title,
-                                    modifier = Modifier.size(42.dp),
-                                    contentScale = ContentScale.Fit
-                                )
-                            } else {
-                                Icon(
-                                    Icons.Default.GraphicEq,
-                                    contentDescription = null,
-                                    tint = primary,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
+                            Image(
+                                painter = painterResource(iconOption.previewRes),
+                                contentDescription = iconOption.title,
+                                modifier = Modifier.size(38.dp),
+                                contentScale = ContentScale.Fit
+                            )
                         }
+
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = style.title,
+                                text = iconOption.title,
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = if (isSelected) primary else MaterialTheme.colorScheme.onBackground
                                 )
                             )
                             Text(
-                                text = style.subtitle,
+                                text = iconOption.subtitle,
                                 style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                             )
                         }
+
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Seçili",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. ANA SAYFA ŞARKI ÖNERİLERİ BÖLÜMÜ
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "ANA SAYFA ŞARKI ÖNERİLERİ",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Ana sayfadaki 'Senin için' bölümünün yerine ne gösterileceğini seçin:",
+                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            items(HomeFeedType.entries.size) { index ->
+                val feedOption = HomeFeedType.entries[index]
+                val isSelected = feedOption == homeFeedType
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setHomeFeedType(feedOption) }
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) primary else colors.border,
+                            shape = RoundedCornerShape(12.dp)
+                        ),
+                    colors = CardDefaults.cardColors(containerColor = colors.card)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = { viewModel.setHomeFeedType(feedOption) },
+                            colors = RadioButtonDefaults.colors(selectedColor = primary)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(primary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val icon = when (feedOption) {
+                                HomeFeedType.FOR_YOU -> Icons.Default.Favorite
+                                HomeFeedType.RECENTLY_PLAYED -> Icons.Default.History
+                                HomeFeedType.MOST_PLAYED -> Icons.Default.TrendingUp
+                            }
+                            Icon(icon, contentDescription = null, tint = primary, modifier = Modifier.size(22.dp))
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = feedOption.title,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) primary else MaterialTheme.colorScheme.onBackground
+                                )
+                            )
+                            Text(
+                                text = feedOption.description,
+                                style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                            )
+                        }
+
                         if (isSelected) {
                             Box(
                                 modifier = Modifier
@@ -256,7 +536,7 @@ fun CustomizationScreen(
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                                 )
                                 Text(
-                                    "Twilight Sparkle ve Pinkie Pie renk paletlerine geçin",
+                                    "Twilight Sparkle ve Pinkie Pie renk paletlerine geçin (Vurgu rengi otomatik uyarlanır)",
                                     style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                                 )
                             }
@@ -311,7 +591,7 @@ fun CustomizationScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
-            // 1. Dinamik Albüm Renkleri
+            // DİNAMİK ALBÜM RENKLERİ
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -378,7 +658,7 @@ fun CustomizationScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // 2. Deezer Flow Yerleşimi
+                // Deezer Flow Yerleşimi
                 Text(
                     text = "DEEZER FLOW YERLEŞİMİ (AI MÜZİK AKIŞI)",
                     style = MaterialTheme.typography.bodySmall.copy(
@@ -530,7 +810,7 @@ fun CustomizationScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // 3. Albüm Kapağını Kaydırarak Şarkı Değiştir
+                // Albüm Kapağı Hareketi
                 Text(
                     text = "ALBÜM KAPAĞI HAREKETİ",
                     style = MaterialTheme.typography.bodySmall.copy(
@@ -595,7 +875,7 @@ fun CustomizationScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // 3. Albüm Kapağı Çerçevesi
+                // Albüm Kapağı Çerçevesi
                 Text(
                     text = "ALBÜM KAPAĞI ÇERÇEVESİ (5 MODEL)",
                     style = MaterialTheme.typography.bodySmall.copy(
@@ -674,7 +954,7 @@ fun CustomizationScreen(
                 }
             }
 
-            // 4. Oynatıcı İlerleme Çubuğu Deseni (6 Model, Nyan Cat dahil)
+            // Oynatıcı İlerleme Çubuğu Deseni (6 Model, Nyan Cat dahil)
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
