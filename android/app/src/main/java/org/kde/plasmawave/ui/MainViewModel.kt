@@ -29,6 +29,7 @@ import org.kde.plasmawave.download.DownloadQuality
 import org.kde.plasmawave.download.SavedDownload
 import org.kde.plasmawave.ui.components.SeekbarStyle
 import org.kde.plasmawave.ui.components.AlbumCoverFrame
+import org.kde.plasmawave.ui.components.HeaderLogoStyle
 import java.util.concurrent.atomic.AtomicLong
 import java.time.Instant
 import uniffi.plasmawave_core.FfiAlbum
@@ -119,6 +120,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setFlowLibraryPinned(enabled: Boolean) {
         displayPrefs.edit().putBoolean("flow_library_pinned", enabled).apply()
         _flowLibraryPinned.value = enabled
+    }
+
+    private val _headerLogoStyle = MutableStateFlow(
+        runCatching {
+            HeaderLogoStyle.valueOf(displayPrefs.getString("header_logo_style", null) ?: "TWILIGHT")
+        }.getOrDefault(HeaderLogoStyle.TWILIGHT)
+    )
+    val headerLogoStyle = _headerLogoStyle.asStateFlow()
+    fun setHeaderLogoStyle(style: HeaderLogoStyle) {
+        displayPrefs.edit().putString("header_logo_style", style.name).apply()
+        _headerLogoStyle.value = style
     }
 
     private val _externalSearchTrigger = MutableStateFlow<Pair<String, SearchCategory>?>(null)
@@ -264,8 +276,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshThemes() {
+        registerBuiltInThemes()
         _activeTheme.value = core.getCurrentTheme()
         _availableThemes.value = core.listThemes()
+    }
+
+    private fun registerBuiltInThemes() {
+        val themesJson = listOf(
+            """{
+  "schemaVersion": 1,
+  "id": "mlp.twilight-sparkle",
+  "name": "Twilight Sparkle",
+  "author": "projekt_b-d",
+  "description": "My Little Pony - Twilight Sparkle lavanta, gece mavisi ve macenta yıldız teması.",
+  "dark": true,
+  "colors": {
+    "background": "#141224",
+    "surface": "#1C1932",
+    "surfaceVariant": "#262244",
+    "card": "#282348",
+    "cardPressed": "#352F5E",
+    "accent": "#ED438D",
+    "accentMuted": "#5B2446",
+    "onAccent": "#FCFCFC",
+    "text": "#F5EEF8",
+    "textSecondary": "#B5A4CB",
+    "textDisabled": "#756885",
+    "border": "#3E3566",
+    "divider": "#2A2346",
+    "positive": "#27AE60",
+    "warning": "#F67400",
+    "negative": "#DA4453",
+    "scrim": "#B3000000"
+  },
+  "shapes": { "smallRadius": 6, "mediumRadius": 10, "largeRadius": 18 },
+  "spacing": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "typography": { "fontFamily": "system", "scale": 1.0 },
+  "elevation": { "low": 1, "medium": 4, "high": 12 },
+  "motion": { "shortMs": 120, "mediumMs": 220, "longMs": 360 }
+}""",
+            """{
+  "schemaVersion": 1,
+  "id": "mlp.pinkie-pie",
+  "name": "Pinkie Pie",
+  "author": "projekt_b-d",
+  "description": "My Little Pony - Pinkie Pie neşeli pembe, pamuk şeker ve gökyüzü mavisi teması.",
+  "dark": true,
+  "colors": {
+    "background": "#1E0F18",
+    "surface": "#2B1422",
+    "surfaceVariant": "#3A1B2F",
+    "card": "#3E1C32",
+    "cardPressed": "#4F2340",
+    "accent": "#FF2E93",
+    "accentMuted": "#68133C",
+    "onAccent": "#FCFCFC",
+    "text": "#FFF0F5",
+    "textSecondary": "#E8A2C0",
+    "textDisabled": "#8C5B73",
+    "border": "#552645",
+    "divider": "#3B192F",
+    "positive": "#27AE60",
+    "warning": "#F67400",
+    "negative": "#DA4453",
+    "scrim": "#B3000000"
+  },
+  "shapes": { "smallRadius": 6, "mediumRadius": 10, "largeRadius": 18 },
+  "spacing": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "typography": { "fontFamily": "system", "scale": 1.0 },
+  "elevation": { "low": 1, "medium": 4, "high": 12 },
+  "motion": { "shortMs": 120, "mediumMs": 220, "longMs": 360 }
+}"""
+        )
+        for (json in themesJson) {
+            runCatching { core.importThemeJson(json) }
+        }
     }
 
     fun setTheme(themeId: String) {

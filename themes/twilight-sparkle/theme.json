@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "mlp.twilight-sparkle",
+  "name": "Twilight Sparkle",
+  "author": "projekt_b-d",
+  "description": "My Little Pony - Twilight Sparkle lavanta, gece mavisi ve macenta yıldız teması.",
+  "dark": true,
+  "colors": {
+    "background": "#141224",
+    "surface": "#1C1932",
+    "surfaceVariant": "#262244",
+    "card": "#282348",
+    "cardPressed": "#352F5E",
+    "accent": "#ED438D",
+    "accentMuted": "#5B2446",
+    "onAccent": "#FCFCFC",
+    "text": "#F5EEF8",
+    "textSecondary": "#B5A4CB",
+    "textDisabled": "#756885",
+    "border": "#3E3566",
+    "divider": "#2A2346",
+    "positive": "#27AE60",
+    "warning": "#F67400",
+    "negative": "#DA4453",
+    "scrim": "#B3000000"
+  },
+  "shapes": { "smallRadius": 6, "mediumRadius": 10, "largeRadius": 18 },
+  "spacing": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "typography": { "fontFamily": "system", "scale": 1.0 },
+  "elevation": { "low": 1, "medium": 4, "high": 12 },
+  "motion": { "shortMs": 120, "mediumMs": 220, "longMs": 360 }
+}

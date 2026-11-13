@@ -1,5 +1,6 @@
 package org.kde.plasmawave.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,15 +25,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.kde.plasmawave.R
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PinnedItem
 import org.kde.plasmawave.ui.components.ArtworkImage
+import org.kde.plasmawave.ui.components.HeaderLogoStyle
 import org.kde.plasmawave.ui.components.TrackListItem
 import uniffi.plasmawave_core.FfiPlaylist
 
@@ -45,6 +50,7 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
     val flowLoading by viewModel.flowLoading.collectAsState()
     val flowHeroCardEnabled by viewModel.flowHeroCardEnabled.collectAsState()
     val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
+    val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
     val pins by viewModel.pins.collectAsState()
     val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
     val localPlaylists by viewModel.playlists.collectAsState()
@@ -76,10 +82,61 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
     }
     LazyColumn(modifier = modifier.fillMaxSize().background(bgBrush), contentPadding = PaddingValues(bottom = 80.dp)) {
         item {
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 18.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("PlasmaWave", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 12.dp, top = 16.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                when (headerLogoStyle) {
+                    HeaderLogoStyle.TWILIGHT -> {
+                        Image(
+                            painter = painterResource(R.drawable.ic_header_twilight),
+                            contentDescription = "Twilight Sparkle",
+                            modifier = Modifier
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    HeaderLogoStyle.PINKIE -> {
+                        Image(
+                            painter = painterResource(R.drawable.ic_header_pinkie),
+                            contentDescription = "Pinkie Pie",
+                            modifier = Modifier
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    HeaderLogoStyle.SYM_S -> {
+                        Image(
+                            painter = painterResource(R.drawable.ic_header_sym_s),
+                            contentDescription = "S Logo",
+                            modifier = Modifier
+                                .height(46.dp)
+                                .clip(RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                    HeaderLogoStyle.ORIGINAL -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.GraphicEq,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(30.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "projekt_b-d",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
                 IconButton(onClick = onDownloadsClick) {
                     if (active > 0) {
                         BadgedBox(badge = { Badge { Text("$active") } }) {

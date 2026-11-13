@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "mlp.pinkie-pie",
+  "name": "Pinkie Pie",
+  "author": "projekt_b-d",
+  "description": "My Little Pony - Pinkie Pie neşeli pembe, pamuk şeker ve gökyüzü mavisi teması.",
+  "dark": true,
+  "colors": {
+    "background": "#1E0F18",
+    "surface": "#2B1422",
+    "surfaceVariant": "#3A1B2F",
+    "card": "#3E1C32",
+    "cardPressed": "#4F2340",
+    "accent": "#FF2E93",
+    "accentMuted": "#68133C",
+    "onAccent": "#FCFCFC",
+    "text": "#FFF0F5",
+    "textSecondary": "#E8A2C0",
+    "textDisabled": "#8C5B73",
+    "border": "#552645",
+    "divider": "#3B192F",
+    "positive": "#27AE60",
+    "warning": "#F67400",
+    "negative": "#DA4453",
+    "scrim": "#B3000000"
+  },
+  "shapes": { "smallRadius": 6, "mediumRadius": 10, "largeRadius": 18 },
+  "spacing": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "typography": { "fontFamily": "system", "scale": 1.0 },
+  "elevation": { "low": 1, "medium": 4, "high": 12 },
+  "motion": { "shortMs": 120, "mediumMs": 220, "longMs": 360 }
+}

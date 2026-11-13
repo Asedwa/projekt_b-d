@@ -1,5 +1,6 @@
 package org.kde.plasmawave.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,8 +24,12 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,13 +56,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.kde.plasmawave.R
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.components.AlbumCoverFrame
 import org.kde.plasmawave.ui.components.ArtworkFramedView
 import org.kde.plasmawave.ui.components.CustomSeekbar
+import org.kde.plasmawave.ui.components.HeaderLogoStyle
 import org.kde.plasmawave.ui.components.SeekbarStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,6 +83,8 @@ fun CustomizationScreen(
     val flowHeroCardEnabled by viewModel.flowHeroCardEnabled.collectAsState()
     val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
     val flowLibraryPinned by viewModel.flowLibraryPinned.collectAsState()
+    val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
+    val activeTheme by viewModel.activeTheme.collectAsState()
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
 
@@ -101,6 +112,205 @@ fun CustomizationScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp)
         ) {
+            // 0. Ana Sayfa Logosu (Üst Bar)
+            item {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "ANA SAYFA LOGOSU (ÜST BAR)",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Ana sayfanın sol üstünde gösterilecek karakter veya arma logosunu seçin:",
+                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            items(HeaderLogoStyle.entries.size) { index ->
+                val style = HeaderLogoStyle.entries[index]
+                val isSelected = style == headerLogoStyle
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewModel.setHeaderLogoStyle(style) }
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) primary else colors.border,
+                            shape = RoundedCornerShape(12.dp)
+                        ),
+                    colors = CardDefaults.cardColors(containerColor = colors.card)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = { viewModel.setHeaderLogoStyle(style) },
+                            colors = RadioButtonDefaults.colors(selectedColor = primary)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (style.drawableRes != null) {
+                                Image(
+                                    painter = painterResource(style.drawableRes),
+                                    contentDescription = style.title,
+                                    modifier = Modifier.size(42.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = primary,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = style.title,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) primary else MaterialTheme.colorScheme.onBackground
+                                )
+                            )
+                            Text(
+                                text = style.subtitle,
+                                style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                            )
+                        }
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Seçili",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // MY LITTLE PONY TEMALARI
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "MY LITTLE PONY TEMALARI",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = colors.card),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFED438D).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Palette,
+                                    contentDescription = null,
+                                    tint = Color(0xFFED438D),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Karakter Temaları",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                                Text(
+                                    "Twilight Sparkle ve Pinkie Pie renk paletlerine geçin",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val isTwilight = activeTheme.id == "mlp.twilight-sparkle"
+                            val isPinkie = activeTheme.id == "mlp.pinkie-pie"
+
+                            Button(
+                                onClick = { viewModel.setTheme("mlp.twilight-sparkle") },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF282348),
+                                    contentColor = Color(0xFFF5EEF8)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                border = if (isTwilight) androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFED438D)) else null
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFED438D)))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Twilight Sparkle", maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+
+                            Button(
+                                onClick = { viewModel.setTheme("mlp.pinkie-pie") },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF3E1C32),
+                                    contentColor = Color(0xFFFFF0F5)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                border = if (isPinkie) androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFFF2E93)) else null
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFF2E93)))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Pinkie Pie", maxLines = 1, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
             // 1. Dinamik Albüm Renkleri
             item {
                 Spacer(modifier = Modifier.height(8.dp))

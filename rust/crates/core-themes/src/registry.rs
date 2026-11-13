@@ -11,6 +11,8 @@ const BREEZE_DARK_JSON: &str = include_str!("../../../../themes/breeze-dark/them
 const BREEZE_LIGHT_JSON: &str = include_str!("../../../../themes/breeze-light/theme.json");
 const OXYGEN_NIGHT_JSON: &str = include_str!("../../../../themes/oxygen-night/theme.json");
 const NOTHING_JSON: &str = include_str!("../../../../themes/nothing/theme.json");
+const TWILIGHT_SPARKLE_JSON: &str = include_str!("../../../../themes/twilight-sparkle/theme.json");
+const PINKIE_PIE_JSON: &str = include_str!("../../../../themes/pinkie-pie/theme.json");
 
 #[derive(Debug)]
 pub struct ThemeRegistry {
@@ -39,6 +41,8 @@ impl ThemeRegistry {
             BREEZE_LIGHT_JSON,
             OXYGEN_NIGHT_JSON,
             NOTHING_JSON,
+            TWILIGHT_SPARKLE_JSON,
+            PINKIE_PIE_JSON,
         ] {
             if let Ok(manifest) = ThemeManifest::parse_and_validate(json) {
                 map.insert(manifest.id.clone(), manifest);

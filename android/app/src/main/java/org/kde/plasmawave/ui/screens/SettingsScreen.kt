@@ -135,7 +135,7 @@ fun SettingsScreen(
         }
         if (matches("hakkında", "sürüm", "plasmawave")) {
             SettingsSection("Hakkında")
-            SettingsInfo(Icons.Default.Info, "PlasmaWave", BuildConfig.VERSION_NAME)
+            SettingsInfo(Icons.Default.Info, "projekt_b-d", BuildConfig.VERSION_NAME)
         }
         Spacer(Modifier.height(80.dp))
     }
