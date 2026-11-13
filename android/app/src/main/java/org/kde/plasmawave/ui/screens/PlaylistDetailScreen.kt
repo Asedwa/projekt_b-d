@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -58,6 +59,7 @@ import kotlinx.coroutines.CancellationException
 import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.LOCAL_FAVORITES_ID
+import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PlaylistTrackEntry
 import org.kde.plasmawave.ui.PlaylistTrackSort
@@ -65,6 +67,7 @@ import org.kde.plasmawave.ui.sortPlaylistTracks
 import org.kde.plasmawave.ui.components.ArtworkImage
 import org.kde.plasmawave.ui.components.TrackListItem
 import uniffi.plasmawave_core.FfiPlaylist
+import uniffi.plasmawave_core.FfiTrack
 
 private sealed interface PlaylistLoadState {
     data object Loading : PlaylistLoadState
@@ -78,6 +81,7 @@ fun PlaylistDetailScreen(
     playlist: FfiPlaylist,
     viewModel: MainViewModel,
     onBack: () -> Unit,
+    onDownloadPlaylist: (List<FfiTrack>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var state by remember(playlist.id) { mutableStateOf<PlaylistLoadState>(PlaylistLoadState.Loading) }
@@ -88,8 +92,11 @@ fun PlaylistDetailScreen(
         mutableStateOf(runCatching { PlaylistTrackSort.valueOf(sortPrefs.getString(sortKey, null) ?: "ORIGINAL") }.getOrDefault(PlaylistTrackSort.ORIGINAL))
     }
     var showSort by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
     var query by rememberSaveable(playlist.id) { mutableStateOf("") }
-    val playerState by viewModel.playbackManager.uiState.collectAsState()
+    val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
+    val playlistRevisions by viewModel.playlistRevisions.collectAsState()
+    val playlistRevision = playlistRevisions[playlist.id] ?: 0L
     val colors = LocalPlasmaColors.current
     val entries = (state as? PlaylistLoadState.Loaded)?.entries.orEmpty()
     val sortedEntries = remember(entries, sort) { sortPlaylistTracks(entries, sort) }
@@ -103,17 +110,19 @@ fun PlaylistDetailScreen(
     val tracks = remember(filteredEntries) { filteredEntries.map { it.track } }
     val hasAddedDates = remember(entries) { entries.any { it.addedAt != null } }
 
-    LaunchedEffect(playlist.id, retry) {
-        state = PlaylistLoadState.Loading
+    LaunchedEffect(playlist.id, retry, playlistRevision) {
+        if (state !is PlaylistLoadState.Loaded) {
+            state = PlaylistLoadState.Loading
+        }
         try {
             val loaded = viewModel.getPlaylistTrackEntries(playlist.id)
-            // A previously populated list should not be presented as empty after a failed fetch.
-            state = if (loaded.isEmpty() && playlist.trackCount > 0u) PlaylistLoadState.Failed
-            else PlaylistLoadState.Loaded(loaded)
+            state = PlaylistLoadState.Loaded(loaded)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            state = PlaylistLoadState.Failed
+            if (state !is PlaylistLoadState.Loaded) {
+                state = PlaylistLoadState.Failed
+            }
         }
     }
 
@@ -124,12 +133,10 @@ fun PlaylistDetailScreen(
                 title = { Text(playlist.name, maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri") } },
                 actions = {
-                    if (playlist.isLocal && playlist.id != LOCAL_FAVORITES_ID) {
-                        IconButton(onClick = {
-                            PlasmaWaveApp.core.deletePlaylist(playlist.id)
-                            viewModel.refreshPlaylists()
-                            onBack()
-                        }) { Icon(Icons.Default.Delete, contentDescription = "Listeyi sil", tint = colors.negative) }
+                    if (playlist.id != LOCAL_FAVORITES_ID && playlist.id != DEEZER_FAVORITES_ID) {
+                        IconButton(onClick = { showDelete = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Listeyi sil", tint = colors.negative)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -176,6 +183,12 @@ fun PlaylistDetailScreen(
                                 Icon(Icons.Default.Shuffle, contentDescription = null)
                                 Text("Karıştır")
                             }
+                        }
+                    }
+                    if (entries.any { it.track.provider == "deezer" }) {
+                        OutlinedButton(onClick = { onDownloadPlaylist(entries.map { it.track }) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null)
+                            Text("  Listeyi indir")
                         }
                     }
                     if (entries.isNotEmpty()) {
@@ -227,9 +240,9 @@ fun PlaylistDetailScreen(
                         val track = entry.track
                         TrackListItem(
                             track = track,
-                            isPlaying = playerState.currentEntry?.track?.id == track.id,
+                            isPlaying = currentTrackId == track.id,
                             onClick = { viewModel.playbackManager.playTrackList(tracks, index) },
-                            onLongClick = { viewModel.openTrackMenu(track) }
+                            onLongClick = { viewModel.openTrackMenu(track, playlist, entry.originalIndex) }
                         )
                     }
                 }
@@ -237,4 +250,11 @@ fun PlaylistDetailScreen(
             item { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }
+    if (showDelete) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { showDelete = false },
+        title = { Text("Listeyi sil?") },
+        text = { Text("${playlist.name} kalıcı olarak silinir. Bu işlem geri alınamaz.") },
+        confirmButton = { TextButton(onClick = { showDelete = false; viewModel.deletePlaylist(playlist, onBack) }) { Text("Sil", color = colors.negative) } },
+        dismissButton = { TextButton(onClick = { showDelete = false }) { Text("Vazgeç") } }
+    )
 }

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "org.plasmawave.nothing",
+  "name": "Nothing OS",
+  "author": "Nothing",
+  "description": "Minimalist monokrom ve saf siyah (AMOLED) estetik, imza Nothing kırmızısı vurgusu.",
+  "dark": true,
+  "colors": {
+    "background": "#000000",
+    "surface": "#0C0C0C",
+    "surfaceVariant": "#141414",
+    "card": "#181818",
+    "cardPressed": "#242424",
+    "accent": "#D71920",
+    "accentMuted": "#4A0A0D",
+    "onAccent": "#FFFFFF",
+    "text": "#FFFFFF",
+    "textSecondary": "#8E8E93",
+    "textDisabled": "#48484A",
+    "border": "#282828",
+    "divider": "#1C1C1C",
+    "positive": "#30D158",
+    "warning": "#FF9F0A",
+    "negative": "#D71920",
+    "scrim": "#CC000000"
+  },
+  "shapes": { "smallRadius": 8, "mediumRadius": 16, "largeRadius": 24 },
+  "spacing": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "typography": { "fontFamily": "system", "scale": 1.0 },
+  "elevation": { "low": 0, "medium": 2, "high": 8 },
+  "motion": { "shortMs": 100, "mediumMs": 200, "longMs": 320 }
+}

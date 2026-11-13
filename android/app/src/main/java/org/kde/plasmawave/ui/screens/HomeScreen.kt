@@ -2,256 +2,170 @@ package org.kde.plasmawave.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.kde.plasmawave.theme.LocalPlasmaColors
+import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PinnedItem
-import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.components.ArtworkImage
 import org.kde.plasmawave.ui.components.TrackListItem
 import uniffi.plasmawave_core.FfiPlaylist
 
 @Composable
-fun HomeScreen(
-    viewModel: MainViewModel,
-    onPlaylistClick: (FfiPlaylist) -> Unit,
-    modifier: Modifier = Modifier
-) {
+fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit, onDownloadsClick: () -> Unit,
+               modifier: Modifier = Modifier) {
     val favorites by viewModel.favorites.collectAsState()
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
     val pins by viewModel.pins.collectAsState()
     val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
     val localPlaylists by viewModel.playlists.collectAsState()
-    val playerState by viewModel.playbackManager.uiState.collectAsState()
-    val customColors = LocalPlasmaColors.current
-
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-    ) {
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // KDE Plasma Breeze Hero Card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp)),
-                colors = CardDefaults.cardColors(containerColor = customColors.card)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.GraphicEq,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "PlasmaWave",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        )
-                        Text(
-                            text = "KDE Breeze Dark • Rust Engine",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = customColors.textSecondary
-                            )
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
+    val downloads by viewModel.fullDownloads.collectAsState()
+    val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
+    val colors = LocalPlasmaColors.current
+    val likedPlaylist = if (deezerFavorites.isNotEmpty()) FfiPlaylist(DEEZER_FAVORITES_ID, "Sevdiğim Şarkılar", null, false,
+        deezerFavorites.size.toUInt(), null, "real") else null
+    val quick = remember(pins, likedPlaylist, deezerPlaylists, localPlaylists) {
+        val currentPlaylists = (deezerPlaylists.map { it.playlist } + localPlaylists).associateBy { it.id }
+        val refreshed = pins.map { pin ->
+            if (pin is PinnedItem.Playlist) PinnedItem.Playlist(currentPlaylists[pin.playlist.id] ?: pin.playlist) else pin
         }
-
-        if (pins.isNotEmpty()) {
-            item {
-                Text("Sabitlediklerin", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                Spacer(modifier = Modifier.height(8.dp))
+        (listOfNotNull(likedPlaylist?.let { PinnedItem.Playlist(it) }) + refreshed).distinctBy { it.id }
+    }
+    val active = downloads.count { it.state == "queued" || it.state == "running" }
+    val completed = downloads.count { it.state == "completed" }
+    val pinnedIds = remember(pins) { pins.mapTo(HashSet(pins.size.coerceAtLeast(1))) { it.id } }
+    val primary = MaterialTheme.colorScheme.primary
+    val bg = MaterialTheme.colorScheme.background
+    val bgBrush = remember(primary, bg) {
+        Brush.verticalGradient(listOf(primary.copy(alpha = 0.16f), bg, bg))
+    }
+    LazyColumn(modifier = modifier.fillMaxSize().background(bgBrush), contentPadding = PaddingValues(bottom = 80.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 18.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("PlasmaWave", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onClick = onDownloadsClick) { Icon(Icons.Default.Download, contentDescription = "İndirmeler") }
             }
-            items(pins, key = { "pin:${it.id}" }) { pin ->
-                when (pin) {
-                    is PinnedItem.Track -> TrackListItem(
-                        track = pin.track,
-                        isPlaying = playerState.currentEntry?.track?.id == pin.track.id,
-                        onClick = { viewModel.playbackManager.playTrackList(listOf(pin.track)) },
-                        onLongClick = { viewModel.openTrackMenu(pin.track) }
-                    )
-                    is PinnedItem.Playlist -> {
-                        val playlist = (deezerPlaylists.map { it.playlist } + localPlaylists)
-                            .firstOrNull { it.id == pin.playlist.id } ?: pin.playlist
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-                                .clickable { onPlaylistClick(playlist) }.padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            ArtworkImage(url = playlist.artworkUrl, modifier = Modifier.size(56.dp),
-                                fallback = Icons.AutoMirrored.Filled.PlaylistPlay, shape = RoundedCornerShape(6.dp),
-                                background = customColors.card, tint = customColors.textSecondary)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(playlist.name, maxLines = 1, fontWeight = FontWeight.SemiBold)
-                                Text("Çalma listesi • ${playlist.trackCount} şarkı", color = customColors.textSecondary, style = MaterialTheme.typography.bodySmall)
-                            }
-                            IconButton(onClick = { viewModel.togglePinnedPlaylist(playlist) }) {
-                                Icon(Icons.Default.PushPin, contentDescription = "Sabitlemeyi kaldır")
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(12.dp))
+                .background(colors.card.copy(alpha = 0.85f)).clickable(onClick = onDownloadsClick).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.DownloadForOffline, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("İndirilenler", fontWeight = FontWeight.Bold)
+                    Text(if (active > 0) "$active şarkı sırada veya indiriliyor" else "$completed şarkı indirildi", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = colors.textSecondary)
+            }
+            Spacer(Modifier.height(26.dp))
+            Text("Hızlı erişim", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Sevdiğin şarkılar ve sabitlediklerin", modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+            Spacer(Modifier.height(10.dp))
+        }
+        if (quick.isNotEmpty()) item {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val cardSize = (maxWidth - 48.dp) / 3
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(quick.chunked(9), key = { page -> page.first().id }) { page ->
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            page.chunked(3).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    row.forEach { pin -> QuickCard(pin, pin.id in pinnedIds, viewModel, onPlaylistClick, cardSize) }
+                                }
                             }
                         }
                     }
                 }
             }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+        } else item {
+            Text("Şarkı veya listelerin menüsünden ana sayfaya sabitleyebilirsin.",
+                color = colors.textSecondary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp))
         }
-
-        // Favorites quick play section
-        if (favorites.isNotEmpty()) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Favorites",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Button(
-                        onClick = { viewModel.playbackManager.playTrackList(favorites) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Play All")
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            items(favorites.take(5), key = { it.id }) { track ->
-                TrackListItem(
-                    track = track,
-                    isPlaying = playerState.currentEntry?.track?.id == track.id,
-                    onClick = { viewModel.playbackManager.playTrackList(favorites, favorites.indexOf(track)) },
-                    onLongClick = { viewModel.openTrackMenu(track) }
-                )
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-
-        // Deezer Loved Tracks (Sevdiğim Şarkılar) Quick Play
         if (deezerFavorites.isNotEmpty()) {
             item {
-                val likedPlaylist = FfiPlaylist(
-                    id = DEEZER_FAVORITES_ID, name = "Deezer • Sevdiğim Şarkılar", description = null,
-                    isLocal = false, trackCount = deezerFavorites.size.toUInt(),
-                    artworkUrl = deezerFavorites.firstNotNullOfOrNull { it.artworkUrl }, origin = "real"
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Favorite,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Deezer • Sevdiğim Şarkılar (${deezerFavorites.size})",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Button(
-                        onClick = { viewModel.playbackManager.playTrackList(deezerFavorites) },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Tümünü Çal")
+                Spacer(Modifier.height(28.dp))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Senin için", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Deezer • Sevdiğin şarkılar", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
                     }
+                    TextButton(onClick = { likedPlaylist?.let(onPlaylistClick) }) { Text("Tümünü gör") }
                 }
-                TextButton(onClick = { onPlaylistClick(likedPlaylist) }) { Text("Tüm şarkıları gör ve sırala") }
-                Spacer(modifier = Modifier.height(8.dp))
             }
-
-            items(deezerFavorites.take(6), key = { "home_dz_${it.id}" }) { track ->
-                TrackListItem(
-                    track = track,
-                    isPlaying = playerState.currentEntry?.track?.id == track.id,
-                    onClick = { viewModel.playbackManager.playTrackList(deezerFavorites, deezerFavorites.indexOf(track)) },
-                    onLongClick = { viewModel.openTrackMenu(track) }
-                )
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
+            itemsIndexed(deezerFavorites.take(6), key = { _, it -> "loved:${it.id}" }) { index, track ->
+                TrackListItem(track, isPlaying = currentTrackId == track.id,
+                    onClick = { viewModel.playbackManager.playTrackList(deezerFavorites, index) },
+                    onLongClick = { viewModel.openTrackMenu(track) })
             }
         }
+        if (favorites.isNotEmpty()) {
+            item { Spacer(Modifier.height(24.dp)); Text("Bu cihazda beğendiklerin", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+            itemsIndexed(favorites.take(5), key = { _, it -> "localfav:${it.id}" }) { index, track ->
+                TrackListItem(track, isPlaying = currentTrackId == track.id,
+                    onClick = { viewModel.playbackManager.playTrackList(favorites, index) },
+                    onLongClick = { viewModel.openTrackMenu(track) })
+            }
+        }
+    }
+}
 
-        item {
-            Spacer(modifier = Modifier.height(100.dp))
+private val CardBottomScrim = Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .85f)))
+
+@Composable
+private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit, size: androidx.compose.ui.unit.Dp) {
+    var menu by remember(pin.id) { mutableStateOf(false) }
+    val title = when (pin) { is PinnedItem.Track -> pin.track.title; is PinnedItem.Playlist -> pin.playlist.name }
+    val art = when (pin) { is PinnedItem.Track -> pin.track.artworkUrl; is PinnedItem.Playlist -> pin.playlist.artworkUrl }
+    val primary = MaterialTheme.colorScheme.primary
+    val deezerFavBrush = remember(primary) {
+        Brush.linearGradient(listOf(primary, Color(0xFF7B63DC), Color(0xFFE993BA)))
+    }
+    Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).clickable {
+        when (pin) { is PinnedItem.Track -> viewModel.playbackManager.playTrackList(listOf(pin.track)); is PinnedItem.Playlist -> onPlaylistClick(pin.playlist) }
+    }) {
+        if (pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID) {
+            Box(Modifier.fillMaxSize().background(deezerFavBrush), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Favorite, contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
+            }
+        } else ArtworkImage(art, modifier = Modifier.fillMaxSize(), fallback = if (pin is PinnedItem.Playlist) Icons.AutoMirrored.Filled.PlaylistPlay else Icons.Default.MusicNote)
+        Box(Modifier.fillMaxWidth().height(52.dp).align(Alignment.BottomCenter).background(CardBottomScrim))
+        Text(title, modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, end = 6.dp, bottom = 6.dp), color = Color.White,
+            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Box(Modifier.align(Alignment.TopEnd)) {
+            IconButton(onClick = { if (pin is PinnedItem.Track) viewModel.openTrackMenu(pin.track) else menu = true }, modifier = Modifier.size(34.dp)) {
+                Icon(if (pinned) Icons.Default.PushPin else Icons.Default.MoreVert, contentDescription = "Hızlı erişim seçenekleri", tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+            if (menu) {
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text(if (pinned) "Ana sayfadan kaldır" else "Ana sayfaya sabitle") }, onClick = {
+                        if (pin is PinnedItem.Playlist) viewModel.togglePinnedPlaylist(pin.playlist); menu = false
+                    })
+                }
+            }
         }
     }
 }

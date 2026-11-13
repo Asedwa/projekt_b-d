@@ -1,53 +1,32 @@
 package org.kde.plasmawave.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetState
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.StateFlow
+import org.kde.plasmawave.player.PlaybackProgress
 import org.kde.plasmawave.player.PlayerUiState
+import org.kde.plasmawave.theme.DynamicThemeHelper
+import org.kde.plasmawave.theme.ExtractedArtworkColors
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import uniffi.plasmawave_core.FfiRepeatMode
 
@@ -55,200 +34,163 @@ import uniffi.plasmawave_core.FfiRepeatMode
 @Composable
 fun FullPlayerSheet(
     playerState: PlayerUiState,
+    progressFlow: StateFlow<PlaybackProgress>,
     sheetState: SheetState,
+    dynamicColorEnabled: Boolean,
+    seekbarStyle: SeekbarStyle,
     onDismiss: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onToggleShuffle: () -> Unit,
-    onToggleRepeat: () -> Unit
+    onToggleRepeat: () -> Unit,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onOpenMenu: () -> Unit,
+    onStartMix: () -> Unit,
+    canStartMix: Boolean
 ) {
     val entry = playerState.currentEntry ?: return
-    val customColors = LocalPlasmaColors.current
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    val bg = MaterialTheme.colorScheme.background
+    val context = LocalContext.current
 
-    var sliderPos by remember(playerState.positionMs) {
-        mutableFloatStateOf(playerState.positionMs.toFloat())
+    var extractedColors by remember(entry.track.artworkUrl) { mutableStateOf<ExtractedArtworkColors?>(null) }
+    LaunchedEffect(entry.track.artworkUrl, dynamicColorEnabled) {
+        if (dynamicColorEnabled && !entry.track.artworkUrl.isNullOrBlank()) {
+            extractedColors = DynamicThemeHelper.extractColors(context, entry.track.artworkUrl)
+        } else {
+            extractedColors = null
+        }
     }
-    var isDraggingSlider by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.background,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Header collapse bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Collapse",
-                        tint = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(32.dp)
-                    )
+    val targetTopColor = if (dynamicColorEnabled && extractedColors != null) {
+        extractedColors!!.backgroundTop
+    } else {
+        primary.copy(alpha = 0.24f)
+    }
+
+    val targetBottomColor = if (dynamicColorEnabled && extractedColors != null) {
+        extractedColors!!.backgroundBottom
+    } else {
+        bg
+    }
+
+    val animTopColor by animateColorAsState(
+        targetValue = targetTopColor,
+        animationSpec = tween(500),
+        label = "animTopColor"
+    )
+    val animBottomColor by animateColorAsState(
+        targetValue = targetBottomColor,
+        animationSpec = tween(500),
+        label = "animBottomColor"
+    )
+
+    val effectiveAccent = if (dynamicColorEnabled && extractedColors != null) {
+        extractedColors!!.accent
+    } else {
+        primary
+    }
+
+    val headerBrush = remember(animTopColor, animBottomColor, bg) {
+        Brush.verticalGradient(
+            0.0f to animTopColor.copy(alpha = 0.85f),
+            0.55f to animBottomColor,
+            1.0f to bg
+        )
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState,
+        containerColor = bg, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().background(headerBrush)) {
+            val coverSize = (maxHeight * 0.40f).coerceIn(180.dp, 320.dp)
+            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp).padding(bottom = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Oynatıcıyı kapat", modifier = Modifier.size(30.dp)) }
+                    Text("ŞİMDİ ÇALIYOR", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = colors.textSecondary)
+                    IconButton(onClick = onOpenMenu) { Icon(Icons.Default.MoreVert, contentDescription = "Şarkı seçenekleri") }
                 }
-                Text(
-                    text = "NOW PLAYING",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = customColors.textSecondary,
-                        letterSpacing = 1.5.sp
-                    )
-                )
-                Spacer(modifier = Modifier.size(32.dp))
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            ArtworkImage(
-                url = entry.track.artworkUrl,
-                modifier = Modifier.fillMaxWidth(0.85f).aspectRatio(1f),
-                shape = RoundedCornerShape(18.dp),
-                background = customColors.card
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Title & Artist
-            Text(
-                text = entry.track.title,
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "${entry.track.artist} — ${entry.track.album}",
-                style = MaterialTheme.typography.bodyLarge.copy(color = customColors.textSecondary),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Scrubber Slider
-            val maxDur = playerState.durationMs.toFloat().coerceAtLeast(1f)
-            Slider(
-                value = if (isDraggingSlider) sliderPos else playerState.positionMs.toFloat().coerceIn(0f, maxDur),
-                onValueChange = {
-                    isDraggingSlider = true
-                    sliderPos = it
-                },
-                onValueChangeFinished = {
-                    isDraggingSlider = false
-                    onSeekTo(sliderPos.toLong())
-                },
-                valueRange = 0f..maxDur,
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = customColors.border
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = formatDuration(playerState.positionMs.toULong()),
-                    style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                )
-                Text(
-                    text = formatDuration(playerState.durationMs.toULong()),
-                    style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Playback Controls
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Shuffle
-                IconButton(onClick = onToggleShuffle) {
-                    Icon(
-                        imageVector = Icons.Default.Shuffle,
-                        contentDescription = "Shuffle",
-                        tint = if (playerState.isShuffle) MaterialTheme.colorScheme.primary else customColors.textDisabled,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-
-                // Previous
-                IconButton(onClick = onSkipPrevious) {
-                    Icon(
-                        imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = "Previous",
-                        tint = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-
-                // Play / Pause Circle
-                Box(
-                    modifier = Modifier
-                        .size(68.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    IconButton(onClick = onTogglePlayPause) {
-                        Icon(
-                            imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (playerState.isPlaying) "Pause" else "Play",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(36.dp)
-                        )
+                Spacer(Modifier.height(16.dp))
+                ArtworkImage(url = entry.track.artworkUrl, modifier = Modifier.size(coverSize), shape = RoundedCornerShape(16.dp), background = colors.card)
+                Spacer(Modifier.height(24.dp))
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.track.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Spacer(Modifier.height(3.dp))
+                        Text("${entry.track.artist} • ${entry.track.album}", style = MaterialTheme.typography.bodyMedium,
+                            color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    IconButton(onClick = onToggleFavorite) {
+                        Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = if (isFavorite) "Beğeniyi kaldır" else "Şarkıyı beğen",
+                            tint = if (isFavorite) effectiveAccent else MaterialTheme.colorScheme.onBackground)
                     }
                 }
-
-                // Next
-                IconButton(onClick = onSkipNext) {
-                    Icon(
-                        imageVector = Icons.Default.SkipNext,
-                        contentDescription = "Next",
-                        tint = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-
-                // Repeat Mode
-                IconButton(onClick = onToggleRepeat) {
-                    val (icon, tint) = when (playerState.repeatMode) {
-                        FfiRepeatMode.OFF -> Icons.Default.Repeat to customColors.textDisabled
-                        FfiRepeatMode.ALL -> Icons.Default.Repeat to MaterialTheme.colorScheme.primary
-                        FfiRepeatMode.ONE -> Icons.Default.RepeatOne to MaterialTheme.colorScheme.primary
+                Spacer(Modifier.height(12.dp))
+                PlayerSeekSection(
+                    progressFlow = progressFlow,
+                    style = seekbarStyle,
+                    accentColor = effectiveAccent,
+                    isPlaying = playerState.isPlaying,
+                    onSeekTo = onSeekTo
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onToggleShuffle) { Icon(Icons.Default.Shuffle, contentDescription = "Karıştır", tint = if (playerState.isShuffle) effectiveAccent else colors.textSecondary) }
+                    IconButton(onClick = onSkipPrevious) { Icon(Icons.Default.SkipPrevious, contentDescription = "Önceki", modifier = Modifier.size(36.dp)) }
+                    Box(Modifier.size(68.dp).clip(CircleShape).background(effectiveAccent), contentAlignment = Alignment.Center) {
+                        IconButton(onClick = onTogglePlayPause, modifier = Modifier.fillMaxSize()) {
+                            Icon(if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (playerState.isPlaying) "Duraklat" else "Çal", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(36.dp))
+                        }
                     }
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = "Repeat",
-                        tint = tint,
-                        modifier = Modifier.size(26.dp)
-                    )
+                    IconButton(onClick = onSkipNext) { Icon(Icons.Default.SkipNext, contentDescription = "Sonraki", modifier = Modifier.size(36.dp)) }
+                    IconButton(onClick = onToggleRepeat) {
+                        val (icon, tint) = when (playerState.repeatMode) {
+                            FfiRepeatMode.OFF -> Icons.Default.Repeat to colors.textSecondary
+                            FfiRepeatMode.ALL -> Icons.Default.Repeat to effectiveAccent
+                            FfiRepeatMode.ONE -> Icons.Default.RepeatOne to effectiveAccent
+                        }
+                        Icon(icon, contentDescription = "Tekrarla", tint = tint)
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = onAddToPlaylist, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp)); Text("  Listeye ekle", maxLines = 1)
+                    }
+                    OutlinedButton(onClick = onStartMix, enabled = canStartMix, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp)); Text("  Şarkı miksi", maxLines = 1)
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun PlayerSeekSection(
+    progressFlow: StateFlow<PlaybackProgress>,
+    style: SeekbarStyle,
+    accentColor: Color,
+    isPlaying: Boolean,
+    onSeekTo: (Long) -> Unit
+) {
+    val colors = LocalPlasmaColors.current
+    val progress by progressFlow.collectAsState()
+    CustomSeekbar(
+        positionMs = progress.positionMs,
+        durationMs = progress.durationMs,
+        style = style,
+        primaryColor = accentColor,
+        trackColor = colors.border.copy(alpha = 0.6f),
+        isPlaying = isPlaying,
+        onSeekTo = onSeekTo,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        showTimeLabels = true
+    )
 }

@@ -8,6 +8,9 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.media.MediaScannerConnection
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.Network
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -20,6 +23,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.kde.plasmawave.deezer.DeezerException
 import org.kde.plasmawave.deezer.DeezerSession
 import org.kde.plasmawave.deezer.StripeInput
@@ -33,76 +38,142 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     private val notificationId get() = id.hashCode() and Int.MAX_VALUE
     private val notifications = context.getSystemService(NotificationManager::class.java)
 
+    companion object { private val queueMutex = Mutex() }
+    private class UserCancelled : IOException()
+    private class NetworkBlocked : IOException()
+
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val id = inputData.getString("id") ?: return@withContext Result.failure()
-        val task = downloads.find(id) ?: return@withContext Result.failure()
-        if (task.state == "cancelled") return@withContext Result.failure()
-        task.partialUri?.let { deletePartial(Uri.parse(it)) }
-        var partial: Uri? = null
-        var connection: HttpURLConnection? = null
-        try {
-            notifications.createNotificationChannel(NotificationChannel("downloads", "Şarkı indirmeleri", NotificationManager.IMPORTANCE_LOW))
-            try {
-                setForeground(foreground(task, 0))
-            } catch (_: IllegalStateException) {
-                // Android can deny starting a foreground service after a deferred
-                // network constraint becomes satisfied; ordinary WorkManager work
-                // can still run and will be rescheduled if its time window ends.
-            }
-            downloads.updateActive(id) { it.copy(state = "running", progress = 0, error = null, partialUri = null) }
-            val media = DeezerSession.get(applicationContext).resolveDownload(task.track.id.removePrefix("deezer:"), task.quality.format)
+        queueMutex.withLock { drainQueue() }
+    }
+
+    private suspend fun drainQueue(): Result {
+        var foregroundStarted = false
+        notifications.createNotificationChannel(NotificationChannel("downloads", "Şarkı indirmeleri", NotificationManager.IMPORTANCE_LOW))
+        while (true) {
             currentCoroutineContext().ensureActive()
-            connection = openAudio(media.url)
-            val length = connection.contentLengthLong
-            partial = createDestination(task)
-            downloads.updateActive(id) { it.copy(partialUri = partial.toString()) }
-            if (downloads.find(id)?.state == "cancelled") throw CancellationException("İndirme iptal edildi")
-            val output = if (partial.scheme == "file") File(partial.path!!).outputStream()
-                else applicationContext.contentResolver.openOutputStream(partial) ?: throw IOException("Dosya açılamadı")
-            var written = 0L
-            var shownProgress = -1
-            output.buffered().use { dest ->
-                connection.inputStream.buffered().use { source ->
-                    val input = StripeInput(source, media.trackId, 0, 0, -1)
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val count = input.read(buffer, 0, buffer.size)
-                        if (count < 0) break
-                        dest.write(buffer, 0, count)
-                        written += count
-                        val progress = if (length > 0) (written * 100 / length).toInt().coerceIn(0, 99) else 0
-                        if (progress != shownProgress) {
-                            shownProgress = progress
-                            downloads.updateActive(id) { it.copy(progress = progress) }
-                            notifications.notify(notificationId, notification(task, progress))
+            val task = downloads.firstPending() ?: return Result.success()
+            val taskId = task.id
+            if (!downloadNetworkAllowed()) {
+                downloads.updateActive(taskId) { it.copy(state = "queued", error = "Wi-Fi bağlantısı bekleniyor") }
+                return Result.retry()
+            }
+            task.partialUri?.let { deletePartial(Uri.parse(it)) }
+            var partial: Uri? = null
+            var connection: HttpURLConnection? = null
+            try {
+                if (!foregroundStarted) {
+                    try {
+                        setForeground(foreground(task, 0))
+                        foregroundStarted = true
+                    } catch (_: IllegalStateException) {
+                        // A deferred job can still run without a foreground service;
+                        // WorkManager will resume the queue if its time window ends.
+                    }
+                } else notifications.notify(notificationId, notification(task, 0))
+                downloads.updateActive(taskId) { it.copy(state = "running", progress = 0, error = null, partialUri = null) }
+                if (downloads.isCancelled(taskId)) throw UserCancelled()
+                val media = DeezerSession.get(applicationContext).resolveDownload(task.track.id.removePrefix("deezer:"), task.quality.format)
+                currentCoroutineContext().ensureActive()
+                val network = allowedNetwork() ?: throw NetworkBlocked()
+                val safeWithoutMobilePermission = isUnmeteredWifiOrEthernet(network)
+                connection = openAudio(media.url, network)
+                val length = connection.contentLengthLong
+                partial = createDestination(task)
+                downloads.updateActive(taskId) { it.copy(partialUri = partial.toString()) }
+                if (downloads.isCancelled(taskId)) throw UserCancelled()
+                val output = if (partial.scheme == "file") File(partial.path!!).outputStream()
+                    else applicationContext.contentResolver.openOutputStream(partial) ?: throw IOException("Dosya açılamadı")
+                var written = 0L
+                var lastNetworkCheck = 0L
+                var shownProgress = -1
+                output.buffered().use { dest ->
+                    connection.inputStream.buffered().use { source ->
+                        val input = StripeInput(source, media.trackId, 0, 0, -1)
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            if (downloads.isCancelled(taskId)) throw UserCancelled()
+                            if (!downloads.mobileAllowed.value && !safeWithoutMobilePermission) throw NetworkBlocked()
+                            if (written - lastNetworkCheck >= 256 * 1024) {
+                                if (!downloadNetworkAllowed()) throw NetworkBlocked()
+                                lastNetworkCheck = written
+                            }
+                            val count = input.read(buffer, 0, buffer.size)
+                            if (count < 0) break
+                            dest.write(buffer, 0, count)
+                            written += count
+                            val progress = if (length > 0) (written * 100 / length).toInt().coerceIn(0, 99) else 0
+                            if (progress != shownProgress) {
+                                shownProgress = progress
+                                downloads.updateProgress(taskId, progress)
+                                if (foregroundStarted) notifications.notify(notificationId, notification(task, progress))
+                            }
                         }
                     }
                 }
+                currentCoroutineContext().ensureActive()
+                if (downloads.isCancelled(taskId)) throw UserCancelled()
+                if (!downloadNetworkAllowed()) throw NetworkBlocked()
+                if (written == 0L || (length > 0 && written != length)) throw IOException("Eksik ses dosyası")
+                publish(partial, task)
+                if (!downloads.complete(taskId, partial.toString())) throw UserCancelled()
+                partial = null
+            } catch (e: CancellationException) {
+                downloads.update(taskId) { if (it.state == "cancelled") it.copy(partialUri = null)
+                    else it.copy(state = "queued", progress = 0, partialUri = null) }
+                throw e
+            } catch (_: UserCancelled) {
+                downloads.update(taskId) { it.copy(state = "cancelled", progress = 0, partialUri = null) }
+            } catch (_: NetworkBlocked) {
+                downloads.updateActive(taskId) { it.copy(state = "queued", progress = 0, partialUri = null, error = "Wi-Fi bağlantısı bekleniyor") }
+                return Result.retry()
+            } catch (e: Exception) {
+                if (downloads.isCancelled(taskId)) {
+                    downloads.update(taskId) { it.copy(state = "cancelled", progress = 0, partialUri = null) }
+                    continue
+                }
+                val attempts = task.attempts + 1
+                val canRetry = e is IOException && e !is DeezerException && attempts <= 2
+                val message = when (e) {
+                    is DeezerException -> e.message ?: "Deezer şarkıyı sunmadı"
+                    is SecurityException -> "Müzik klasörüne erişim izni gerekli"
+                    else -> "İndirme başarısız; bağlantıyı ve cihazın boş alanını kontrol et"
+                }
+                downloads.updateActive(taskId) { it.copy(state = if (canRetry) "queued" else "failed", progress = 0,
+                    error = message, partialUri = null, attempts = attempts) }
+                if (canRetry) return Result.retry()
+            } finally {
+                partial?.let(::deletePartial)
+                connection?.disconnect()
             }
-            currentCoroutineContext().ensureActive()
-            if (downloads.find(id)?.state == "cancelled") throw CancellationException("İndirme iptal edildi")
-            if (written == 0L || (length > 0 && written != length)) throw IOException("Eksik ses dosyası")
-            publish(partial, task)
-            if (!downloads.complete(id, partial.toString())) throw CancellationException("İndirme iptal edildi")
-            partial = null
-            Result.success()
-        } catch (e: CancellationException) {
-            downloads.update(id) { if (it.state == "cancelled") it.copy(partialUri = null) else it.copy(state = "queued", progress = 0, partialUri = null) }
-            throw e
-        } catch (e: Exception) {
-            val canRetry = e is IOException && e !is DeezerException && runAttemptCount < 2
-            val message = when (e) {
-                is DeezerException -> e.message ?: "Deezer şarkıyı sunmadı"
-                is SecurityException -> "Müzik klasörüne erişim izni gerekli"
-                else -> "İndirme başarısız; bağlantıyı ve cihazın boş alanını kontrol et"
-            }
-            downloads.updateActive(id) { it.copy(state = if (canRetry) "queued" else "failed", progress = 0, error = message, partialUri = null) }
-            if (canRetry) Result.retry() else Result.failure()
-        } finally {
-            partial?.let(::deletePartial)
-            connection?.disconnect()
         }
+    }
+
+    private fun downloadNetworkAllowed(): Boolean {
+        return allowedNetwork() != null
+    }
+
+    private fun allowedNetwork(): Network? {
+        return try {
+            val manager = applicationContext.getSystemService(ConnectivityManager::class.java)
+            val network = manager.activeNetwork ?: return null
+            val capabilities = manager.getNetworkCapabilities(network) ?: return null
+            if (mayUseDownloadNetwork(downloads.mobileAllowed.value,
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
+                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR))) network else null
+        } catch (_: Exception) { null }
+    }
+
+    private fun isUnmeteredWifiOrEthernet(network: Network): Boolean {
+        return try {
+            val manager = applicationContext.getSystemService(ConnectivityManager::class.java)
+            val capabilities = manager.getNetworkCapabilities(network) ?: return false
+            mayUseDownloadNetwork(false, capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI), capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR))
+        } catch (_: Exception) { false }
     }
 
     private fun foreground(task: SavedDownload, progress: Int): ForegroundInfo {
@@ -157,14 +228,16 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         } catch (_: Exception) { }
     }
 
-    private fun openAudio(address: String): HttpURLConnection {
+    private fun openAudio(address: String, network: Network): HttpURLConnection {
         var url = URL(address)
         repeat(5) {
             val host = url.host.lowercase()
             if (url.protocol != "https" || !(host == "dzcdn.net" || host.endsWith(".dzcdn.net") || host == "deezer.com" || host.endsWith(".deezer.com"))) {
                 throw DeezerException("Geçersiz Deezer ses kaynağı")
             }
-            val connection = url.openConnection() as HttpURLConnection
+            // Binding the socket to the approved network prevents a Wi-Fi download
+            // silently moving to a cellular connection if Android changes routes.
+            val connection = network.openConnection(url) as HttpURLConnection
             connection.instanceFollowRedirects = false
             connection.connectTimeout = 20_000
             connection.readTimeout = 30_000

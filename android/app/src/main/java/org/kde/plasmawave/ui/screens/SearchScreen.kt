@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
@@ -78,7 +79,7 @@ fun SearchScreen(
     val albumResults by viewModel.searchAlbums.collectAsState()
     val artistResults by viewModel.searchArtists.collectAsState()
     val playlistResults by viewModel.searchPlaylists.collectAsState()
-    val playerState by viewModel.playbackManager.uiState.collectAsState()
+    val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
     val customColors = LocalPlasmaColors.current
 
     val scope = rememberCoroutineScope()
@@ -153,7 +154,7 @@ fun SearchScreen(
                     onClick = {
                         viewModel.setCategory(cat)
                         if (query.isNotBlank()) {
-                            viewModel.search(query, cat)
+                            viewModel.search(query, cat, immediate = true)
                         }
                     },
                     label = { Text(label) },
@@ -200,11 +201,11 @@ fun SearchScreen(
                         EmptyResultBox(query, customColors)
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(trackResults, key = { it.id }) { track ->
+                            itemsIndexed(trackResults, key = { _, it -> it.id }) { index, track ->
                                 TrackListItem(
                                     track = track,
-                                    isPlaying = playerState.currentEntry?.track?.id == track.id,
-                                    onClick = { viewModel.playbackManager.playTrackList(trackResults, trackResults.indexOf(track)) },
+                                    isPlaying = currentTrackId == track.id,
+                                    onClick = { viewModel.playbackManager.playTrackList(trackResults, index) },
                                     onLongClick = { viewModel.openTrackMenu(track) }
                                 )
                             }
@@ -408,11 +409,11 @@ fun SearchScreen(
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                        items(albumTracks, key = { it.id }) { track ->
+                        itemsIndexed(albumTracks, key = { _, it -> it.id }) { index, track ->
                             TrackListItem(
                                 track = track,
-                                isPlaying = playerState.currentEntry?.track?.id == track.id,
-                                onClick = { viewModel.playbackManager.playTrackList(albumTracks, albumTracks.indexOf(track)) },
+                                isPlaying = currentTrackId == track.id,
+                                onClick = { viewModel.playbackManager.playTrackList(albumTracks, index) },
                                 onLongClick = { viewModel.openTrackMenu(track) }
                             )
                         }
@@ -466,11 +467,11 @@ fun SearchScreen(
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                        items(artistTopTracks, key = { it.id }) { track ->
+                        itemsIndexed(artistTopTracks, key = { _, it -> it.id }) { index, track ->
                             TrackListItem(
                                 track = track,
-                                isPlaying = playerState.currentEntry?.track?.id == track.id,
-                                onClick = { viewModel.playbackManager.playTrackList(artistTopTracks, artistTopTracks.indexOf(track)) },
+                                isPlaying = currentTrackId == track.id,
+                                onClick = { viewModel.playbackManager.playTrackList(artistTopTracks, index) },
                                 onLongClick = { viewModel.openTrackMenu(track) }
                             )
                         }

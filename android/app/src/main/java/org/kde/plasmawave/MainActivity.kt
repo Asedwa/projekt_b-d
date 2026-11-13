@@ -1,17 +1,17 @@
 package org.kde.plasmawave
 
-import android.os.Bundle
-import android.os.Build
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.view.Display
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -20,334 +20,356 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import org.kde.plasmawave.player.summaryLabel
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.theme.PlasmaTheme
 import org.kde.plasmawave.ui.MainViewModel
-import org.kde.plasmawave.download.DownloadQuality
 import org.kde.plasmawave.ui.components.FullPlayerSheet
+import org.kde.plasmawave.ui.components.LocalDeezerConnected
 import org.kde.plasmawave.ui.components.MiniPlayer
+import org.kde.plasmawave.ui.components.PlaylistPicker
+import org.kde.plasmawave.ui.components.SleepTimerDialog
 import org.kde.plasmawave.ui.components.SongLongPressBottomSheet
-import org.kde.plasmawave.ui.screens.DownloadsScreen
-import org.kde.plasmawave.ui.screens.HomeScreen
-import org.kde.plasmawave.ui.screens.LibraryScreen
-import org.kde.plasmawave.ui.screens.ModManagerScreen
-import org.kde.plasmawave.ui.screens.PlaylistDetailScreen
-import org.kde.plasmawave.ui.screens.QueueScreen
-import org.kde.plasmawave.ui.screens.SearchScreen
-import org.kde.plasmawave.ui.screens.SettingsScreen
-import org.kde.plasmawave.ui.screens.ThemesScreen
+import org.kde.plasmawave.ui.screens.*
 import uniffi.plasmawave_core.FfiPlaylist
 import uniffi.plasmawave_core.FfiTrack
 
 sealed class Screen(val title: String, val icon: ImageVector) {
-    object Home : Screen("Home", Icons.Default.Home)
-    object Library : Screen("Library", Icons.Default.LibraryMusic)
-    object Search : Screen("Search", Icons.Default.Search)
-    object Queue : Screen("Queue", Icons.AutoMirrored.Filled.QueueMusic)
-    object Settings : Screen("Settings", Icons.Default.Settings)
+    data object Home : Screen("Ana sayfa", Icons.Default.Home)
+    data object Library : Screen("Kitaplık", Icons.Default.LibraryMusic)
+    data object Search : Screen("Ara", Icons.Default.Search)
+    data object Queue : Screen("Sıra", Icons.AutoMirrored.Filled.QueueMusic)
+    data object Settings : Screen("Ayarlar", Icons.Default.Settings)
 }
-
 sealed class SubScreen {
-    object None : SubScreen()
+    data object None : SubScreen()
     class PlaylistDetail(val playlist: FfiPlaylist) : SubScreen()
-    object Themes : SubScreen()
-    object ModManager : SubScreen()
-    object Downloads : SubScreen()
+    data object Themes : SubScreen()
+    data object Customization : SubScreen()
+    data object ModManager : SubScreen()
+    data object Downloads : SubScreen()
 }
 
 class MainActivity : ComponentActivity() {
-
     private val viewModel: MainViewModel by viewModels()
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContent {
             val activeTheme by viewModel.activeTheme.collectAsState()
-            val playerState by viewModel.playbackManager.uiState.collectAsState()
-            val selectedTrackForMenu by viewModel.selectedTrackForMenu.collectAsState()
-            val customModActions by viewModel.customTrackActions.collectAsState()
-            val statusMessage by viewModel.statusMessage.collectAsState()
-            val pins by viewModel.pins.collectAsState()
+            val hasCurrentEntry by remember {
+                viewModel.playbackManager.overview
+                    .map { it.currentEntry != null }
+                    .distinctUntilChanged()
+            }.collectAsState(initial = false)
             val deezerUser by viewModel.deezerUser.collectAsState()
-            val defaultDownloadQuality by viewModel.downloadQuality.collectAsState()
-            var trackToDownload by remember { mutableStateOf<FfiTrack?>(null) }
-            var requestedDownload by remember { mutableStateOf<Pair<FfiTrack, DownloadQuality>?>(null) }
+            val statusMessage by viewModel.statusMessage.collectAsState()
+            val highRefresh by viewModel.highRefreshRate.collectAsState()
+
+            var trackForPlaylist by remember { mutableStateOf<FfiTrack?>(null) }
+            var showSleepTimerDialog by remember { mutableStateOf(false) }
+            var requestedDownloads by remember { mutableStateOf<List<FfiTrack>?>(null) }
             val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-                val request = requestedDownload
-                if (granted && request != null) viewModel.downloadFullTrack(request.first, request.second)
-                else if (!granted) Toast.makeText(this@MainActivity, "Şarkıyı kaydetmek için depolama izni gerekli", Toast.LENGTH_LONG).show()
-                requestedDownload = null
+                val request = requestedDownloads
+                if (granted && request != null) viewModel.downloadFullTracks(request)
+                else if (!granted) Toast.makeText(this@MainActivity, "Şarkıları kaydetmek için depolama izni gerekli", Toast.LENGTH_LONG).show()
+                requestedDownloads = null
+            }
+            val requestDownload: (List<FfiTrack>) -> Unit = { tracks ->
+                if (deezerUser == null) Toast.makeText(this@MainActivity, "Şarkıları indirmek için Deezer'a giriş yap", Toast.LENGTH_LONG).show()
+                else if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    requestedDownloads = tracks
+                    storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                } else viewModel.downloadFullTracks(tracks)
             }
 
             var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
             var currentSubScreen by remember { mutableStateOf<SubScreen>(SubScreen.None) }
-
+            val tabStateHolder = rememberSaveableStateHolder()
             var isFullPlayerVisible by remember { mutableStateOf(false) }
             val fullPlayerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             val menuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             val scope = rememberCoroutineScope()
 
-            BackHandler(enabled = currentSubScreen != SubScreen.None && !isFullPlayerVisible && selectedTrackForMenu == null) {
+            LaunchedEffect(highRefresh) { applyRefreshRate(highRefresh) }
+            BackHandler(enabled = currentSubScreen != SubScreen.None && !isFullPlayerVisible) {
                 currentSubScreen = SubScreen.None
             }
-
             LaunchedEffect(statusMessage) {
-                statusMessage?.let {
-                    Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show()
-                    viewModel.clearStatusMessage()
-                }
+                statusMessage?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show(); viewModel.clearStatusMessage() }
             }
 
             PlasmaTheme(activeTheme = activeTheme) {
-                val customColors = LocalPlasmaColors.current
-
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    containerColor = MaterialTheme.colorScheme.background,
-                    bottomBar = {
+                CompositionLocalProvider(LocalDeezerConnected provides (deezerUser != null)) {
+                    val colors = LocalPlasmaColors.current
+                    Scaffold(modifier = Modifier.fillMaxSize(), containerColor = MaterialTheme.colorScheme.background, bottomBar = {
                         Column {
-                            // Persistent Mini Player above bottom bar
                             AnimatedVisibility(
-                                visible = playerState.currentEntry != null,
+                                visible = hasCurrentEntry,
                                 enter = slideInVertically(initialOffsetY = { it }),
                                 exit = slideOutVertically(targetOffsetY = { it })
                             ) {
-                                MiniPlayer(
-                                    playerState = playerState,
-                                    onTogglePlayPause = { viewModel.playbackManager.togglePlayPause() },
-                                    onSkipNext = { viewModel.playbackManager.skipNext() },
-                                    onClick = { isFullPlayerVisible = true },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                LiveMiniPlayer(viewModel, onClick = { isFullPlayerVisible = true })
                             }
-
-                            // KDE Breeze Bottom Navigation Bar
-                            NavigationBar(
-                                containerColor = customColors.card,
-                                tonalElevation = 0.dp
-                            ) {
-                                val navItems = listOf(
-                                    Screen.Home,
-                                    Screen.Library,
-                                    Screen.Search,
-                                    Screen.Queue,
-                                    Screen.Settings
-                                )
-                                navItems.forEach { screen ->
-                                    NavigationBarItem(
-                                        selected = currentScreen == screen && currentSubScreen == SubScreen.None,
-                                        onClick = {
-                                            currentScreen = screen
-                                            currentSubScreen = SubScreen.None
-                                        },
-                                        icon = {
-                                            Icon(
-                                                imageVector = screen.icon,
-                                                contentDescription = screen.title
-                                            )
-                                        },
-                                        label = { Text(screen.title) },
-                                        colors = NavigationBarItemDefaults.colors(
-                                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                                            unselectedIconColor = customColors.textSecondary,
-                                            unselectedTextColor = customColors.textSecondary,
-                                            indicatorColor = customColors.border
-                                        )
-                                    )
+                            NavigationBar(containerColor = colors.card, tonalElevation = 0.dp) {
+                                listOf(Screen.Home, Screen.Library, Screen.Search, Screen.Queue, Screen.Settings).forEach { screen ->
+                                    NavigationBarItem(selected = currentScreen == screen && currentSubScreen == SubScreen.None,
+                                        onClick = { currentScreen = screen; currentSubScreen = SubScreen.None },
+                                        icon = { Icon(screen.icon, contentDescription = screen.title) }, label = { Text(screen.title, maxLines = 1) },
+                                        colors = NavigationBarItemDefaults.colors(selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = colors.textSecondary,
+                                            unselectedTextColor = colors.textSecondary, indicatorColor = colors.border))
                                 }
                             }
                         }
-                    }
-                ) { innerPadding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
-                        when (val sub = currentSubScreen) {
-                            is SubScreen.PlaylistDetail -> {
-                                PlaylistDetailScreen(
-                                    playlist = sub.playlist,
-                                    viewModel = viewModel,
-                                    onBack = { currentSubScreen = SubScreen.None }
-                                )
-                            }
-                            is SubScreen.Themes -> {
-                                ThemesScreen(
-                                    viewModel = viewModel,
-                                    onBack = { currentSubScreen = SubScreen.None }
-                                )
-                            }
-                            is SubScreen.ModManager -> {
-                                ModManagerScreen(
-                                    viewModel = viewModel,
-                                    onBack = { currentSubScreen = SubScreen.None }
-                                )
-                            }
-                            is SubScreen.Downloads -> {
-                                DownloadsScreen(
-                                    viewModel = viewModel
-                                )
-                            }
-                            is SubScreen.None -> {
-                                when (currentScreen) {
-                                    is Screen.Home -> HomeScreen(
-                                        viewModel = viewModel,
-                                        onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) }
-                                    )
-                                    is Screen.Library -> LibraryScreen(
-                                        viewModel = viewModel,
-                                        onPlaylistClick = { pl ->
-                                            currentSubScreen = SubScreen.PlaylistDetail(pl)
-                                        }
-                                    )
-                                    is Screen.Search -> SearchScreen(
-                                        viewModel = viewModel,
-                                        onPlaylistClick = { pl ->
-                                            currentSubScreen = SubScreen.PlaylistDetail(pl)
-                                        }
-                                    )
-                                    is Screen.Queue -> QueueScreen(playbackManager = viewModel.playbackManager)
-                                    is Screen.Settings -> SettingsScreen(
-                                        viewModel = viewModel,
-                                        onNavigateThemes = { currentSubScreen = SubScreen.Themes },
-                                        onNavigateMods = { currentSubScreen = SubScreen.ModManager },
-                                        onNavigateDownloads = { currentSubScreen = SubScreen.Downloads }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Full Screen Player Sheet
-                if (isFullPlayerVisible && playerState.currentEntry != null) {
-                    FullPlayerSheet(
-                        playerState = playerState,
-                        sheetState = fullPlayerSheetState,
-                        onDismiss = {
-                            scope.launch {
-                                fullPlayerSheetState.hide()
-                                isFullPlayerVisible = false
-                            }
-                        },
-                        onTogglePlayPause = { viewModel.playbackManager.togglePlayPause() },
-                        onSkipNext = { viewModel.playbackManager.skipNext() },
-                        onSkipPrevious = { viewModel.playbackManager.skipPrevious() },
-                        onSeekTo = { viewModel.playbackManager.seekTo(it) },
-                        onToggleShuffle = { viewModel.playbackManager.toggleShuffle() },
-                        onToggleRepeat = { viewModel.playbackManager.toggleRepeat() }
-                    )
-                }
-
-                // Long Press Song Contextual Menu Sheet
-                if (selectedTrackForMenu != null) {
-                    SongLongPressBottomSheet(
-                        track = selectedTrackForMenu,
-                        sheetState = menuSheetState,
-                        onDismiss = {
-                            scope.launch {
-                                menuSheetState.hide()
-                                viewModel.closeTrackMenu()
-                            }
-                        },
-                        onPlayNext = { track ->
-                            viewModel.playbackManager.playNext(listOf(track))
-                        },
-                        onAddToQueue = { track ->
-                            viewModel.playbackManager.addToQueue(listOf(track))
-                        },
-                        onToggleFavorite = { track ->
-                            viewModel.toggleFavorite(track)
-                        },
-                        onAddToPlaylist = { track ->
-                            // Add to first available playlist or show notice
-                            val pls = viewModel.playlists.value
-                            if (pls.isNotEmpty()) {
-                                viewModel.addTrackToPlaylist(pls.first().id, track)
-                            } else {
-                                Toast.makeText(this@MainActivity, "Create a playlist first in Library tab", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        onDownload = { track ->
-                            if (track.provider == "deezer") trackToDownload = track else viewModel.downloadTrack(track)
-                        },
-                        isPinned = pins.any { it.id == "track:${selectedTrackForMenu?.id}" },
-                        onTogglePin = viewModel::togglePinnedTrack,
-                        canDownloadDeezer = deezerUser != null,
-                        customModActions = customModActions,
-                        onExecuteModAction = { mod, track ->
-                            viewModel.executeModAction(mod.id, track)
-                        }
-                    )
-                }
-
-                trackToDownload?.let { track ->
-                    var quality by remember(track.id) { mutableStateOf(defaultDownloadQuality) }
-                    AlertDialog(
-                        onDismissRequest = { trackToDownload = null },
-                        title = { Text("İndirme biçimi") },
-                        text = {
-                            Column {
-                                Text("${track.artist} • ${track.title}")
-                                DownloadQuality.entries.forEach { choice ->
-                                    Row(modifier = Modifier.fillMaxWidth().clickable { quality = choice }) {
-                                        RadioButton(selected = quality == choice, onClick = { quality = choice })
-                                        Text(choice.label, modifier = Modifier.padding(top = 14.dp))
+                    }) { padding ->
+                        Box(Modifier.fillMaxSize().padding(padding)) {
+                            when (val sub = currentSubScreen) {
+                                is SubScreen.PlaylistDetail -> PlaylistDetailScreen(sub.playlist, viewModel,
+                                    onBack = { currentSubScreen = SubScreen.None }, onDownloadPlaylist = requestDownload)
+                                SubScreen.Themes -> ThemesScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                                SubScreen.Customization -> CustomizationScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                                SubScreen.ModManager -> ModManagerScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                                SubScreen.Downloads -> DownloadsScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                                SubScreen.None -> tabStateHolder.SaveableStateProvider(currentScreen.title) {
+                                    when (currentScreen) {
+                                        Screen.Home -> HomeScreen(viewModel, onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) },
+                                            onDownloadsClick = { currentSubScreen = SubScreen.Downloads })
+                                        Screen.Library -> LibraryScreen(viewModel, onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) })
+                                        Screen.Search -> SearchScreen(viewModel, onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) })
+                                        Screen.Queue -> QueueScreen(playbackManager = viewModel.playbackManager, onTrackMenu = { viewModel.openTrackMenu(it) })
+                                        Screen.Settings -> SettingsScreen(viewModel, onNavigateThemes = { currentSubScreen = SubScreen.Themes },
+                                            onNavigateMods = { currentSubScreen = SubScreen.ModManager }, onNavigateDownloads = { currentSubScreen = SubScreen.Downloads },
+                                            onNavigateCustomization = { currentSubScreen = SubScreen.Customization })
                                     }
                                 }
-                                Text("Müzik/PlasmaWave klasörüne kaydedilir. Kalite hesabının erişimine bağlıdır.")
                             }
-                        },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                viewModel.setDownloadQuality(quality)
-                                trackToDownload = null
-                                if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                                    requestedDownload = track to quality
-                                    storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                } else viewModel.downloadFullTrack(track, quality)
-                            }) { Text("İndir") }
-                        },
-                        dismissButton = { TextButton(onClick = { trackToDownload = null }) { Text("Vazgeç") } }
+                        }
+                    }
+
+                    if (isFullPlayerVisible) {
+                        FullPlayerHost(
+                            viewModel = viewModel,
+                            sheetState = fullPlayerSheetState,
+                            onDismiss = {
+                                scope.launch {
+                                    fullPlayerSheetState.hide()
+                                    isFullPlayerVisible = false
+                                }
+                            },
+                            onAddToPlaylist = { trackForPlaylist = it },
+                            onOpenMenu = { track ->
+                                isFullPlayerVisible = false
+                                viewModel.openTrackMenu(track)
+                            }
+                        )
+                    }
+
+                    SongMenuHost(
+                        viewModel = viewModel,
+                        sheetState = menuSheetState,
+                        onAddToPlaylist = { trackForPlaylist = it },
+                        onRequestDownload = { requestDownload(listOf(it)) },
+                        onShowSleepTimer = { showSleepTimerDialog = true }
                     )
+
+                    if (showSleepTimerDialog) {
+                        SleepTimerDialogHost(
+                            viewModel = viewModel,
+                            onDismiss = { showSleepTimerDialog = false }
+                        )
+                    }
+
+                    trackForPlaylist?.let { track ->
+                        PlaylistPickerHost(
+                            viewModel = viewModel,
+                            track = track,
+                            onDismiss = { trackForPlaylist = null }
+                        )
+                    }
                 }
             }
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun applyRefreshRate(enabled: Boolean) {
+        val screen: Display = (if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay) ?: return
+        val current = screen.mode
+        val mode = screen.supportedModes.filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight && it.refreshRate <= 120.5f }
+            .maxByOrNull { it.refreshRate }
+        val targetModeId = if (enabled) mode?.modeId ?: 0 else 0
+        val targetRefreshRate = if (enabled) mode?.refreshRate ?: 0f else 0f
+        val attrs = window.attributes
+        if (attrs.preferredDisplayModeId != targetModeId || attrs.preferredRefreshRate != targetRefreshRate) {
+            attrs.preferredDisplayModeId = targetModeId
+            attrs.preferredRefreshRate = targetRefreshRate
+            window.attributes = attrs
+        }
+    }
+}
+
+@Composable
+private fun LiveMiniPlayer(viewModel: MainViewModel, onClick: () -> Unit) {
+    val state by viewModel.playbackManager.overview.collectAsState()
+    MiniPlayer(state, viewModel.playbackManager.progress, onTogglePlayPause = { viewModel.playbackManager.togglePlayPause() }, onSkipNext = { viewModel.playbackManager.skipNext() }, onClick = onClick, modifier = Modifier.fillMaxWidth())
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FullPlayerHost(
+    viewModel: MainViewModel,
+    sheetState: SheetState,
+    onDismiss: () -> Unit,
+    onAddToPlaylist: (FfiTrack) -> Unit,
+    onOpenMenu: (FfiTrack) -> Unit
+) {
+    val state by viewModel.playbackManager.overview.collectAsState()
+    val deezerUser by viewModel.deezerUser.collectAsState()
+    val deezerFavorites by viewModel.deezerFavorites.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
+    val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
+    val seekbarStyle by viewModel.seekbarStyle.collectAsState()
+    val nowPlaying = state.currentEntry?.track ?: return
+
+    val isFav = if (nowPlaying.provider == "deezer" && deezerUser != null) {
+        deezerFavorites.any { it.id == nowPlaying.id }
+    } else {
+        favorites.any { it.id == nowPlaying.id }
+    }
+
+    FullPlayerSheet(
+        playerState = state,
+        progressFlow = viewModel.playbackManager.progress,
+        sheetState = sheetState,
+        dynamicColorEnabled = dynamicColorEnabled,
+        seekbarStyle = seekbarStyle,
+        onDismiss = onDismiss,
+        onTogglePlayPause = { viewModel.playbackManager.togglePlayPause() },
+        onSkipNext = { viewModel.playbackManager.skipNext() },
+        onSkipPrevious = { viewModel.playbackManager.skipPrevious() },
+        onSeekTo = { viewModel.playbackManager.seekTo(it) },
+        onToggleShuffle = { viewModel.playbackManager.toggleShuffle() },
+        onToggleRepeat = { viewModel.playbackManager.toggleRepeat() },
+        isFavorite = isFav,
+        onToggleFavorite = { viewModel.toggleFavorite(nowPlaying) },
+        onAddToPlaylist = { onAddToPlaylist(nowPlaying) },
+        onOpenMenu = { onOpenMenu(nowPlaying) },
+        onStartMix = { viewModel.startTrackMix(nowPlaying) },
+        canStartMix = nowPlaying.provider == "deezer" && deezerUser != null
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SongMenuHost(
+    viewModel: MainViewModel,
+    sheetState: SheetState,
+    onAddToPlaylist: (FfiTrack) -> Unit,
+    onRequestDownload: (FfiTrack) -> Unit,
+    onShowSleepTimer: () -> Unit
+) {
+    val selectedTrack by viewModel.selectedTrackForMenu.collectAsState()
+    val track = selectedTrack ?: return
+
+    val menuContext by viewModel.trackMenuContext.collectAsState()
+    val customActions by viewModel.customTrackActions.collectAsState()
+    val pins by viewModel.pins.collectAsState()
+    val deezerUser by viewModel.deezerUser.collectAsState()
+    val deezerFavorites by viewModel.deezerFavorites.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
+    val sleepTimerState by viewModel.playbackManager.sleepTimerState.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    val isFav = if (track.provider == "deezer" && deezerUser != null) {
+        deezerFavorites.any { it.id == track.id }
+    } else {
+        favorites.any { it.id == track.id }
+    }
+    val isPinned = pins.any { it.id == "track:${track.id}" }
+
+    SongLongPressBottomSheet(
+        track = track,
+        sheetState = sheetState,
+        onDismiss = {
+            scope.launch {
+                sheetState.hide()
+                viewModel.closeTrackMenu()
+            }
+        },
+        onPlayNext = { viewModel.playbackManager.playNext(listOf(it)) },
+        onAddToQueue = { viewModel.playbackManager.addToQueue(listOf(it)) },
+        onToggleFavorite = viewModel::toggleFavorite,
+        onAddToPlaylist = onAddToPlaylist,
+        onDownload = onRequestDownload,
+        isFavorite = isFav,
+        isPinned = isPinned,
+        onTogglePin = viewModel::togglePinnedTrack,
+        canDownloadDeezer = deezerUser != null,
+        onMix = viewModel::startTrackMix,
+        canRemove = menuContext != null,
+        onRemove = { t -> menuContext?.let { ctx -> viewModel.removeTrackFromPlaylist(t, ctx) } },
+        sleepTimerSummary = sleepTimerState.summaryLabel(),
+        onSleepTimer = onShowSleepTimer,
+        customModActions = customActions,
+        onExecuteModAction = { mod, t -> viewModel.executeModAction(mod.id, t) }
+    )
+}
+
+@Composable
+private fun SleepTimerDialogHost(
+    viewModel: MainViewModel,
+    onDismiss: () -> Unit
+) {
+    val sleepTimerState by viewModel.playbackManager.sleepTimerState.collectAsState()
+    SleepTimerDialog(
+        sleepTimerState = sleepTimerState,
+        onSelectMinutes = viewModel.playbackManager::startSleepTimerMinutes,
+        onSelectEndOfTrack = viewModel.playbackManager::startSleepTimerEndOfTrack,
+        onCancelTimer = { viewModel.playbackManager.cancelSleepTimer() },
+        onDismiss = onDismiss
+    )
+}
+
+@Composable
+private fun PlaylistPickerHost(
+    viewModel: MainViewModel,
+    track: FfiTrack,
+    onDismiss: () -> Unit
+) {
+    val localPlaylists by viewModel.playlists.collectAsState()
+    val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
+    val deezerUser by viewModel.deezerUser.collectAsState()
+    val allPlaylists = remember(deezerPlaylists, localPlaylists) {
+        (deezerPlaylists.map { it.playlist } + localPlaylists).distinctBy { it.id }
+    }
+
+    PlaylistPicker(
+        track = track,
+        playlists = allPlaylists,
+        canCreateDeezer = deezerUser != null,
+        onDismiss = onDismiss,
+        onSelect = { playlist ->
+            viewModel.addTrackToPlaylist(playlist.id, track)
+            onDismiss()
+        },
+        onCreate = viewModel::createPlaylist
+    )
 }

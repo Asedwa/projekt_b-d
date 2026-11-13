@@ -7,11 +7,17 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.player.PlaybackManager
 import org.kde.plasmawave.deezer.DeezerSession
@@ -21,7 +27,9 @@ import org.kde.plasmawave.deezer.StreamingQuality
 import org.kde.plasmawave.download.Downloads
 import org.kde.plasmawave.download.DownloadQuality
 import org.kde.plasmawave.download.SavedDownload
+import org.kde.plasmawave.ui.components.SeekbarStyle
 import java.util.concurrent.atomic.AtomicLong
+import java.time.Instant
 import uniffi.plasmawave_core.FfiAlbum
 import uniffi.plasmawave_core.FfiArtist
 import uniffi.plasmawave_core.FfiDeezerUser
@@ -40,20 +48,52 @@ enum class SearchCategory {
     TRACKS, ALBUMS, ARTISTS, PLAYLISTS
 }
 
+data class TrackMenuContext(val playlist: FfiPlaylist, val originalIndex: Int)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val core = PlasmaWaveApp.core
+    private val displayPrefs = application.getSharedPreferences("display_preferences", android.content.Context.MODE_PRIVATE)
+    private val _highRefreshRate = MutableStateFlow(displayPrefs.getBoolean("high_refresh_rate", true))
+    val highRefreshRate = _highRefreshRate.asStateFlow()
+    fun setHighRefreshRate(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("high_refresh_rate", enabled).apply()
+        _highRefreshRate.value = enabled
+    }
+
+    private val _dynamicColorEnabled = MutableStateFlow(displayPrefs.getBoolean("dynamic_color_enabled", true))
+    val dynamicColorEnabled = _dynamicColorEnabled.asStateFlow()
+    fun setDynamicColorEnabled(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("dynamic_color_enabled", enabled).apply()
+        _dynamicColorEnabled.value = enabled
+    }
+
+    private val _seekbarStyle = MutableStateFlow(
+        runCatching {
+            SeekbarStyle.valueOf(displayPrefs.getString("seekbar_style", null) ?: "CLASSIC")
+        }.getOrDefault(SeekbarStyle.CLASSIC)
+    )
+    val seekbarStyle = _seekbarStyle.asStateFlow()
+    fun setSeekbarStyle(style: SeekbarStyle) {
+        displayPrefs.edit().putString("seekbar_style", style.name).apply()
+        _seekbarStyle.value = style
+    }
     val playbackManager = PlaybackManager.getInstance(application)
     private val deezerSession = DeezerSession.get(application)
-    val streamingQuality = deezerSession.streamingQuality
-    fun setStreamingQuality(quality: StreamingQuality) = deezerSession.setStreamingQuality(quality)
+    val wifiQuality = deezerSession.wifiQuality
+    val mobileQuality = deezerSession.mobileQuality
+    fun setWifiQuality(quality: StreamingQuality) = deezerSession.setWifiQuality(quality)
+    fun setMobileQuality(quality: StreamingQuality) = deezerSession.setMobileQuality(quality)
     private val pinnedItems = PinnedItems(application)
     private val fullDownloadManager = Downloads.get(application)
     val fullDownloads = fullDownloadManager.items
     val downloadQuality = fullDownloadManager.quality
+    val mobileDownloadsAllowed = fullDownloadManager.mobileAllowed
     fun setDownloadQuality(quality: DownloadQuality) = fullDownloadManager.setQuality(quality)
-    fun cancelFullDownload(id: String) = fullDownloadManager.cancel(id)
-    fun forgetFullDownload(id: String) = fullDownloadManager.forget(id)
+    fun setMobileDownloadsAllowed(allowed: Boolean) = fullDownloadManager.setMobileAllowed(allowed)
+    fun cancelFullDownload(id: String) { viewModelScope.launch(Dispatchers.IO) { fullDownloadManager.cancel(id) } }
+    fun cancelAllDownloads() { viewModelScope.launch(Dispatchers.IO) { fullDownloadManager.cancelAll() } }
+    fun forgetFullDownload(id: String) { viewModelScope.launch(Dispatchers.IO) { fullDownloadManager.forget(id) } }
     val pins = pinnedItems.items
     fun togglePinnedTrack(track: FfiTrack) = pinnedItems.toggle(PinnedItem.Track(track))
     fun togglePinnedPlaylist(playlist: FfiPlaylist) = pinnedItems.toggle(PinnedItem.Playlist(playlist))
@@ -66,13 +106,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeTheme = MutableStateFlow(core.getCurrentTheme())
     val activeTheme: StateFlow<FfiTheme> = _activeTheme.asStateFlow()
 
-    private val _availableThemes = MutableStateFlow(core.listThemes())
+    private val _availableThemes = MutableStateFlow<List<FfiTheme>>(emptyList())
     val availableThemes: StateFlow<List<FfiTheme>> = _availableThemes.asStateFlow()
 
-    private val _installedMods = MutableStateFlow(core.listMods())
+    private val _installedMods = MutableStateFlow<List<FfiModInfo>>(emptyList())
     val installedMods: StateFlow<List<FfiModInfo>> = _installedMods.asStateFlow()
 
-    private val _customTrackActions = MutableStateFlow(core.getCustomTrackActions())
+    private val _customTrackActions = MutableStateFlow<List<FfiModInfo>>(emptyList())
     val customTrackActions: StateFlow<List<FfiModInfo>> = _customTrackActions.asStateFlow()
 
     private val _playlists = MutableStateFlow<List<FfiPlaylist>>(emptyList())
@@ -128,15 +168,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Contextual Long-press state
     private val _selectedTrackForMenu = MutableStateFlow<FfiTrack?>(null)
     val selectedTrackForMenu: StateFlow<FfiTrack?> = _selectedTrackForMenu.asStateFlow()
+    private val _trackMenuContext = MutableStateFlow<TrackMenuContext?>(null)
+    val trackMenuContext: StateFlow<TrackMenuContext?> = _trackMenuContext.asStateFlow()
+    private val _playlistRevisions = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val playlistRevisions = _playlistRevisions.asStateFlow()
+    private fun invalidatePlaylist(id: String) {
+        localCoverCache.remove(id)
+        _playlistRevisions.update { it + (id to ((it[id] ?: 0L) + 1L)) }
+    }
+    private val favoriteMutex = Mutex()
+    private val localCoverCache = ConcurrentHashMap<String, String>()
+    private var searchJob: Job? = null
+    private val _mixLoading = MutableStateFlow(false)
+    val mixLoading: StateFlow<Boolean> = _mixLoading.asStateFlow()
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
     init {
-        // Recover a sign-in already completed in the embedded browser, including
-        // sessions from a previous build that got stuck at profile selection.
-        if (!deezerSession.hasSavedSession) {
-            try { DeezerWebCookies.readArl()?.let { connectDeezerArl(it) } } catch (_: Exception) { }
+        viewModelScope.launch(Dispatchers.IO) {
+            try { core.clearDeezerUser() } catch (_: Exception) { }
+            try { fullDownloadManager.recover() } catch (_: Exception) { }
+            if (!deezerSession.hasSavedSession) {
+                try {
+                    DeezerWebCookies.readArl()?.let { connectDeezerArl(it) }
+                } catch (_: Exception) { }
+            }
         }
         loadData()
     }
@@ -222,14 +279,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createPlaylist(name: String) {
+    fun createPlaylist(name: String, onDeezer: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                core.createPlaylist(name)
-                refreshPlaylists()
-            } catch (e: Exception) {
-                _statusMessage.value = "Error creating playlist: ${e.message}"
+                if (onDeezer) {
+                    deezerSession.createPlaylist(name)
+                    try { _deezerPlaylists.value = deezerSession.playlists() } catch (_: Exception) { }
+                } else { core.createPlaylist(name); refreshPlaylists() }
+                _statusMessage.value = "Çalma listesi oluşturuldu"
+            } catch (_: Exception) {
+                _statusMessage.value = "Liste oluşturulamadı; bağlantıyı ve liste adını kontrol et"
             }
+        }
+    }
+
+    fun deletePlaylist(playlist: FfiPlaylist, onDeleted: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (playlist.id.startsWith("deezer:")) {
+                    deezerSession.deletePlaylist(playlist.id)
+                    try { _deezerPlaylists.value = deezerSession.playlists() } catch (_: Exception) { }
+                } else { core.deletePlaylist(playlist.id); refreshPlaylists() }
+                pinnedItems.remove("playlist:${playlist.id}")
+                localCoverCache.remove(playlist.id)
+                _statusMessage.value = "Çalma listesi silindi"
+                withContext(Dispatchers.Main) { onDeleted() }
+            } catch (_: Exception) { _statusMessage.value = "Liste silinemedi; düzenleme iznini kontrol et" }
         }
     }
 
@@ -350,17 +425,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _searchCategory.value = category
     }
 
-    fun search(query: String, category: SearchCategory = _searchCategory.value) {
+    fun search(query: String, category: SearchCategory = _searchCategory.value, immediate: Boolean = false) {
         _searchCategory.value = category
-        viewModelScope.launch(Dispatchers.IO) {
-            val q = query.trim()
-            if (q.isBlank()) {
-                _searchResults.value = emptyList()
-                _searchAlbums.value = emptyList()
-                _searchArtists.value = emptyList()
-                _searchPlaylists.value = emptyList()
-                return@launch
-            }
+        searchJob?.cancel()
+        val q = query.trim()
+        if (q.isBlank()) {
+            _searchResults.value = emptyList()
+            _searchAlbums.value = emptyList()
+            _searchArtists.value = emptyList()
+            _searchPlaylists.value = emptyList()
+            return
+        }
+        searchJob = viewModelScope.launch(Dispatchers.IO) {
+            if (!immediate) delay(250)
             try {
                 when (category) {
                     SearchCategory.TRACKS -> {
@@ -376,10 +453,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _searchPlaylists.value = core.searchDeezerPlaylists(q)
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Search error", e)
             }
         }
+    }
+
+    suspend fun getCachedLocalPlaylistArtwork(playlistId: String): String? {
+        localCoverCache[playlistId]?.let { return it }
+        val url = withContext(Dispatchers.IO) {
+            runCatching {
+                core.getPlaylistTracks(playlistId).firstNotNullOfOrNull { it.artworkUrl?.takeIf(String::isNotBlank) }
+            }.getOrNull()
+        }
+        if (url != null) localCoverCache[playlistId] = url
+        return url
     }
 
     fun downloadTrack(track: FfiTrack) {
@@ -398,12 +488,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun downloadFullTrack(track: FfiTrack, quality: DownloadQuality) {
-        try {
-            val added = fullDownloadManager.enqueue(track, quality, _settings.value.downloadsWifiOnly)
-            _statusMessage.value = if (added) "İndirme sıraya eklendi: ${track.title}" else "Bu şarkı zaten indiriliyor"
-        } catch (_: Exception) {
-            _statusMessage.value = "İndirme başlatılamadı"
+    fun downloadFullTracks(tracks: List<FfiTrack>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = fullDownloadManager.enqueueAll(tracks, downloadQuality.value)
+                _statusMessage.value = if (result.added > 0) "${result.added} şarkı indirme sırasına eklendi" +
+                    if (result.skipped > 0) " • ${result.skipped} zaten var veya desteklenmiyor" else ""
+                    else "Seçilen şarkılar zaten indirildi, sırada veya desteklenmiyor"
+            } catch (_: Exception) { _statusMessage.value = "İndirme başlatılamadı" }
         }
     }
 
@@ -414,12 +506,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun retryFullDownload(task: SavedDownload) {
-        try {
-            if (fullDownloadManager.enqueue(task.track, task.quality, _settings.value.downloadsWifiOnly)) {
-                fullDownloadManager.forget(task.id)
-                _statusMessage.value = "İndirme yeniden sıraya eklendi"
-            } else _statusMessage.value = "Bu şarkı zaten indiriliyor"
-        } catch (_: Exception) { _statusMessage.value = "İndirme başlatılamadı" }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (fullDownloadManager.enqueueAll(listOf(task.track), task.quality).added > 0) {
+                    fullDownloadManager.forget(task.id)
+                    _statusMessage.value = "İndirme yeniden sıraya eklendi"
+                } else _statusMessage.value = "Bu şarkı zaten indiriliyor veya indirildi"
+            } catch (_: Exception) { _statusMessage.value = "İndirme başlatılamadı" }
+        }
     }
 
     fun playDownloadedTask(task: FfiDownloadTask) {
@@ -476,22 +570,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Long-press sheet triggers
-    fun openTrackMenu(track: FfiTrack) {
+    fun openTrackMenu(track: FfiTrack, playlist: FfiPlaylist? = null, originalIndex: Int = 0) {
+        _trackMenuContext.value = playlist?.let { TrackMenuContext(it, originalIndex) }
         _selectedTrackForMenu.value = track
     }
 
     fun closeTrackMenu() {
         _selectedTrackForMenu.value = null
+        _trackMenuContext.value = null
     }
 
+    fun isTrackFavorite(track: FfiTrack): Boolean =
+        if (track.provider == "deezer" && deezerSession.hasSavedSession)
+            _deezerFavorites.value.any { it.id == track.id }
+        else _favorites.value.any { it.id == track.id }
+
     fun toggleFavorite(track: FfiTrack) {
+        if (track.provider == "deezer" && deezerSession.hasSavedSession && _deezerLibraryLoading.value) {
+            _statusMessage.value = "Deezer beğenilerin yükleniyor; birazdan tekrar dene"
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val isFav = core.toggleFavorite(track)
-                refreshFavorites()
-                _statusMessage.value = if (isFav) "Added to favorites" else "Removed from favorites"
-            } catch (e: Exception) {
-                _statusMessage.value = "Error: ${e.message}"
+            favoriteMutex.withLock {
+                try {
+                    val isFav: Boolean
+                    if (track.provider == "deezer" && deezerSession.hasSavedSession) {
+                        isFav = !isTrackFavorite(track)
+                        deezerSession.setFavorite(track.id, isFav)
+                        val entries = if (isFav) listOf(PlaylistTrackEntry(track, Instant.now().epochSecond, 0)) + deezerFavoriteEntries
+                            else deezerFavoriteEntries.filterNot { it.track.id == track.id }
+                        deezerFavoriteEntries = entries.mapIndexed { index, entry -> entry.copy(originalIndex = index) }
+                        _deezerFavorites.value = deezerFavoriteEntries.map { it.track }
+                    } else {
+                        isFav = core.toggleFavorite(track)
+                        refreshFavorites()
+                    }
+                    invalidatePlaylist(if (track.provider == "deezer" && deezerSession.hasSavedSession) DEEZER_FAVORITES_ID else LOCAL_FAVORITES_ID)
+                    _statusMessage.value = if (isFav) "Beğenilen şarkılara eklendi" else "Beğenilen şarkılardan çıkarıldı"
+                } catch (_: Exception) {
+                    _statusMessage.value = "Beğeni güncellenemedi; bağlantını ve hesabını kontrol et"
+                }
             }
         }
     }
@@ -499,12 +617,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun addTrackToPlaylist(playlistId: String, track: FfiTrack) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                core.addTracksToPlaylist(playlistId, listOf(track))
-                refreshPlaylists()
-                _statusMessage.value = "Added to playlist"
+                if (playlistId.startsWith("deezer:")) {
+                    if (track.provider != "deezer") throw DeezerException("Deezer listelerine yalnızca Deezer şarkıları eklenebilir")
+                    deezerSession.editPlaylist(playlistId, track.id, add = true)
+                } else {
+                    core.addTracksToPlaylist(playlistId, listOf(track))
+                    refreshPlaylists()
+                }
+                invalidatePlaylist(playlistId)
+                _statusMessage.value = "Şarkı listeye eklendi"
+                if (playlistId.startsWith("deezer:")) try { _deezerPlaylists.value = deezerSession.playlists() } catch (_: Exception) { }
             } catch (e: Exception) {
-                _statusMessage.value = "Failed: ${e.message}"
+                _statusMessage.value = (e as? DeezerException)?.message ?: "Şarkı eklenemedi; liste düzenleme iznini ve bağlantını kontrol et"
             }
+        }
+    }
+
+    fun removeTrackFromPlaylist(track: FfiTrack, menu: TrackMenuContext) {
+        if (menu.playlist.id == DEEZER_FAVORITES_ID || menu.playlist.id == LOCAL_FAVORITES_ID) {
+            if (isTrackFavorite(track)) toggleFavorite(track)
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (menu.playlist.id.startsWith("deezer:")) {
+                    deezerSession.editPlaylist(menu.playlist.id, track.id, add = false)
+                } else {
+                    val current = core.getPlaylistTracks(menu.playlist.id).getOrNull(menu.originalIndex)
+                    if (current?.id != track.id) throw IllegalStateException("Liste değişti; tekrar dene")
+                    core.removeTrackFromPlaylist(menu.playlist.id, menu.originalIndex.toUInt())
+                    refreshPlaylists()
+                }
+                invalidatePlaylist(menu.playlist.id)
+                _statusMessage.value = "Şarkı listeden çıkarıldı"
+                if (menu.playlist.id.startsWith("deezer:")) try { _deezerPlaylists.value = deezerSession.playlists() } catch (_: Exception) { }
+            } catch (_: Exception) {
+                _statusMessage.value = "Şarkı çıkarılamadı; liste düzenleme iznini ve bağlantını kontrol et"
+            }
+        }
+    }
+
+    fun startTrackMix(track: FfiTrack) {
+        if (_mixLoading.value) return
+        if (track.provider != "deezer" || !deezerSession.hasSavedSession) {
+            _statusMessage.value = "Şarkı miksi için Deezer hesabı ve Deezer şarkısı gerekli"
+            return
+        }
+        _mixLoading.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val mix = (listOf(track) + deezerSession.trackMix(track.id)).distinctBy { it.id }
+                if (mix.size < 2) throw DeezerException("Bu şarkı için miks bulunamadı")
+                withContext(Dispatchers.Main) { playbackManager.playTrackList(mix) }
+                _statusMessage.value = "Şarkı miksi çalıyor"
+            } catch (_: Exception) {
+                _statusMessage.value = "Şarkı miksi alınamadı"
+            } finally { _mixLoading.value = false }
         }
     }
 

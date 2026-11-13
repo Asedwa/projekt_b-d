@@ -23,7 +23,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -54,6 +55,10 @@ android {
     }
 }
 
+composeCompiler {
+    stabilityConfigurationFile = project.layout.projectDirectory.file("compose_stability.conf")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -69,6 +74,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("androidx.palette:palette-ktx:1.0.0")
 
     // Media3 / ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
@@ -80,6 +86,9 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.work:work-testing:2.10.0")
 
     debugImplementation(libs.androidx.ui.tooling)
 }

@@ -14,14 +14,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.platform.LocalContext
-import org.kde.plasmawave.deezer.DeezerSession
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,11 +31,13 @@ import androidx.compose.ui.unit.sp
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import uniffi.plasmawave_core.FfiTrack
 
+val LocalDeezerConnected = compositionLocalOf { false }
+
 fun formatDuration(ms: ULong): String {
     val totalSec = ms / 1000u
     val min = totalSec / 60u
     val sec = totalSec % 60u
-    return "%d:%02d".format(min.toLong(), sec.toLong())
+    return if (sec < 10u) "$min:0$sec" else "$min:$sec"
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -46,10 +47,11 @@ fun TrackListItem(
     isPlaying: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    onMoreClick: () -> Unit = onLongClick,
     modifier: Modifier = Modifier
 ) {
     val customColors = LocalPlasmaColors.current
-    val deezerConnected by DeezerSession.get(LocalContext.current).connected.collectAsState()
+    val deezerConnected = LocalDeezerConnected.current
 
     Row(
         modifier = modifier
@@ -120,5 +122,8 @@ fun TrackListItem(
             text = formatDuration(track.durationMs),
             style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
         )
+        IconButton(onClick = onMoreClick, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Şarkı seçenekleri", tint = customColors.textSecondary)
+        }
     }
 }

@@ -96,6 +96,51 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
             .put("user_id", getAccount().id).put("nb", 100).put("start", start)).optJSONArray("data")
     }
 
+    fun setFavorite(trackId: String, favorite: Boolean) {
+        requireNumericId(trackId)
+        getAccount()
+        callWithRefresh(if (favorite) "favorite_song.add" else "favorite_song.remove", JSONObject().put("SNG_ID", trackId))
+    }
+
+    fun editPlaylist(playlistId: String, trackId: String, add: Boolean) {
+        requireNumericId(playlistId)
+        requireNumericId(trackId)
+        getAccount()
+        val body = JSONObject().put("playlist_id", playlistId)
+            .put("songs", JSONArray().put(JSONArray().put(trackId).put(0)))
+        if (add) body.put("offset", -1)
+        callWithRefresh(if (add) "playlist.addSongs" else "playlist.deleteSongs", body)
+    }
+
+    fun createPlaylist(name: String): String {
+        val title = name.trim()
+        require(title.isNotEmpty() && title.length <= 200) { "Geçersiz liste adı" }
+        getAccount()
+        val result = callWithRefresh("playlist.create", JSONObject().put("title", title).put("description", "")
+            .put("songs", JSONArray()).put("status", 1))
+        val id = result.optString("value").ifBlank { result.optString("PLAYLIST_ID") }
+        requireNumericId(id)
+        return id
+    }
+
+    fun deletePlaylist(playlistId: String) {
+        requireNumericId(playlistId)
+        getAccount()
+        callWithRefresh("playlist.delete", JSONObject().put("playlist_id", playlistId))
+    }
+
+    fun trackMix(trackId: String): JSONArray {
+        requireNumericId(trackId)
+        getAccount()
+        return callWithRefresh("song.getSearchTrackMix", JSONObject().put("sng_id", trackId)
+            .put("start_with_input_track", "true")).optJSONArray("data")
+            ?: throw DeezerException("Şarkı miksi alınamadı")
+    }
+
+    private fun requireNumericId(id: String) {
+        require(id.isNotEmpty() && id.all(Char::isDigit)) { "Geçersiz Deezer kimliği" }
+    }
+
     fun playlists(): JSONArray = pages { start ->
         callWithRefresh("deezer.pageProfile", JSONObject()
             .put("user_id", getAccount().id).put("tab", "playlists").put("nb", 100).put("index", start))
@@ -190,7 +235,14 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
             if (authenticated && errorText.contains("TOKEN", ignoreCase = true)) throw TokenExpired()
             throw DeezerException("Deezer isteği başarısız oldu")
         }
-        return envelope.optJSONObject("results") ?: throw DeezerException("Deezer yanıtı okunamadı")
+        return when (val result = envelope.opt("results")) {
+            is JSONObject -> result
+            is Boolean -> if (result) JSONObject().put("success", true) else throw DeezerException("Deezer işlemi reddetti")
+            is Number -> if (result.toLong() != 0L) JSONObject().put("value", result) else throw DeezerException("Deezer işlemi reddetti")
+            is String -> if (result.isNotBlank() && result != "0" && !result.equals("false", ignoreCase = true))
+                JSONObject().put("value", result) else throw DeezerException("Deezer işlemi reddetti")
+            else -> throw DeezerException("Deezer yanıtı okunamadı")
+        }
     }
 
     private class HttpTransport : Transport {

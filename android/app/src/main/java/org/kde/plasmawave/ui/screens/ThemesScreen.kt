@@ -78,39 +78,6 @@ fun ThemesScreen(
     var showImportDialog by remember { mutableStateOf(false) }
     var importJsonText by remember { mutableStateOf("") }
 
-    // HSV state initialized from activeTheme.accentColor
-    val currentAccentColor = parseHexColor(activeTheme.accentColor, Color(0xFF3DAEE9))
-    var hue by remember { mutableFloatStateOf(200f) }
-    var sat by remember { mutableFloatStateOf(0.74f) }
-    var value by remember { mutableFloatStateOf(0.91f) }
-    var hexInput by remember { mutableStateOf(activeTheme.accentColor) }
-
-    LaunchedEffect(activeTheme.accentColor) {
-        val hsv = FloatArray(3)
-        android.graphics.Color.colorToHSV(currentAccentColor.toArgb(), hsv)
-        hue = hsv[0]
-        sat = hsv[1]
-        value = hsv[2]
-        hexInput = activeTheme.accentColor.uppercase()
-    }
-
-    val previewColorInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
-    val previewColor = Color(previewColorInt)
-    val previewHex = String.format("#%06X", 0xFFFFFF and previewColorInt)
-
-    val presetSwatches = listOf(
-        "#3DAEE9" to "Breeze Mavi",
-        "#A238FF" to "Deezer Mor",
-        "#FF2E63" to "Neon Pembe",
-        "#27AE60" to "Zümrüt",
-        "#FF6B35" to "Turuncu",
-        "#F1C40F" to "Altın",
-        "#E74C3C" to "Kızıl",
-        "#1ABC9C" to "Turkuaz",
-        "#4C6EF5" to "Kobalt",
-        "#BE4BDB" to "Lavanta"
-    )
-
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
@@ -151,174 +118,11 @@ fun ThemesScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = customColors.card),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(previewColor)
-                                    .border(2.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Özel Vurgu Rengi",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                )
-                                Text(
-                                    text = if (settings.customAccentColor != null) "Aktif özel renk: ${settings.customAccentColor}" else "Tema varsayılanı (${activeTheme.accentColor})",
-                                    style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                                )
-                            }
-                            if (settings.customAccentColor != null) {
-                                OutlinedButton(
-                                    onClick = { viewModel.setCustomAccentColor(null) },
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset", modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Sıfırla")
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Preset Swatches (2 rows of 5)
-                        presetSwatches.chunked(5).forEach { rowItems ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                rowItems.forEach { (hex, _) ->
-                                    val swatchColor = parseHexColor(hex, Color.Cyan)
-                                    val isCurrent = activeTheme.accentColor.equals(hex, ignoreCase = true)
-                                    Box(
-                                        modifier = Modifier
-                                            .size(42.dp)
-                                            .clip(CircleShape)
-                                            .background(swatchColor)
-                                            .border(
-                                                width = if (isCurrent) 3.dp else 1.dp,
-                                                color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.25f),
-                                                shape = CircleShape
-                                            )
-                                            .clickable {
-                                                hexInput = hex
-                                                viewModel.setCustomAccentColor(hex)
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isCurrent) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = if (hex == "#F1C40F") Color.Black else Color.White,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Custom HSV Sliders
-                        Text(
-                            text = "Renk Tonu (Hue) • $previewHex",
-                            style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                        )
-                        Slider(
-                            value = hue,
-                            onValueChange = {
-                                hue = it
-                                val cInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
-                                hexInput = String.format("#%06X", 0xFFFFFF and cInt)
-                            },
-                            valueRange = 0f..360f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = previewColor,
-                                activeTrackColor = previewColor
-                            )
-                        )
-
-                        Text(
-                            text = "Doygunluk (Saturation): ${(sat * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                        )
-                        Slider(
-                            value = sat,
-                            onValueChange = {
-                                sat = it
-                                val cInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
-                                hexInput = String.format("#%06X", 0xFFFFFF and cInt)
-                            },
-                            valueRange = 0f..1f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = previewColor,
-                                activeTrackColor = previewColor
-                            )
-                        )
-
-                        Text(
-                            text = "Parlaklık (Brightness): ${(value * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                        )
-                        Slider(
-                            value = value,
-                            onValueChange = {
-                                value = it
-                                val cInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
-                                hexInput = String.format("#%06X", 0xFFFFFF and cInt)
-                            },
-                            valueRange = 0.15f..1f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = previewColor,
-                                activeTrackColor = previewColor
-                            )
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(
-                                value = hexInput,
-                                onValueChange = { hexInput = it },
-                                label = { Text("Hex Kodu (#RRGGBB)") },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            val previewOnColor = if (previewColor.luminance() > 0.52f) {
-                                Color(0xFF1A1D20)
-                            } else {
-                                Color.White
-                            }
-                            Button(
-                                onClick = { viewModel.setCustomAccentColor(hexInput) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = previewColor,
-                                    contentColor = previewOnColor
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.height(54.dp)
-                            ) {
-                                Icon(imageVector = Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Uygula")
-                            }
-                        }
-                    }
-                }
+                AccentColorSection(
+                    activeTheme = activeTheme,
+                    customAccentColor = settings.customAccentColor,
+                    onSetAccentColor = viewModel::setCustomAccentColor
+                )
 
                 Spacer(modifier = Modifier.height(20.dp))
                 Text(
@@ -444,5 +248,216 @@ fun ThemesScreen(
                 }
             }
         )
+    }
+}
+
+private val presetSwatches = listOf(
+    "#3DAEE9" to "Breeze Mavi",
+    "#A238FF" to "Deezer Mor",
+    "#FF2E63" to "Neon Pembe",
+    "#27AE60" to "Zümrüt",
+    "#FF6B35" to "Turuncu",
+    "#F1C40F" to "Altın",
+    "#E74C3C" to "Kızıl",
+    "#1ABC9C" to "Turkuaz",
+    "#4C6EF5" to "Kobalt",
+    "#BE4BDB" to "Lavanta"
+)
+
+@Composable
+private fun AccentColorSection(
+    activeTheme: FfiTheme,
+    customAccentColor: String?,
+    onSetAccentColor: (String?) -> Unit
+) {
+    val customColors = LocalPlasmaColors.current
+    val currentAccentColor = remember(activeTheme.accentColor) {
+        parseHexColor(activeTheme.accentColor, Color(0xFF3DAEE9))
+    }
+    var hue by remember { mutableFloatStateOf(200f) }
+    var sat by remember { mutableFloatStateOf(0.74f) }
+    var value by remember { mutableFloatStateOf(0.91f) }
+    var hexInput by remember { mutableStateOf(activeTheme.accentColor) }
+
+    LaunchedEffect(activeTheme.accentColor) {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(currentAccentColor.toArgb(), hsv)
+        hue = hsv[0]
+        sat = hsv[1]
+        value = hsv[2]
+        hexInput = activeTheme.accentColor.uppercase()
+    }
+
+    val previewColorInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
+    val previewColor = Color(previewColorInt)
+    val previewHex = String.format("#%06X", 0xFFFFFF and previewColorInt)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = customColors.card),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(previewColor)
+                        .border(2.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Özel Vurgu Rengi",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        text = if (customAccentColor != null) "Aktif özel renk: $customAccentColor" else "Tema varsayılanı (${activeTheme.accentColor})",
+                        style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
+                    )
+                }
+                if (customAccentColor != null) {
+                    OutlinedButton(
+                        onClick = { onSetAccentColor(null) },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Sıfırla")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Preset Swatches (2 rows of 5)
+            presetSwatches.chunked(5).forEach { rowItems ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    rowItems.forEach { (hex, _) ->
+                        val swatchColor = parseHexColor(hex, Color.Cyan)
+                        val isCurrent = activeTheme.accentColor.equals(hex, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(swatchColor)
+                                .border(
+                                    width = if (isCurrent) 3.dp else 1.dp,
+                                    color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.25f),
+                                    shape = CircleShape
+                                )
+                                .clickable {
+                                    hexInput = hex
+                                    onSetAccentColor(hex)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isCurrent) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = if (hex == "#F1C40F") Color.Black else Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Custom HSV Sliders
+            Text(
+                text = "Renk Tonu (Hue) • $previewHex",
+                style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
+            )
+            Slider(
+                value = hue,
+                onValueChange = {
+                    hue = it
+                    val cInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
+                    hexInput = String.format("#%06X", 0xFFFFFF and cInt)
+                },
+                valueRange = 0f..360f,
+                colors = SliderDefaults.colors(
+                    thumbColor = previewColor,
+                    activeTrackColor = previewColor
+                )
+            )
+
+            Text(
+                text = "Doygunluk (Saturation): ${(sat * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
+            )
+            Slider(
+                value = sat,
+                onValueChange = {
+                    sat = it
+                    val cInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
+                    hexInput = String.format("#%06X", 0xFFFFFF and cInt)
+                },
+                valueRange = 0f..1f,
+                colors = SliderDefaults.colors(
+                    thumbColor = previewColor,
+                    activeTrackColor = previewColor
+                )
+            )
+
+            Text(
+                text = "Parlaklık (Brightness): ${(value * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
+            )
+            Slider(
+                value = value,
+                onValueChange = {
+                    value = it
+                    val cInt = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, value))
+                    hexInput = String.format("#%06X", 0xFFFFFF and cInt)
+                },
+                valueRange = 0.15f..1f,
+                colors = SliderDefaults.colors(
+                    thumbColor = previewColor,
+                    activeTrackColor = previewColor
+                )
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = hexInput,
+                    onValueChange = { hexInput = it },
+                    label = { Text("Hex Kodu (#RRGGBB)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                val previewOnColor = if (previewColor.luminance() > 0.52f) {
+                    Color(0xFF1A1D20)
+                } else {
+                    Color.White
+                }
+                Button(
+                    onClick = { onSetAccentColor(hexInput) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = previewColor,
+                        contentColor = previewOnColor
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(54.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Uygula")
+                }
+            }
+        }
     }
 }

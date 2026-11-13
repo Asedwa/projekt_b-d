@@ -10,6 +10,7 @@ pub const DEFAULT_THEME_ID: &str = "org.kde.breeze-dark";
 const BREEZE_DARK_JSON: &str = include_str!("../../../../themes/breeze-dark/theme.json");
 const BREEZE_LIGHT_JSON: &str = include_str!("../../../../themes/breeze-light/theme.json");
 const OXYGEN_NIGHT_JSON: &str = include_str!("../../../../themes/oxygen-night/theme.json");
+const NOTHING_JSON: &str = include_str!("../../../../themes/nothing/theme.json");
 
 #[derive(Debug)]
 pub struct ThemeRegistry {
@@ -33,7 +34,12 @@ impl ThemeRegistry {
 
     fn register_builtins(&self) {
         let mut map = self.themes.write().unwrap();
-        for json in [BREEZE_DARK_JSON, BREEZE_LIGHT_JSON, OXYGEN_NIGHT_JSON] {
+        for json in [
+            BREEZE_DARK_JSON,
+            BREEZE_LIGHT_JSON,
+            OXYGEN_NIGHT_JSON,
+            NOTHING_JSON,
+        ] {
             if let Ok(manifest) = ThemeManifest::parse_and_validate(json) {
                 map.insert(manifest.id.clone(), manifest);
             }
@@ -76,6 +82,7 @@ impl ThemeRegistry {
         if id == DEFAULT_THEME_ID
             || id == "org.kde.breeze-light"
             || id == "org.plasmawave.oxygen-night"
+            || id == "org.plasmawave.nothing"
         {
             return Err(DomainError::InvalidInput(
                 "cannot remove built-in themes".into(),
@@ -98,10 +105,13 @@ mod tests {
     fn builtins_are_registered() {
         let reg = ThemeRegistry::new();
         let list = reg.list();
-        assert!(list.len() >= 3);
+        assert!(list.len() >= 4);
         let dark = reg.get(DEFAULT_THEME_ID).expect("breeze dark present");
         assert_eq!(dark.name, "Breeze Dark");
         assert!(dark.dark);
+        let nothing = reg.get("org.plasmawave.nothing").expect("nothing present");
+        assert_eq!(nothing.name, "Nothing OS");
+        assert!(nothing.dark);
     }
 
     #[test]

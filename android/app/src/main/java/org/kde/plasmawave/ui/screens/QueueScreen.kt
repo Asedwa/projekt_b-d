@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,13 +39,15 @@ import org.kde.plasmawave.player.PlaybackManager
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.components.formatDuration
 import org.kde.plasmawave.ui.components.ArtworkImage
+import uniffi.plasmawave_core.FfiTrack
 
 @Composable
 fun QueueScreen(
     playbackManager: PlaybackManager,
+    onTrackMenu: (FfiTrack) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val playerState by playbackManager.uiState.collectAsState()
+    val playerState by playbackManager.overview.collectAsState()
     val entries = playerState.queueSnapshot?.entries ?: emptyList()
     val currentIndex = playerState.queueSnapshot?.currentIndex?.toInt()
     val customColors = LocalPlasmaColors.current
@@ -128,6 +131,9 @@ fun QueueScreen(
                             )
                         }
 
+                        IconButton(onClick = { onTrackMenu(entry.track) }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Şarkı seçenekleri", tint = customColors.textSecondary)
+                        }
                         IconButton(onClick = { playbackManager.removeQueueEntry(entry.entryId) }) {
                             Icon(
                                 imageVector = Icons.Default.Close,

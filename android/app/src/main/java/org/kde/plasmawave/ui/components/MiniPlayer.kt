@@ -23,18 +23,23 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.StateFlow
+import org.kde.plasmawave.player.PlaybackProgress
 import org.kde.plasmawave.player.PlayerUiState
 import org.kde.plasmawave.theme.LocalPlasmaColors
 
 @Composable
 fun MiniPlayer(
     playerState: PlayerUiState,
+    progressFlow: StateFlow<PlaybackProgress>,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onClick: () -> Unit,
@@ -43,12 +48,6 @@ fun MiniPlayer(
     val entry = playerState.currentEntry ?: return
     val customColors = LocalPlasmaColors.current
 
-    val progress = if (playerState.durationMs > 0) {
-        (playerState.positionMs.toFloat() / playerState.durationMs.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
-
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -56,15 +55,7 @@ fun MiniPlayer(
             .background(customColors.card)
             .clickable(onClick = onClick)
     ) {
-        // Thin progress bar
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(3.dp),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = customColors.border
-        )
+        MiniProgressBar(progressFlow = progressFlow, trackColor = customColors.border)
 
         Row(
             modifier = Modifier
@@ -121,4 +112,20 @@ fun MiniPlayer(
             }
         }
     }
+}
+
+@Composable
+private fun MiniProgressBar(progressFlow: StateFlow<PlaybackProgress>, trackColor: androidx.compose.ui.graphics.Color) {
+    val progressState by progressFlow.collectAsState()
+    val fraction = if (progressState.durationMs > 0) {
+        (progressState.positionMs.toFloat() / progressState.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+    LinearProgressIndicator(
+        progress = { fraction },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(3.dp),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = trackColor
+    )
 }

@@ -121,6 +121,38 @@ class DeezerGatewayTest {
         assertEquals(listOf(0, 100), starts)
     }
 
+    @Test fun libraryEditsAndMixUseAuthenticatedEndpoints() {
+        val calls = mutableListOf<Pair<String, JSONObject>>()
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, body, _ ->
+            if (url.contains("getUserData")) DeezerGateway.Reply(login)
+            else {
+                calls.add(url to JSONObject(body))
+                if (url.contains("song.getSearchTrackMix"))
+                    DeezerGateway.Reply("""{"error":{},"results":{"data":[{"SNG_ID":"123"}]}}""")
+                else if (url.contains("playlist.create")) DeezerGateway.Reply("""{"error":{},"results":456}""")
+                else DeezerGateway.Reply("""{"error":{},"results":true}""")
+            }
+        })
+        gateway.setFavorite("123", true)
+        gateway.setFavorite("123", false)
+        gateway.editPlaylist("456", "123", true)
+        gateway.editPlaylist("456", "123", false)
+        assertEquals(1, gateway.trackMix("123").length())
+        assertEquals("456", gateway.createPlaylist("  Test listesi  "))
+        gateway.deletePlaylist("456")
+        assertTrue(calls[0].first.contains("favorite_song.add"))
+        assertTrue(calls[1].first.contains("favorite_song.remove"))
+        assertTrue(calls[2].first.contains("playlist.addSongs"))
+        assertEquals("456", calls[2].second.getString("playlist_id"))
+        assertEquals("123", calls[2].second.getJSONArray("songs").getJSONArray(0).getString(0))
+        assertTrue(calls[3].first.contains("playlist.deleteSongs"))
+        assertTrue(calls[4].first.contains("song.getSearchTrackMix"))
+        assertTrue(calls[5].first.contains("playlist.create"))
+        assertEquals("Test listesi", calls[5].second.getString("title"))
+        assertEquals(1, calls[5].second.getInt("status"))
+        assertTrue(calls[6].first.contains("playlist.delete"))
+    }
+
     @Test fun favoritesCanExceedFiveThousandAndRepeatedPagesFail() {
         var repeatPage = false
         val gateway = DeezerGateway("test", DeezerGateway.Transport { url, body, _ ->

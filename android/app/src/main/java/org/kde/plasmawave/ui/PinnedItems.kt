@@ -38,6 +38,16 @@ class PinnedItems(context: Context) {
     @Synchronized fun toggle(item: PinnedItem) {
         val current = _items.value
         val next = if (current.any { it.id == item.id }) current.filterNot { it.id == item.id } else current + item
+        persist(next)
+    }
+
+    @Synchronized fun remove(id: String) {
+        val current = _items.value
+        if (current.none { it.id == id }) return
+        persist(current.filterNot { it.id == id })
+    }
+
+    private fun persist(next: List<PinnedItem>) {
         val json = JSONArray()
         next.forEach { entry ->
             when (entry) {

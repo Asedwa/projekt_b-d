@@ -1,6 +1,8 @@
 package org.kde.plasmawave.deezer
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -27,6 +29,12 @@ enum class StreamingQuality(val label: String, val format: String?) {
     MP3_320("MP3 • 320 kbps", "MP3_320"), FLAC("FLAC • Kayıpsız", "FLAC")
 }
 
+internal fun useMobileStreamingQuality(wifi: Boolean, cellular: Boolean, metered: Boolean): Boolean =
+    when { cellular -> true; wifi -> false; else -> metered }
+
+internal fun qualityForNetwork(useMobile: Boolean, wifi: StreamingQuality, mobile: StreamingQuality): StreamingQuality =
+    if (useMobile) mobile else wifi
+
 /** Owns the user's session. ARL is encrypted by a non-exportable Android Keystore key. */
 class DeezerSession private constructor(context: Context) {
     companion object {
@@ -38,13 +46,22 @@ class DeezerSession private constructor(context: Context) {
 
     private val prefs = context.getSharedPreferences("deezer_session", Context.MODE_PRIVATE)
     private val audioPrefs = context.getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
-    private val _streamingQuality = MutableStateFlow(runCatching {
-        StreamingQuality.valueOf(audioPrefs.getString("streaming_quality", StreamingQuality.AUTO.name)!!)
-    }.getOrDefault(StreamingQuality.AUTO))
-    val streamingQuality = _streamingQuality.asStateFlow()
-    fun setStreamingQuality(quality: StreamingQuality) {
-        audioPrefs.edit().putString("streaming_quality", quality.name).apply()
-        _streamingQuality.value = quality
+    private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+    private fun readQuality(key: String, default: StreamingQuality): StreamingQuality = runCatching {
+        val legacy = audioPrefs.getString("streaming_quality", null)
+        StreamingQuality.valueOf(audioPrefs.getString(key, legacy ?: default.name)!!)
+    }.getOrDefault(default)
+    private val _wifiQuality = MutableStateFlow(readQuality("wifi_quality", StreamingQuality.AUTO))
+    private val _mobileQuality = MutableStateFlow(readQuality("mobile_quality", StreamingQuality.MP3_128))
+    val wifiQuality = _wifiQuality.asStateFlow()
+    val mobileQuality = _mobileQuality.asStateFlow()
+    fun setWifiQuality(quality: StreamingQuality) {
+        audioPrefs.edit().putString("wifi_quality", quality.name).apply()
+        _wifiQuality.value = quality
+    }
+    fun setMobileQuality(quality: StreamingQuality) {
+        audioPrefs.edit().putString("mobile_quality", quality.name).apply()
+        _mobileQuality.value = quality
     }
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
@@ -82,8 +99,23 @@ class DeezerSession private constructor(context: Context) {
         return gateway ?: throw DeezerException("Tam şarkıları dinlemek için Deezer'a giriş yap")
     }
 
-    internal fun resolve(trackId: String): DeezerGateway.Media = activeGateway().resolve(trackId, _streamingQuality.value.format)
+    internal fun resolve(trackId: String): DeezerGateway.Media {
+        val mobile = try {
+            val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+            if (capabilities == null) true else useMobileStreamingQuality(
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR), connectivity.isActiveNetworkMetered)
+        } catch (_: Exception) { true }
+        return activeGateway().resolve(trackId, qualityForNetwork(mobile, _wifiQuality.value, _mobileQuality.value).format)
+    }
     internal fun resolveDownload(trackId: String, format: String): DeezerGateway.Media = activeGateway().resolve(trackId, format)
+    fun setFavorite(trackId: String, favorite: Boolean) =
+        activeGateway().setFavorite(trackId.removePrefix("deezer:"), favorite)
+    fun editPlaylist(playlistId: String, trackId: String, add: Boolean) =
+        activeGateway().editPlaylist(playlistId.removePrefix("deezer:"), trackId.removePrefix("deezer:"), add)
+    fun createPlaylist(name: String): String = "deezer:${activeGateway().createPlaylist(name)}"
+    fun deletePlaylist(id: String) = activeGateway().deletePlaylist(id.removePrefix("deezer:"))
+    fun trackMix(trackId: String): List<FfiTrack> = tracks(activeGateway().trackMix(trackId.removePrefix("deezer:")))
     fun favoriteTrackEntries(): List<PlaylistTrackEntry> =
         objects(activeGateway().favorites()).mapIndexedNotNull { index, json ->
             track(json)?.let {

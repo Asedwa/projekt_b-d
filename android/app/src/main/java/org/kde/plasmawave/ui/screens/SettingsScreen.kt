@@ -1,79 +1,26 @@
 package org.kde.plasmawave.ui.screens
 
-import android.content.Intent
-import android.net.Uri
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.VpnKey
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.ColorLens
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
 import org.kde.plasmawave.deezer.DeezerLoginDialog
 import org.kde.plasmawave.deezer.StreamingQuality
-import androidx.compose.ui.unit.dp
-import org.kde.plasmawave.PlasmaWaveApp
-import org.kde.plasmawave.theme.LocalPlasmaColors
-import org.kde.plasmawave.theme.parseHexColor
-import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.download.DownloadQuality
+import org.kde.plasmawave.theme.LocalPlasmaColors
+import org.kde.plasmawave.ui.MainViewModel
 
 @Composable
 fun SettingsScreen(
@@ -81,417 +28,166 @@ fun SettingsScreen(
     onNavigateThemes: () -> Unit,
     onNavigateMods: () -> Unit,
     onNavigateDownloads: () -> Unit = {},
+    onNavigateCustomization: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val activeTheme by viewModel.activeTheme.collectAsState()
-    val settings by viewModel.settings.collectAsState()
+    val user by viewModel.deezerUser.collectAsState()
+    val busy by viewModel.deezerBusy.collectAsState()
+    val loginError by viewModel.deezerLoginError.collectAsState()
+    val wifiQuality by viewModel.wifiQuality.collectAsState()
+    val mobileQuality by viewModel.mobileQuality.collectAsState()
     val downloadQuality by viewModel.downloadQuality.collectAsState()
-    val streamingQuality by viewModel.streamingQuality.collectAsState()
-    var showQualityMenu by remember { mutableStateOf(false) }
-    var showStreamingMenu by remember { mutableStateOf(false) }
-    val customColors = LocalPlasmaColors.current
-    val core = PlasmaWaveApp.core
+    val mobileDownloads by viewModel.mobileDownloadsAllowed.collectAsState()
+    val highRefresh by viewModel.highRefreshRate.collectAsState()
+    val dynamicColor by viewModel.dynamicColorEnabled.collectAsState()
+    val seekbarStyle by viewModel.seekbarStyle.collectAsState()
+    val downloads by viewModel.fullDownloads.collectAsState()
+    val theme by viewModel.activeTheme.collectAsState()
+    val settings by viewModel.settings.collectAsState()
+    val colors = LocalPlasmaColors.current
+    var showLogin by remember { mutableStateOf(false) }
+    var showArl by remember { mutableStateOf(false) }
+    var arl by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    var searchVisible by remember { mutableStateOf(false) }
+    fun matches(vararg words: String) = query.isBlank() || words.any { it.contains(query.trim(), ignoreCase = true) }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "SETTINGS",
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = FontWeight.Bold,
-                color = customColors.textSecondary
-            )
-        )
+    if (showLogin) {
+        LaunchedEffect(user) { if (user != null) showLogin = false }
+        DeezerLoginDialog(busy = busy, error = loginError, onDismiss = { showLogin = false }, onLogin = viewModel::connectDeezerArl)
+    }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        val deezerUser by viewModel.deezerUser.collectAsState()
-        val deezerBusy by viewModel.deezerBusy.collectAsState()
-        val deezerLoginError by viewModel.deezerLoginError.collectAsState()
-        var deezerArl by remember { mutableStateOf("") }
-        var showDeezerLogin by remember { mutableStateOf(false) }
-        if (showDeezerLogin) {
-            LaunchedEffect(deezerUser) { if (deezerUser != null) showDeezerLogin = false }
-            DeezerLoginDialog(
-                busy = deezerBusy,
-                error = deezerLoginError,
-                onDismiss = { showDeezerLogin = false },
-                onLogin = { arl -> viewModel.connectDeezerArl(arl) }
-            )
+    Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Ayarlar", modifier = Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            IconButton(onClick = { searchVisible = !searchVisible; if (!searchVisible) query = "" }) {
+                Icon(Icons.Default.Search, contentDescription = "Ayarlarda ara")
+            }
         }
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = customColors.card),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CloudSync, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
-                    Spacer(modifier = Modifier.padding(6.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Deezer Hesabı", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
-                        Text(
-                            if (deezerUser != null) "Bağlı: ${deezerUser?.name} (${deezerUser?.statusLabel})"
-                            else "Tam şarkılar ve kütüphanen için Deezer'a giriş yap.",
-                            style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                if (deezerUser != null) {
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Button(onClick = { viewModel.refreshDeezerData() }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.padding(4.dp))
-                            Text("Yenile")
-                        }
-                        Spacer(modifier = Modifier.padding(4.dp))
-                        OutlinedButton(onClick = { viewModel.disconnectDeezer() }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.padding(4.dp))
-                            Text("Çıkış Yap")
+        if (searchVisible) OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }, placeholder = { Text("Ayarlarda ara") })
+
+        if (matches("hesap", "deezer", "giriş", "oturum")) {
+            SettingsSection("Hesap")
+            Card(colors = CardDefaults.cardColors(containerColor = colors.card), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(42.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(user?.name ?: "Deezer hesabı", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            Text(user?.statusLabel ?: "Kitaplığın ve tam şarkılar için giriş yap", color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                } else {
-                    Button(onClick = { showDeezerLogin = true }, enabled = !deezerBusy, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.padding(4.dp))
-                        Text(if (deezerBusy) "Giriş yapılıyor…" else "Deezer ile Giriş Yap")
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("İstersen mevcut ARL oturumunu da kullanabilirsin.", style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = deezerArl, onValueChange = { deezerArl = it },
-                        label = { Text("Deezer ARL") }, singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    OutlinedButton(
-                        onClick = { val arl = deezerArl; deezerArl = ""; viewModel.connectDeezerArl(arl) },
-                        enabled = deezerArl.isNotBlank() && !deezerBusy, modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.padding(4.dp))
-                        Text("ARL ile Giriş Yap")
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("ARL, hesabına erişim sağlar; kimseyle paylaşma.", style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary))
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Appearance & Themes Card (with Quick Accent Swatches)
-        val quickAccents = listOf("#3DAEE9", "#A238FF", "#FF2E63", "#27AE60", "#FF6B35", "#F1C40F")
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp)),
-            colors = CardDefaults.cardColors(containerColor = customColors.card)
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onNavigateThemes)
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ColorLens,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(26.dp)
-                    )
-                    Spacer(modifier = Modifier.padding(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Görünüm, Temalar & Vurgu Rengi",
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
-                        )
-                        Text(
-                            text = "Aktif: ${activeTheme.name} (${activeTheme.accentColor})",
-                            style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                        contentDescription = null,
-                        tint = customColors.textDisabled,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-                HorizontalDivider(color = customColors.divider, modifier = Modifier.padding(horizontal = 16.dp))
-
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Text(
-                        text = "Hızlı Vurgu Rengi Seç (Tüm Mavi Alanlar)",
-                        style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        quickAccents.forEach { hex ->
-                            val swatch = parseHexColor(hex, Color.Cyan)
-                            val isSelected = activeTheme.accentColor.equals(hex, ignoreCase = true)
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(CircleShape)
-                                    .background(swatch)
-                                    .border(
-                                        width = if (isSelected) 2.5.dp else 1.dp,
-                                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.25f),
-                                        shape = CircleShape
-                                    )
-                                    .clickable { viewModel.setCustomAccentColor(hex) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = if (hex == "#F1C40F") Color.Black else Color.White,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
+                    Spacer(Modifier.height(12.dp))
+                    if (user != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = viewModel::refreshDeezerData, modifier = Modifier.weight(1f), enabled = !busy) { Text("Yenile") }
+                            OutlinedButton(onClick = viewModel::disconnectDeezer, modifier = Modifier.weight(1f), enabled = !busy) { Text("Çıkış yap") }
                         }
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedButton(
-                        onClick = onNavigateThemes,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(imageVector = Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.padding(4.dp))
-                        Text("Özel Renk Paleti & Hex Girişi Aç")
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // WebAssembly Mods Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onNavigateMods),
-            colors = CardDefaults.cardColors(containerColor = customColors.card)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Extension,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(26.dp)
-                )
-                Spacer(modifier = Modifier.padding(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "WebAssembly Mod Manager",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                    Text(
-                        text = "Manage Wasmi sandboxed plugins",
-                        style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                    contentDescription = null,
-                    tint = customColors.textDisabled,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Offline Downloads Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onNavigateDownloads),
-            colors = CardDefaults.cardColors(containerColor = customColors.card)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CloudDownload,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(26.dp)
-                )
-                Spacer(modifier = Modifier.padding(8.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "İndirilen şarkılar",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                    Text(
-                        text = "Müzik/PlasmaWave • İlerleme ve çevrimdışı dinleme",
-                        style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                    contentDescription = null,
-                    tint = customColors.textDisabled,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Switches Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = customColors.card),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CloudSync, contentDescription = null, tint = customColors.textSecondary)
-                    Spacer(modifier = Modifier.padding(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Dinleme kalitesi", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
-                        Text("Sonraki şarkıda uygulanır", style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary))
-                    }
-                    Box {
-                        TextButton(onClick = { showStreamingMenu = true }) { Text(streamingQuality.label) }
-                        DropdownMenu(expanded = showStreamingMenu, onDismissRequest = { showStreamingMenu = false }) {
-                            StreamingQuality.entries.forEach { quality ->
-                                DropdownMenuItem(text = { Text(quality.label) }, onClick = {
-                                    viewModel.setStreamingQuality(quality); showStreamingMenu = false
-                                })
-                            }
+                    } else {
+                        Button(onClick = { showLogin = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Giriş yapılıyor…" else "Deezer ile giriş yap") }
+                        TextButton(onClick = { showArl = !showArl }) { Text("ARL ile giriş") }
+                        if (showArl) {
+                            OutlinedTextField(arl, { arl = it }, label = { Text("Deezer ARL") }, visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true, modifier = Modifier.fillMaxWidth())
+                            TextButton(onClick = { val value = arl; arl = ""; viewModel.connectDeezerArl(value) }, enabled = arl.isNotBlank() && !busy) { Text("Bağlan") }
                         }
                     }
                 }
-                HorizontalDivider(color = customColors.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 12.dp))
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CloudDownload, contentDescription = null, tint = customColors.textSecondary)
-                    Spacer(modifier = Modifier.padding(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("İndirme kalitesi", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
-                        Text("Hesabının erişimine bağlıdır", style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary))
-                    }
-                    Box {
-                        TextButton(onClick = { showQualityMenu = true }) { Text(downloadQuality.label) }
-                        DropdownMenu(expanded = showQualityMenu, onDismissRequest = { showQualityMenu = false }) {
-                            DownloadQuality.entries.forEach { quality ->
-                                DropdownMenuItem(text = { Text(quality.label) }, onClick = {
-                                    viewModel.setDownloadQuality(quality); showQualityMenu = false
-                                })
-                            }
-                        }
-                    }
-                }
-                HorizontalDivider(color = customColors.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 12.dp))
-                // Wi-Fi Only Switch
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(imageVector = Icons.Default.Wifi, contentDescription = null, tint = customColors.textSecondary)
-                    Spacer(modifier = Modifier.padding(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Yalnızca Wi-Fi ile indir",
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
-                        )
-                        Text(
-                            text = "Mobil veri yerine ölçülmeyen ağ kullan",
-                            style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                        )
-                    }
-                    Switch(
-                        checked = settings.downloadsWifiOnly,
-                        onCheckedChange = { checked ->
-                            val updated = settings.copy(downloadsWifiOnly = checked)
-                            viewModel.updateSettings(updated)
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
-                    )
-                }
-
-                HorizontalDivider(color = customColors.divider, thickness = 1.dp, modifier = Modifier.padding(vertical = 12.dp))
-
-                // Development Fixtures Switch
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(imageVector = Icons.Default.Info, contentDescription = null, tint = customColors.textSecondary)
-                    Spacer(modifier = Modifier.padding(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Show Development Fixtures",
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
-                        )
-                        Text(
-                            text = "Include clearly-labeled synthetic fixture tracks",
-                            style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                        )
-                    }
-                    Switch(
-                        checked = settings.showDevFixtures,
-                        onCheckedChange = { checked ->
-                            val updated = settings.copy(showDevFixtures = checked)
-                            viewModel.updateSettings(updated)
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
-                    )
-                }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // About Info
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = customColors.card),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "PlasmaWave Android",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Version: 0.1.0-alpha\nArchitecture: Rust Core + UniFFI + Kotlin Jetpack Compose\nDesign: KDE Plasma Breeze Dark\nPlayback: Android Media3 / ExoPlayer",
-                    style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                )
+        if (matches("kalite", "wifi", "wi-fi", "mobil", "ses", "flac", "mp3", "dinleme")) {
+            SettingsSection("Ses kalitesi")
+            QualityRow(Icons.Default.Wifi, "Wi-Fi ile dinleme", "Wi-Fi üzerinden", wifiQuality.label,
+                StreamingQuality.entries.map { it.label }, { viewModel.setWifiQuality(StreamingQuality.entries[it]) })
+            QualityRow(Icons.Default.SignalCellularAlt, "Mobil veriyle dinleme", "Mobil ve diğer ölçülen ağlarda", mobileQuality.label,
+                StreamingQuality.entries.map { it.label }, { viewModel.setMobileQuality(StreamingQuality.entries[it]) })
+            QualityRow(Icons.Default.HighQuality, "İndirme kalitesi", "Varsayılan seçim • Deezer hesabına bağlı", downloadQuality.label,
+                DownloadQuality.entries.map { it.label }, { viewModel.setDownloadQuality(DownloadQuality.entries[it]) })
+        }
+        if (matches("indir", "çevrimdışı", "mobil", "veri", "wifi", "wi-fi", "depolama", "dosya")) {
+            SettingsSection("Veri ve indirmeler")
+            SettingsToggle(Icons.Default.DataUsage, "Mobil veriyle indirmeye izin ver",
+                "Kapalıyken ölçülmeyen Wi-Fi veya Ethernet beklenir", mobileDownloads, viewModel::setMobileDownloadsAllowed)
+            val active = downloads.count { it.state == "queued" || it.state == "running" }
+            SettingsLink(Icons.Default.Download, "İndirme sırası ve dosyalar",
+                if (active > 0) "$active şarkı sırada veya indiriliyor" else "İlerleme, iptal ve çevrimdışı dinleme", onNavigateDownloads)
+            SettingsInfo(Icons.Default.Folder, "Kayıt konumu", "Müzik / PlasmaWave")
+        }
+        if (matches("özelleştirme", "görüntü", "ekran", "yenileme", "akıcı", "120", "tema", "görünüm", "renk", "desen", "çubuk", "albüm")) {
+            SettingsSection("Özelleştirme ve görünüm")
+            SettingsLink(Icons.Default.Tune, "Özelleştirme", "Dinamik albüm renkleri, ${seekbarStyle.title}", onNavigateCustomization)
+            SettingsToggle(Icons.Default.ColorLens, "Dinamik albüm renkleri",
+                "Tam ekran oynatıcıyı çalan şarkının albüm kapağına göre renklendir", dynamicColor, viewModel::setDynamicColorEnabled)
+            SettingsLink(Icons.Default.Palette, "Tema ve renkler", "Etkin tema: ${theme.name}", onNavigateThemes)
+            SettingsToggle(Icons.Default.Speed, "Yüksek ekran yenileme hızı", "Desteklenen ekranlarda 120 Hz'e kadar; cihaz ayarları geçerlidir", highRefresh, viewModel::setHighRefreshRate)
+        }
+        if (matches("eklenti", "mod", "gelişmiş", "geliştirici")) {
+            SettingsSection("Gelişmiş")
+            SettingsLink(Icons.Default.Extension, "Eklentiler", "Yüklü modları yönet", onNavigateMods)
+            SettingsToggle(Icons.Default.Code, "Geliştirme örneklerini göster", "Yalnızca test içerikleri", settings.showDevFixtures) {
+                viewModel.updateSettings(settings.copy(showDevFixtures = it))
             }
         }
+        if (matches("hakkında", "sürüm", "plasmawave")) {
+            SettingsSection("Hakkında")
+            SettingsInfo(Icons.Default.Info, "PlasmaWave", "0.1.0-alpha")
+        }
+        Spacer(Modifier.height(80.dp))
+    }
+}
 
-        Spacer(modifier = Modifier.height(100.dp))
+@Composable
+private fun SettingsSection(title: String) {
+    Spacer(Modifier.height(24.dp))
+    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun SettingsLink(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    SettingRow(icon, title, subtitle, Modifier.clickable(onClick = onClick)) {
+        Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, modifier = Modifier.size(15.dp), tint = LocalPlasmaColors.current.textSecondary)
+    }
+}
+
+@Composable
+private fun SettingsInfo(icon: ImageVector, title: String, subtitle: String) { SettingRow(icon, title, subtitle) {} }
+
+@Composable
+private fun SettingsToggle(icon: ImageVector, title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    SettingRow(icon, title, subtitle) { Switch(checked = checked, onCheckedChange = onChange) }
+}
+
+@Composable
+private fun QualityRow(icon: ImageVector, title: String, subtitle: String, selected: String, options: List<String>, onSelect: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        SettingRow(icon, title, "$subtitle • $selected", Modifier.clickable { expanded = true }) {
+            Icon(Icons.Default.ExpandMore, contentDescription = "Kalite seç")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEachIndexed { index, option ->
+                DropdownMenuItem(text = { Text(option) }, leadingIcon = { if (selected == option) Icon(Icons.Default.Check, contentDescription = null) },
+                    onClick = { onSelect(index); expanded = false })
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(icon: ImageVector, title: String, subtitle: String, modifier: Modifier = Modifier, trailing: @Composable () -> Unit) {
+    Row(modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onBackground)
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LocalPlasmaColors.current.textSecondary)
+        }
+        Spacer(Modifier.width(8.dp))
+        trailing()
     }
 }
