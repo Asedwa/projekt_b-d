@@ -40,17 +40,18 @@ if [[ -n "$(git status --porcelain)" || "$(git rev-parse HEAD)" != "$target" ]];
 fi
 
 version="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' android/app/build.gradle.kts | head -n 1)"
-if [[ -z "$version" ]]; then
-    echo "Could not read the Android version name." >&2
+if [[ ! "$version" =~ ^[[:alnum:]][[:alnum:]._-]*$ ]]; then
+    echo "Could not read a safe Android version name." >&2
     exit 1
 fi
 artifact_dir="$(mktemp -d "${TMPDIR:-/tmp}/plasmawave-apk.XXXXXX")"
 trap 'rm -rf -- "$artifact_dir"' EXIT
-cp android/app/build/outputs/apk/debug/app-debug.apk "$artifact_dir/PlasmaWave.apk"
+artifact_name="PlasmaWave-${version}.apk"
+cp android/app/build/outputs/apk/debug/app-debug.apk "$artifact_dir/$artifact_name"
 
 tag="build-$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
 # Publish only after the upload succeeds, so the latest link never points at an empty release.
-gh release create "$tag" "$artifact_dir/PlasmaWave.apk" --repo "$repo_name" --target "$target" \
+gh release create "$tag" "$artifact_dir/$artifact_name" --repo "$repo_name" --target "$target" \
     --title "PlasmaWave $version" --notes "Android APK built from source commit $target." --draft
 gh release edit "$tag" --repo "$repo_name" --draft=false --latest
 echo "Published $repo_name release $tag for $target."

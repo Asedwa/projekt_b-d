@@ -4,9 +4,9 @@
 
 ## Android APK
 
-[**Download the latest Android APK**](https://github.com/Asedwa/plasmawave/releases/latest/download/PlasmaWave.apk)
+[**Download the latest Android APK**](https://github.com/Asedwa/plasmawave/releases/latest)
 
-The downloadable APK is a debug build of the latest published source. This private repository and its releases require GitHub access.
+Choose the versioned `PlasmaWave-<version>.apk` file under Assets. The APK is a debug build of the latest published source. This private repository and its releases require GitHub access.
 
 ---
 
