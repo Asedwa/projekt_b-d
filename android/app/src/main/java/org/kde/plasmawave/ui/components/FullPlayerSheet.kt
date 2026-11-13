@@ -127,7 +127,7 @@ fun FullPlayerSheet(
     val screenBrush = remember(animTopColor, animBottomColor) {
         Brush.verticalGradient(
             0.0f to animTopColor.copy(alpha = 1f),
-            0.45f to animTopColor.copy(alpha = 0.92f),
+            0.50f to animTopColor.copy(alpha = 0.88f),
             1.0f to animBottomColor.copy(alpha = 1f)
         )
     }
@@ -172,6 +172,7 @@ fun FullPlayerSheet(
         containerColor = bg,
         shape = RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp),
         dragHandle = null,
+        sheetMaxWidth = androidx.compose.ui.unit.Dp.Unspecified,
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) }
     ) {
         BoxWithConstraints(
@@ -182,370 +183,604 @@ fun FullPlayerSheet(
                 .statusBarsPadding()
                 .navigationBarsPadding()
         ) {
-            val isCompactScreen = maxHeight < 660.dp
-            val coverSize = (maxHeight * 0.38f).coerceIn(180.dp, 330.dp)
+            val isLandscape = maxWidth > maxHeight
 
-            Column(
-                modifier = if (isCompactScreen) {
-                    Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 8.dp, bottom = 12.dp)
-                } else {
-                    Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 8.dp, bottom = 12.dp)
-                },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = if (isCompactScreen) Arrangement.spacedBy(16.dp) else Arrangement.SpaceBetween
-            ) {
-                // 1. Top Header Row (Playing X of Y Pill, Cast, 3-dots Menu)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        onClick = onDismiss,
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.Black.copy(alpha = 0.35f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Kapat",
-                                modifier = Modifier.size(18.dp),
-                                tint = Color.White
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Icon(
-                                Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color.White.copy(alpha = 0.85f)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "Çalıyor $currentTrackIndex / $totalTracks",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                                color = Color.White
-                            )
-                        }
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = { Toast.makeText(context, "Yayın cihazı aranıyor...", Toast.LENGTH_SHORT).show() },
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.28f))
-                        ) {
-                            Icon(
-                                Icons.Default.Cast,
-                                contentDescription = "Yayınla",
-                                modifier = Modifier.size(19.dp),
-                                tint = Color.White
-                            )
-                        }
-                        IconButton(
-                            onClick = onOpenMenu,
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.28f))
-                        ) {
-                            Icon(
-                                Icons.Default.MoreVert,
-                                contentDescription = "Şarkı seçenekleri",
-                                modifier = Modifier.size(20.dp),
-                                tint = Color.White
-                            )
-                        }
-                    }
-                }
-
-                // 2. Cover Art with Selected Frame and Swipe-to-Skip Gesture
-                Box(
-                    modifier = Modifier
-                        .size(coverSize)
-                        .offset { IntOffset(dragOffset.value.roundToInt(), 0) }
-                        .graphicsLayer {
-                            rotationZ = (dragOffset.value / 600f) * 10f
-                            alpha = (1f - (kotlin.math.abs(dragOffset.value) / 800f)).coerceIn(0.35f, 1f)
-                        }
-                        .pointerInput(entry.track.id, swipeToSkipEnabled) {
-                            if (!swipeToSkipEnabled) return@pointerInput
-                            detectHorizontalDragGestures(
-                                onHorizontalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    coroutineScope.launch {
-                                        dragOffset.snapTo(dragOffset.value + dragAmount)
-                                    }
-                                },
-                                onDragEnd = {
-                                    val threshold = 160f
-                                    if (dragOffset.value < -threshold) {
-                                        // Swipe Left -> Skip Next
-                                        coroutineScope.launch {
-                                            dragOffset.animateTo(-700f, tween(150))
-                                            onSkipNext()
-                                            dragOffset.snapTo(700f)
-                                            dragOffset.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 400f))
-                                        }
-                                    } else if (dragOffset.value > threshold) {
-                                        // Swipe Right -> Skip Previous
-                                        coroutineScope.launch {
-                                            dragOffset.animateTo(700f, tween(150))
-                                            onSkipPrevious()
-                                            dragOffset.snapTo(-700f)
-                                            dragOffset.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 400f))
-                                        }
-                                    } else {
-                                        // Snap back
-                                        coroutineScope.launch {
-                                            dragOffset.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 500f))
-                                        }
-                                    }
-                                },
-                                onDragCancel = {
-                                    coroutineScope.launch { dragOffset.animateTo(0f) }
-                                }
-                            )
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    ArtworkFramedView(
-                        artworkUrl = entry.track.artworkUrl,
-                        frame = albumFrame,
-                        accentColor = effectiveAccent,
-                        isPlaying = playerState.isPlaying,
-                        size = coverSize
-                    )
-                }
-
-                // 3. Seekbar & Audio Quality Info Row
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp)
-                ) {
-                    CustomSeekbar(
-                        positionMs = progress.positionMs,
-                        durationMs = progress.durationMs,
-                        style = seekbarStyle,
-                        primaryColor = effectiveAccent,
-                        trackColor = Color.White.copy(alpha = 0.22f),
-                        isPlaying = playerState.isPlaying,
-                        onSeekTo = onSeekTo,
-                        modifier = Modifier.fillMaxWidth(),
-                        showTimeLabels = false
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            formatMs(progress.positionMs),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.65f)
-                        )
-                        Text(
-                            audioQualityLabel,
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                            color = Color.White.copy(alpha = 0.60f)
-                        )
-                        Text(
-                            formatMs(progress.durationMs),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.65f)
-                        )
-                    }
-                }
-
-                // 4. Centered Title, Clickable Artist and Album Info
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        entry.track.title,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.4.sp
-                        ),
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        entry.track.artist,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                        color = Color.White.copy(alpha = 0.85f),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onArtistClick(entry.track.artist) }
-                            .padding(horizontal = 10.dp, vertical = 2.dp)
-                    )
-                    if (entry.track.album.isNotBlank() && !entry.track.album.equals(entry.track.title, ignoreCase = true)) {
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            entry.track.album,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Normal),
-                            color = Color.White.copy(alpha = 0.50f),
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { onAlbumClick(entry.track.album, entry.track.artist) }
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                // 5. Playback Controls Row (|<  (10)  ( > )  (10)  >|)
+            if (isLandscape) {
+                // LANDSCAPE: Two Column Layout with Artwork Left, Controls Right
+                val landCoverSize = (maxHeight - 32.dp).coerceIn(160.dp, 300.dp)
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onSkipPrevious) {
-                        Icon(
-                            Icons.Default.SkipPrevious,
-                            contentDescription = "Önceki",
-                            modifier = Modifier.size(34.dp),
-                            tint = Color.White
-                        )
-                    }
-                    IconButton(onClick = { onSeekTo((progress.positionMs - 10000).coerceAtLeast(0L)) }) {
-                        Icon(
-                            Icons.Default.Replay10,
-                            contentDescription = "10s Geri",
-                            modifier = Modifier.size(28.dp),
-                            tint = Color.White.copy(alpha = 0.85f)
-                        )
-                    }
                     Box(
                         modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(effectiveAccent),
+                            .weight(1f)
+                            .fillMaxHeight(),
                         contentAlignment = Alignment.Center
                     ) {
-                        IconButton(onClick = onTogglePlayPause, modifier = Modifier.fillMaxSize()) {
-                            val onAccent = if (effectiveAccent.luminance() > 0.5f) Color(0xFF121212) else Color.White
-                            Icon(
-                                if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (playerState.isPlaying) "Duraklat" else "Çal",
-                                tint = onAccent,
-                                modifier = Modifier.size(38.dp)
-                            )
-                        }
-                    }
-                    IconButton(onClick = { onSeekTo((progress.positionMs + 10000).coerceAtMost(progress.durationMs)) }) {
-                        Icon(
-                            Icons.Default.Forward10,
-                            contentDescription = "10s İleri",
-                            modifier = Modifier.size(28.dp),
-                            tint = Color.White.copy(alpha = 0.85f)
+                        PlayerArtwork(
+                            coverSize = landCoverSize,
+                            dragOffset = dragOffset,
+                            swipeToSkipEnabled = swipeToSkipEnabled,
+                            entry = entry,
+                            albumFrame = albumFrame,
+                            effectiveAccent = effectiveAccent,
+                            isPlaying = playerState.isPlaying,
+                            onSkipPrevious = onSkipPrevious,
+                            onSkipNext = onSkipNext,
+                            coroutineScope = coroutineScope
                         )
                     }
-                    IconButton(onClick = onSkipNext) {
-                        Icon(
-                            Icons.Default.SkipNext,
-                            contentDescription = "Sonraki",
-                            modifier = Modifier.size(34.dp),
-                            tint = Color.White
+
+                    Spacer(Modifier.width(18.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .fillMaxHeight()
+                            .padding(vertical = 4.dp),
+                        verticalArrangement = Arrangement.SpaceBetween,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        PlayerHeader(
+                            currentTrackIndex = currentTrackIndex,
+                            totalTracks = totalTracks,
+                            onDismiss = onDismiss,
+                            onOpenMenu = onOpenMenu,
+                            context = context
+                        )
+
+                        PlayerInfo(
+                            title = entry.track.title,
+                            artist = entry.track.artist,
+                            album = entry.track.album,
+                            onArtistClick = onArtistClick,
+                            onAlbumClick = onAlbumClick
+                        )
+
+                        PlayerSeekbar(
+                            progress = progress,
+                            seekbarStyle = seekbarStyle,
+                            effectiveAccent = effectiveAccent,
+                            isPlaying = playerState.isPlaying,
+                            audioQualityLabel = audioQualityLabel,
+                            onSeekTo = onSeekTo
+                        )
+
+                        PlayerControls(
+                            isPlaying = playerState.isPlaying,
+                            effectiveAccent = effectiveAccent,
+                            progress = progress,
+                            onSkipPrevious = onSkipPrevious,
+                            onTogglePlayPause = onTogglePlayPause,
+                            onSkipNext = onSkipNext,
+                            onSeekTo = onSeekTo,
+                            compact = true
+                        )
+
+                        PlayerActionBar(
+                            repeatMode = playerState.repeatMode,
+                            isShuffle = playerState.isShuffle,
+                            canStartMix = canStartMix,
+                            isFavorite = isFavorite,
+                            effectiveAccent = effectiveAccent,
+                            onToggleRepeat = onToggleRepeat,
+                            onToggleShuffle = onToggleShuffle,
+                            onStartMix = onStartMix,
+                            onShowSleepTimer = onShowSleepTimer,
+                            onToggleFavorite = onToggleFavorite,
+                            onAddToPlaylist = onAddToPlaylist,
+                            onOpenMenu = onOpenMenu,
+                            compact = true
                         )
                     }
                 }
+            } else {
+                // PORTRAIT: Perfectly spaced, full-height single column layout
+                val isCompactScreen = maxHeight < 660.dp
+                val coverSize = (maxHeight * 0.42f).coerceIn(200.dp, 360.dp)
 
-                // 6. Sleek 7-Icon Action Bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = if (isCompactScreen) {
+                        Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp)
+                            .padding(top = 8.dp, bottom = 16.dp)
+                    } else {
+                        Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp)
+                            .padding(top = 8.dp, bottom = 18.dp)
+                    },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = if (isCompactScreen) Arrangement.spacedBy(16.dp) else Arrangement.SpaceBetween
                 ) {
-                    IconButton(onClick = onToggleRepeat) {
-                        val (icon, tint) = when (playerState.repeatMode) {
-                            FfiRepeatMode.OFF -> Icons.Default.Repeat to Color.White.copy(alpha = 0.65f)
-                            FfiRepeatMode.ALL -> Icons.Default.Repeat to effectiveAccent
-                            FfiRepeatMode.ONE -> Icons.Default.RepeatOne to effectiveAccent
-                        }
-                        Icon(icon, contentDescription = "Tekrarla", tint = tint, modifier = Modifier.size(23.dp))
-                    }
-                    IconButton(onClick = onToggleShuffle) {
-                        Icon(
-                            Icons.Default.Shuffle,
-                            contentDescription = "Karıştır",
-                            tint = if (playerState.isShuffle) effectiveAccent else Color.White.copy(alpha = 0.65f),
-                            modifier = Modifier.size(23.dp)
-                        )
-                    }
-                    IconButton(onClick = onStartMix, enabled = canStartMix) {
-                        Icon(
-                            Icons.Default.Radio,
-                            contentDescription = "Şarkı miksi",
-                            tint = if (canStartMix) Color.White.copy(alpha = 0.80f) else Color.White.copy(alpha = 0.30f),
-                            modifier = Modifier.size(23.dp)
-                        )
-                    }
-                    IconButton(onClick = onShowSleepTimer) {
-                        Icon(
-                            Icons.Default.Bedtime,
-                            contentDescription = "Uyku zamanlayıcı",
-                            tint = Color.White.copy(alpha = 0.80f),
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    IconButton(onClick = onToggleFavorite) {
-                        Icon(
-                            if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = if (isFavorite) "Beğeniyi kaldır" else "Şarkıyı beğen",
-                            tint = if (isFavorite) effectiveAccent else Color.White.copy(alpha = 0.80f),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    IconButton(onClick = onAddToPlaylist) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.PlaylistAdd,
-                            contentDescription = "Listeye ekle",
-                            tint = Color.White.copy(alpha = 0.80f),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    IconButton(onClick = onOpenMenu) {
-                        Icon(
-                            Icons.Default.GraphicEq,
-                            contentDescription = "Seçenekler",
-                            tint = Color.White.copy(alpha = 0.80f),
-                            modifier = Modifier.size(23.dp)
-                        )
-                    }
+                    PlayerHeader(
+                        currentTrackIndex = currentTrackIndex,
+                        totalTracks = totalTracks,
+                        onDismiss = onDismiss,
+                        onOpenMenu = onOpenMenu,
+                        context = context
+                    )
+
+                    PlayerArtwork(
+                        coverSize = coverSize,
+                        dragOffset = dragOffset,
+                        swipeToSkipEnabled = swipeToSkipEnabled,
+                        entry = entry,
+                        albumFrame = albumFrame,
+                        effectiveAccent = effectiveAccent,
+                        isPlaying = playerState.isPlaying,
+                        onSkipPrevious = onSkipPrevious,
+                        onSkipNext = onSkipNext,
+                        coroutineScope = coroutineScope
+                    )
+
+                    PlayerSeekbar(
+                        progress = progress,
+                        seekbarStyle = seekbarStyle,
+                        effectiveAccent = effectiveAccent,
+                        isPlaying = playerState.isPlaying,
+                        audioQualityLabel = audioQualityLabel,
+                        onSeekTo = onSeekTo
+                    )
+
+                    PlayerInfo(
+                        title = entry.track.title,
+                        artist = entry.track.artist,
+                        album = entry.track.album,
+                        onArtistClick = onArtistClick,
+                        onAlbumClick = onAlbumClick
+                    )
+
+                    PlayerControls(
+                        isPlaying = playerState.isPlaying,
+                        effectiveAccent = effectiveAccent,
+                        progress = progress,
+                        onSkipPrevious = onSkipPrevious,
+                        onTogglePlayPause = onTogglePlayPause,
+                        onSkipNext = onSkipNext,
+                        onSeekTo = onSeekTo,
+                        compact = false
+                    )
+
+                    PlayerActionBar(
+                        repeatMode = playerState.repeatMode,
+                        isShuffle = playerState.isShuffle,
+                        canStartMix = canStartMix,
+                        isFavorite = isFavorite,
+                        effectiveAccent = effectiveAccent,
+                        onToggleRepeat = onToggleRepeat,
+                        onToggleShuffle = onToggleShuffle,
+                        onStartMix = onStartMix,
+                        onShowSleepTimer = onShowSleepTimer,
+                        onToggleFavorite = onToggleFavorite,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onOpenMenu = onOpenMenu,
+                        compact = false
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PlayerHeader(
+    currentTrackIndex: Int,
+    totalTracks: Int,
+    onDismiss: () -> Unit,
+    onOpenMenu: () -> Unit,
+    context: android.content.Context
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            onClick = onDismiss,
+            shape = RoundedCornerShape(12.dp),
+            color = Color.Black.copy(alpha = 0.35f)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Kapat",
+                    modifier = Modifier.size(18.dp),
+                    tint = Color.White
+                )
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = Color.White.copy(alpha = 0.85f)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Çalıyor $currentTrackIndex / $totalTracks",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
+                    color = Color.White
+                )
+            }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = { Toast.makeText(context, "Yayın cihazı aranıyor...", Toast.LENGTH_SHORT).show() },
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.28f))
+            ) {
+                Icon(
+                    Icons.Default.Cast,
+                    contentDescription = "Yayınla",
+                    modifier = Modifier.size(19.dp),
+                    tint = Color.White
+                )
+            }
+            IconButton(
+                onClick = onOpenMenu,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.28f))
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Şarkı seçenekleri",
+                    modifier = Modifier.size(20.dp),
+                    tint = Color.White
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerArtwork(
+    coverSize: androidx.compose.ui.unit.Dp,
+    dragOffset: Animatable<Float, *>,
+    swipeToSkipEnabled: Boolean,
+    entry: uniffi.plasmawave_core.FfiQueueEntry,
+    albumFrame: AlbumCoverFrame,
+    effectiveAccent: Color,
+    isPlaying: Boolean,
+    onSkipPrevious: () -> Unit,
+    onSkipNext: () -> Unit,
+    coroutineScope: kotlinx.coroutines.CoroutineScope
+) {
+    Box(
+        modifier = Modifier
+            .size(coverSize)
+            .offset { IntOffset(dragOffset.value.roundToInt(), 0) }
+            .graphicsLayer {
+                rotationZ = (dragOffset.value / 600f) * 10f
+                alpha = (1f - (kotlin.math.abs(dragOffset.value) / 800f)).coerceIn(0.35f, 1f)
+            }
+            .pointerInput(entry.track.id, swipeToSkipEnabled) {
+                if (!swipeToSkipEnabled) return@pointerInput
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        coroutineScope.launch {
+                            dragOffset.snapTo(dragOffset.value + dragAmount)
+                        }
+                    },
+                    onDragEnd = {
+                        val threshold = 160f
+                        if (dragOffset.value < -threshold) {
+                            coroutineScope.launch {
+                                dragOffset.animateTo(-700f, tween(150))
+                                onSkipNext()
+                                dragOffset.snapTo(700f)
+                                dragOffset.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 400f))
+                            }
+                        } else if (dragOffset.value > threshold) {
+                            coroutineScope.launch {
+                                dragOffset.animateTo(700f, tween(150))
+                                onSkipPrevious()
+                                dragOffset.snapTo(-700f)
+                                dragOffset.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 400f))
+                            }
+                        } else {
+                            coroutineScope.launch {
+                                dragOffset.animateTo(0f, spring(dampingRatio = 0.8f, stiffness = 500f))
+                            }
+                        }
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch { dragOffset.animateTo(0f) }
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        ArtworkFramedView(
+            artworkUrl = entry.track.artworkUrl,
+            frame = albumFrame,
+            accentColor = effectiveAccent,
+            isPlaying = isPlaying,
+            size = coverSize
+        )
+    }
+}
+
+@Composable
+private fun PlayerSeekbar(
+    progress: PlaybackProgress,
+    seekbarStyle: SeekbarStyle,
+    effectiveAccent: Color,
+    isPlaying: Boolean,
+    audioQualityLabel: String,
+    onSeekTo: (Long) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp)
+    ) {
+        CustomSeekbar(
+            positionMs = progress.positionMs,
+            durationMs = progress.durationMs,
+            style = seekbarStyle,
+            primaryColor = effectiveAccent,
+            trackColor = Color.White.copy(alpha = 0.22f),
+            isPlaying = isPlaying,
+            onSeekTo = onSeekTo,
+            modifier = Modifier.fillMaxWidth(),
+            showTimeLabels = false
+        )
+        Spacer(Modifier.height(4.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                formatMs(progress.positionMs),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.65f)
+            )
+            Text(
+                audioQualityLabel,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                color = Color.White.copy(alpha = 0.60f)
+            )
+            Text(
+                formatMs(progress.durationMs),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.65f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerInfo(
+    title: String,
+    artist: String,
+    album: String,
+    onArtistClick: (String) -> Unit,
+    onAlbumClick: (String, String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.4.sp
+            ),
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            artist,
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+            color = Color.White.copy(alpha = 0.85f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onArtistClick(artist) }
+                .padding(horizontal = 10.dp, vertical = 2.dp)
+        )
+        if (album.isNotBlank() && !album.equals(title, ignoreCase = true)) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                album,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Normal),
+                color = Color.White.copy(alpha = 0.50f),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onAlbumClick(album, artist) }
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerControls(
+    isPlaying: Boolean,
+    effectiveAccent: Color,
+    progress: PlaybackProgress,
+    onSkipPrevious: () -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onSkipNext: () -> Unit,
+    onSeekTo: (Long) -> Unit,
+    compact: Boolean
+) {
+    val playBtnSize = if (compact) 54.dp else 72.dp
+    val playIconSize = if (compact) 30.dp else 38.dp
+    val skipSize = if (compact) 28.dp else 34.dp
+    val jumpSize = if (compact) 24.dp else 28.dp
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onSkipPrevious) {
+            Icon(
+                Icons.Default.SkipPrevious,
+                contentDescription = "Önceki",
+                modifier = Modifier.size(skipSize),
+                tint = Color.White
+            )
+        }
+        IconButton(onClick = { onSeekTo((progress.positionMs - 10000).coerceAtLeast(0L)) }) {
+            Icon(
+                Icons.Default.Replay10,
+                contentDescription = "10s Geri",
+                modifier = Modifier.size(jumpSize),
+                tint = Color.White.copy(alpha = 0.85f)
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(playBtnSize)
+                .clip(CircleShape)
+                .background(effectiveAccent),
+            contentAlignment = Alignment.Center
+        ) {
+            IconButton(onClick = onTogglePlayPause, modifier = Modifier.fillMaxSize()) {
+                val onAccent = if (effectiveAccent.luminance() > 0.5f) Color(0xFF121212) else Color.White
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Duraklat" else "Çal",
+                    tint = onAccent,
+                    modifier = Modifier.size(playIconSize)
+                )
+            }
+        }
+        IconButton(onClick = { onSeekTo((progress.positionMs + 10000).coerceAtMost(progress.durationMs)) }) {
+            Icon(
+                Icons.Default.Forward10,
+                contentDescription = "10s İleri",
+                modifier = Modifier.size(jumpSize),
+                tint = Color.White.copy(alpha = 0.85f)
+            )
+        }
+        IconButton(onClick = onSkipNext) {
+            Icon(
+                Icons.Default.SkipNext,
+                contentDescription = "Sonraki",
+                modifier = Modifier.size(skipSize),
+                tint = Color.White
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerActionBar(
+    repeatMode: FfiRepeatMode,
+    isShuffle: Boolean,
+    canStartMix: Boolean,
+    isFavorite: Boolean,
+    effectiveAccent: Color,
+    onToggleRepeat: () -> Unit,
+    onToggleShuffle: () -> Unit,
+    onStartMix: () -> Unit,
+    onShowSleepTimer: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onOpenMenu: () -> Unit,
+    compact: Boolean
+) {
+    val iconSize = if (compact) 20.dp else 23.dp
+    val favSize = if (compact) 21.dp else 24.dp
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onToggleRepeat) {
+            val (icon, tint) = when (repeatMode) {
+                FfiRepeatMode.OFF -> Icons.Default.Repeat to Color.White.copy(alpha = 0.65f)
+                FfiRepeatMode.ALL -> Icons.Default.Repeat to effectiveAccent
+                FfiRepeatMode.ONE -> Icons.Default.RepeatOne to effectiveAccent
+            }
+            Icon(icon, contentDescription = "Tekrarla", tint = tint, modifier = Modifier.size(iconSize))
+        }
+        IconButton(onClick = onToggleShuffle) {
+            Icon(
+                Icons.Default.Shuffle,
+                contentDescription = "Karıştır",
+                tint = if (isShuffle) effectiveAccent else Color.White.copy(alpha = 0.65f),
+                modifier = Modifier.size(iconSize)
+            )
+        }
+        IconButton(onClick = onStartMix, enabled = canStartMix) {
+            Icon(
+                Icons.Default.Radio,
+                contentDescription = "Şarkı miksi",
+                tint = if (canStartMix) Color.White.copy(alpha = 0.80f) else Color.White.copy(alpha = 0.30f),
+                modifier = Modifier.size(iconSize)
+            )
+        }
+        IconButton(onClick = onShowSleepTimer) {
+            Icon(
+                Icons.Default.Bedtime,
+                contentDescription = "Uyku zamanlayıcı",
+                tint = Color.White.copy(alpha = 0.80f),
+                modifier = Modifier.size((iconSize.value - 1).dp)
+            )
+        }
+        IconButton(onClick = onToggleFavorite) {
+            Icon(
+                if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                contentDescription = if (isFavorite) "Beğeniyi kaldır" else "Şarkıyı beğen",
+                tint = if (isFavorite) effectiveAccent else Color.White.copy(alpha = 0.80f),
+                modifier = Modifier.size(favSize)
+            )
+        }
+        IconButton(onClick = onAddToPlaylist) {
+            Icon(
+                Icons.AutoMirrored.Filled.PlaylistAdd,
+                contentDescription = "Listeye ekle",
+                tint = Color.White.copy(alpha = 0.80f),
+                modifier = Modifier.size(favSize)
+            )
+        }
+        IconButton(onClick = onOpenMenu) {
+            Icon(
+                Icons.Default.GraphicEq,
+                contentDescription = "Seçenekler",
+                tint = Color.White.copy(alpha = 0.80f),
+                modifier = Modifier.size(iconSize)
+            )
         }
     }
 }

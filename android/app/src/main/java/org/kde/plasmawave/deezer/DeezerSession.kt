@@ -149,6 +149,7 @@ class DeezerSession private constructor(context: Context) {
     fun createPlaylist(name: String): String = "deezer:${activeGateway().createPlaylist(name)}"
     fun deletePlaylist(id: String) = activeGateway().deletePlaylist(id.removePrefix("deezer:"))
     fun trackMix(trackId: String): List<FfiTrack> = tracks(activeGateway().trackMix(trackId.removePrefix("deezer:")))
+    fun flow(): List<FfiTrack> = tracks(activeGateway().flow())
     fun favoriteTrackEntries(): List<PlaylistTrackEntry> =
         objects(activeGateway().favorites()).mapIndexedNotNull { index, json ->
             track(json)?.let {

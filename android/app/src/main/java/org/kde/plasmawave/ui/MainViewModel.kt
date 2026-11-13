@@ -709,6 +709,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val _flowLoading = MutableStateFlow(false)
+    val flowLoading: StateFlow<Boolean> = _flowLoading.asStateFlow()
+
+    fun startFlow() {
+        if (_flowLoading.value) return
+        if (!deezerSession.hasSavedSession) {
+            _statusMessage.value = "Deezer Flow için Deezer'a giriş yapın"
+            return
+        }
+        _flowLoading.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                withContext(Dispatchers.Main) {
+                    _statusMessage.value = "Deezer Flow yükleniyor..."
+                }
+                val tracks = deezerSession.flow()
+                if (tracks.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        playbackManager.playTrackList(tracks, 0)
+                        _statusMessage.value = "Deezer Flow başlatıldı (${tracks.size} şarkı)"
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        _statusMessage.value = "Deezer Flow için henüz yeterli şarkı verisi yok"
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    _statusMessage.value = "Flow başlatılamadı: ${(e as? DeezerException)?.message ?: e.message}"
+                }
+            } finally {
+                _flowLoading.value = false
+            }
+        }
+    }
+
     fun executeModAction(modId: String, track: FfiTrack) {
         viewModelScope.launch(Dispatchers.IO) {
             try {

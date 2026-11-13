@@ -1,15 +1,6 @@
 package org.kde.plasmawave.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalConfiguration
+import android.content.res.Configuration
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
 import androidx.compose.ui.text.style.TextAlign
@@ -144,53 +137,109 @@ fun PlaylistDetailScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
+        val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             item {
-                Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    ArtworkImage(
-                        url = playlist.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
-                        modifier = Modifier.size(200.dp),
-                        fallback = if (playlist.id == LOCAL_FAVORITES_ID) Icons.Default.Favorite else Icons.AutoMirrored.Filled.PlaylistPlay,
-                        shape = RoundedCornerShape(10.dp),
-                        background = colors.card
-                    )
-                    Spacer(modifier = Modifier.height(18.dp))
-                    Text(playlist.name, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-                    Spacer(modifier = Modifier.height(4.dp))
-                    val count = if (state is PlaylistLoadState.Loaded) entries.size else playlist.trackCount.toInt()
-                    Text(
-                        "Çalma listesi • $count şarkı" + if (playlist.isLocal) " • Bu cihaz" else " • Deezer",
-                        modifier = Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.bodyMedium.copy(color = colors.textSecondary)
-                    )
-                    if (entries.isNotEmpty()) {
+                val count = if (state is PlaylistLoadState.Loaded) entries.size else playlist.trackCount.toInt()
+                if (isLandscape) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            ArtworkImage(
+                                url = playlist.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
+                                modifier = Modifier.size(96.dp),
+                                fallback = if (playlist.id == LOCAL_FAVORITES_ID) Icons.Default.Favorite else Icons.AutoMirrored.Filled.PlaylistPlay,
+                                shape = RoundedCornerShape(10.dp),
+                                background = colors.card
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(playlist.name, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), maxLines = 1)
+                                Text(
+                                    "Çalma listesi • $count şarkı" + if (playlist.isLocal) " • Bu cihaz" else " • Deezer",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    if (tracks.isNotEmpty()) {
+                                        Button(onClick = { viewModel.playbackManager.playTrackList(tracks) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Çal")
+                                        }
+                                        OutlinedButton(onClick = { viewModel.playbackManager.playTrackList(tracks.shuffled()) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
+                                            Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Karıştır")
+                                        }
+                                    }
+                                    if (entries.any { it.track.provider == "deezer" }) {
+                                        OutlinedButton(onClick = { onDownloadPlaylist(entries.map { it.track }) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
+                                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("İndir")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (entries.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                placeholder = { Text("Listede şarkı veya sanatçı ara") }, singleLine = true
+                            )
+                        }
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                            placeholder = { Text("Listede şarkı veya sanatçı ara") }, singleLine = true
+                        ArtworkImage(
+                            url = playlist.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
+                            modifier = Modifier.size(200.dp),
+                            fallback = if (playlist.id == LOCAL_FAVORITES_ID) Icons.Default.Favorite else Icons.AutoMirrored.Filled.PlaylistPlay,
+                            shape = RoundedCornerShape(10.dp),
+                            background = colors.card
                         )
-                    }
-                    if (tracks.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(onClick = { viewModel.playbackManager.playTrackList(tracks) }, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null)
-                                Text("Tümünü çal")
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Text(playlist.name, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Çalma listesi • $count şarkı" + if (playlist.isLocal) " • Bu cihaz" else " • Deezer",
+                            modifier = Modifier.fillMaxWidth(),
+                            style = MaterialTheme.typography.bodyMedium.copy(color = colors.textSecondary)
+                        )
+                        if (entries.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth(),
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                placeholder = { Text("Listede şarkı veya sanatçı ara") }, singleLine = true
+                            )
+                        }
+                        if (tracks.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(onClick = { viewModel.playbackManager.playTrackList(tracks) }, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                                    Text("Tümünü çal")
+                                }
+                                OutlinedButton(onClick = { viewModel.playbackManager.playTrackList(tracks.shuffled()) }, modifier = Modifier.weight(1f)) {
+                                    Icon(Icons.Default.Shuffle, contentDescription = null)
+                                    Text("Karıştır")
+                                }
                             }
-                            OutlinedButton(onClick = { viewModel.playbackManager.playTrackList(tracks.shuffled()) }, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.Shuffle, contentDescription = null)
-                                Text("Karıştır")
+                        }
+                        if (entries.any { it.track.provider == "deezer" }) {
+                            OutlinedButton(onClick = { onDownloadPlaylist(entries.map { it.track }) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                Icon(Icons.Default.CloudDownload, contentDescription = null)
+                                Text("  Listeyi indir")
                             }
                         }
                     }
-                    if (entries.any { it.track.provider == "deezer" }) {
-                        OutlinedButton(onClick = { onDownloadPlaylist(entries.map { it.track }) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null)
-                            Text("  Listeyi indir")
-                        }
-                    }
+                }
                     if (entries.isNotEmpty()) {
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("Şarkılar", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
@@ -215,7 +264,6 @@ fun PlaylistDetailScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
-            }
             when (state) {
                 PlaylistLoadState.Loading -> item {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {

@@ -127,17 +127,17 @@ object DynamicThemeHelper {
                     } else {
                         bgSat = bgSat.coerceIn(0.45f, 0.80f)
                     }
-                    val bgLight = if (isDarkArtwork) 0.12f else 0.18f
+                    val bgLight = if (isDarkArtwork) 0.16f else 0.22f
                     topBgInt = ColorUtils.HSLToColor(floatArrayOf(bgHue, bgSat, bgLight))
                 } else {
                     // Monochrome / B&W artwork -> deep neutral charcoal
-                    topBgInt = ColorUtils.HSLToColor(floatArrayOf(0f, 0f, 0.10f))
+                    topBgInt = ColorUtils.HSLToColor(floatArrayOf(0f, 0f, 0.12f))
                 }
 
-                // 6. Bottom Background (Fade into deep rich tone)
+                // 6. Bottom Background (Fade into deep rich tone, avoiding pitch black cutoff)
                 val bottomHsl = FloatArray(3)
                 ColorUtils.colorToHSL(topBgInt, bottomHsl)
-                bottomHsl[2] = (bottomHsl[2] * 0.35f).coerceIn(0.03f, 0.07f)
+                bottomHsl[2] = (bottomHsl[2] * 0.50f).coerceIn(0.07f, 0.13f)
                 val bottomBgInt = ColorUtils.HSLToColor(bottomHsl)
 
                 val extracted = ExtractedArtworkColors(

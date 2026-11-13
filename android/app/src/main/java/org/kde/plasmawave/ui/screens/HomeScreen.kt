@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.MainViewModel
@@ -39,6 +41,8 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
                modifier: Modifier = Modifier) {
     val favorites by viewModel.favorites.collectAsState()
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
+    val deezerUser by viewModel.deezerUser.collectAsState()
+    val flowLoading by viewModel.flowLoading.collectAsState()
     val pins by viewModel.pins.collectAsState()
     val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
     val localPlaylists by viewModel.playlists.collectAsState()
@@ -78,7 +82,19 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
+        }
+        if (deezerUser != null) {
+            item {
+                DeezerFlowHeroCard(
+                    isLoading = flowLoading,
+                    onStartFlow = { viewModel.startFlow() },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+        item {
+            Spacer(Modifier.height(4.dp))
             Text("Hızlı erişim", modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Sevdiğin şarkılar ve sabitlediklerin", modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
@@ -86,7 +102,8 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
         }
         if (quick.isNotEmpty()) item {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val cardSize = (maxWidth - 48.dp) / 3
+                val isLandscape = maxWidth > 600.dp
+                val cardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(quick.chunked(9), key = { page -> page.first().id }) { page ->
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -162,6 +179,117 @@ private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel
                     DropdownMenuItem(text = { Text(if (pinned) "Ana sayfadan kaldır" else "Ana sayfaya sabitle") }, onClick = {
                         if (pin is PinnedItem.Playlist) viewModel.togglePinnedPlaylist(pin.playlist); menu = false
                     })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeezerFlowHeroCard(
+    isLoading: Boolean,
+    onStartFlow: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val flowGradient = remember {
+        Brush.horizontalGradient(
+            colors = listOf(
+                Color(0xFF8B5CF6),
+                Color(0xFFEC4899),
+                Color(0xFFF97316)
+            )
+        )
+    }
+    Surface(
+        onClick = onStartFlow,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF1E1B2E),
+        tonalElevation = 2.dp
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF8B5CF6).copy(alpha = 0.28f),
+                            Color(0xFFEC4899).copy(alpha = 0.16f),
+                            Color.Transparent
+                        )
+                    )
+                )
+                .padding(horizontal = 18.dp, vertical = 14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(flowGradient, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.AllInclusive,
+                            contentDescription = "Flow",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Deezer Flow",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.White
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFEC4899).copy(alpha = 0.25f)
+                            ) {
+                                Text(
+                                    "AI AKIŞ",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
+                                    color = Color(0xFFF472B6),
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Zevkine göre sonsuz müzik akışı",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.70f)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                FilledIconButton(
+                    onClick = onStartFlow,
+                    modifier = Modifier.size(44.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = Color.White,
+                        contentColor = Color(0xFF1E1B2E)
+                    )
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color(0xFF8B5CF6),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Flow Başlat", modifier = Modifier.size(26.dp))
+                    }
                 }
             }
         }

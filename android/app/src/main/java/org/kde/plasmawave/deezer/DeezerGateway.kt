@@ -137,6 +137,58 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
             ?: throw DeezerException("Şarkı miksi alınamadı")
     }
 
+    fun flow(): JSONArray {
+        getAccount()
+        val userId = getAccount().id
+        val candidates = listOf(
+            "radio.getUserRadio" to JSONObject().put("user_id", userId),
+            "smart.getSmartRadio" to JSONObject().put("user_id", userId),
+            "radio.getFlow" to JSONObject().put("user_id", userId),
+            "user.getFlow" to JSONObject().put("user_id", userId),
+            "deezer.pageFlow" to JSONObject().put("user_id", userId)
+        )
+        for ((method, payload) in candidates) {
+            try {
+                val res = callWithRefresh(method, payload)
+                val data = res.optJSONArray("data")
+                    ?: res.optJSONArray("tracks")
+                    ?: res.optJSONObject("data")?.optJSONArray("tracks")
+                    ?: res.optJSONObject("TAB")?.optJSONObject("tracks")?.optJSONArray("data")
+                if (data != null && data.length() > 0) {
+                    return data
+                }
+            } catch (_: Exception) {}
+        }
+
+        // Algorithmic flow fallback: Interweave user's favorite tracks with smart track mixes
+        val favs = favorites()
+        if (favs.length() > 0) {
+            val combined = JSONArray()
+            val seen = mutableSetOf<String>()
+            val sampleCount = minOf(favs.length(), 6)
+            val sampleIndices = (0 until favs.length()).shuffled().take(sampleCount)
+            for (idx in sampleIndices) {
+                val favTrack = favs.optJSONObject(idx) ?: continue
+                val trackId = favTrack.optString("SNG_ID")
+                if (trackId.isNotBlank() && seen.add(trackId)) {
+                    combined.put(favTrack)
+                }
+                try {
+                    val mix = trackMix(trackId)
+                    for (m in 0 until minOf(mix.length(), 5)) {
+                        val mixTrack = mix.optJSONObject(m) ?: continue
+                        val mId = mixTrack.optString("SNG_ID")
+                        if (mId.isNotBlank() && seen.add(mId)) {
+                            combined.put(mixTrack)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            if (combined.length() > 0) return combined
+        }
+        throw DeezerException("Deezer Flow yüklenemedi. Favori şarkılarınızı kontrol edin.")
+    }
+
     private fun requireNumericId(id: String) {
         require(id.isNotEmpty() && id.all(Char::isDigit)) { "Geçersiz Deezer kimliği" }
     }

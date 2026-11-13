@@ -2,6 +2,7 @@ package org.kde.plasmawave
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
@@ -15,11 +16,8 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Home
@@ -31,6 +29,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -120,47 +119,112 @@ class MainActivity : ComponentActivity() {
             PlasmaTheme(activeTheme = activeTheme) {
                 CompositionLocalProvider(LocalDeezerConnected provides (deezerUser != null)) {
                     val colors = LocalPlasmaColors.current
-                    Scaffold(modifier = Modifier.fillMaxSize(), containerColor = MaterialTheme.colorScheme.background, bottomBar = {
-                        Column {
-                            AnimatedVisibility(
-                                visible = hasCurrentEntry,
-                                enter = slideInVertically(initialOffsetY = { it }),
-                                exit = slideOutVertically(targetOffsetY = { it })
-                            ) {
-                                LiveMiniPlayer(viewModel, onClick = { isFullPlayerVisible = true })
-                            }
-                            NavigationBar(containerColor = colors.card, tonalElevation = 0.dp) {
-                                listOf(Screen.Home, Screen.Library, Screen.Search, Screen.Queue, Screen.Settings).forEach { screen ->
-                                    NavigationBarItem(selected = currentScreen == screen && currentSubScreen == SubScreen.None,
-                                        onClick = { currentScreen = screen; currentSubScreen = SubScreen.None },
-                                        icon = { Icon(screen.icon, contentDescription = screen.title) }, label = { Text(screen.title, maxLines = 1) },
-                                        colors = NavigationBarItemDefaults.colors(selectedIconColor = MaterialTheme.colorScheme.primary,
-                                            selectedTextColor = MaterialTheme.colorScheme.primary, unselectedIconColor = colors.textSecondary,
-                                            unselectedTextColor = colors.textSecondary, indicatorColor = colors.border))
+                    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+                    val contentArea: @Composable () -> Unit = {
+                        when (val sub = currentSubScreen) {
+                            is SubScreen.PlaylistDetail -> PlaylistDetailScreen(
+                                sub.playlist, viewModel,
+                                onBack = { currentSubScreen = SubScreen.None },
+                                onDownloadPlaylist = requestDownload
+                            )
+                            SubScreen.Themes -> ThemesScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                            SubScreen.Customization -> CustomizationScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                            SubScreen.ModManager -> ModManagerScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                            SubScreen.Downloads -> DownloadsScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                            SubScreen.None -> tabStateHolder.SaveableStateProvider(currentScreen.title) {
+                                when (currentScreen) {
+                                    Screen.Home -> HomeScreen(
+                                        viewModel,
+                                        onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) },
+                                        onDownloadsClick = { currentSubScreen = SubScreen.Downloads }
+                                    )
+                                    Screen.Library -> LibraryScreen(viewModel, onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) })
+                                    Screen.Search -> SearchScreen(viewModel, onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) })
+                                    Screen.Queue -> QueueScreen(playbackManager = viewModel.playbackManager, onTrackMenu = { viewModel.openTrackMenu(it) })
+                                    Screen.Settings -> SettingsScreen(
+                                        viewModel,
+                                        onNavigateThemes = { currentSubScreen = SubScreen.Themes },
+                                        onNavigateMods = { currentSubScreen = SubScreen.ModManager },
+                                        onNavigateDownloads = { currentSubScreen = SubScreen.Downloads },
+                                        onNavigateCustomization = { currentSubScreen = SubScreen.Customization }
+                                    )
                                 }
                             }
                         }
-                    }) { padding ->
-                        Box(Modifier.fillMaxSize().padding(padding)) {
-                            when (val sub = currentSubScreen) {
-                                is SubScreen.PlaylistDetail -> PlaylistDetailScreen(sub.playlist, viewModel,
-                                    onBack = { currentSubScreen = SubScreen.None }, onDownloadPlaylist = requestDownload)
-                                SubScreen.Themes -> ThemesScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
-                                SubScreen.Customization -> CustomizationScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
-                                SubScreen.ModManager -> ModManagerScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
-                                SubScreen.Downloads -> DownloadsScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
-                                SubScreen.None -> tabStateHolder.SaveableStateProvider(currentScreen.title) {
-                                    when (currentScreen) {
-                                        Screen.Home -> HomeScreen(viewModel, onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) },
-                                            onDownloadsClick = { currentSubScreen = SubScreen.Downloads })
-                                        Screen.Library -> LibraryScreen(viewModel, onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) })
-                                        Screen.Search -> SearchScreen(viewModel, onPlaylistClick = { currentSubScreen = SubScreen.PlaylistDetail(it) })
-                                        Screen.Queue -> QueueScreen(playbackManager = viewModel.playbackManager, onTrackMenu = { viewModel.openTrackMenu(it) })
-                                        Screen.Settings -> SettingsScreen(viewModel, onNavigateThemes = { currentSubScreen = SubScreen.Themes },
-                                            onNavigateMods = { currentSubScreen = SubScreen.ModManager }, onNavigateDownloads = { currentSubScreen = SubScreen.Downloads },
-                                            onNavigateCustomization = { currentSubScreen = SubScreen.Customization })
+                    }
+
+                    if (isLandscape) {
+                        Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                            NavigationRail(
+                                containerColor = colors.card,
+                                modifier = Modifier.fillMaxHeight()
+                            ) {
+                                Spacer(Modifier.height(8.dp))
+                                listOf(Screen.Home, Screen.Library, Screen.Search, Screen.Queue, Screen.Settings).forEach { screen ->
+                                    NavigationRailItem(
+                                        selected = currentScreen == screen && currentSubScreen == SubScreen.None,
+                                        onClick = { currentScreen = screen; currentSubScreen = SubScreen.None },
+                                        icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                        label = { Text(screen.title, maxLines = 1) },
+                                        colors = NavigationRailItemDefaults.colors(
+                                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            unselectedIconColor = colors.textSecondary,
+                                            unselectedTextColor = colors.textSecondary,
+                                            indicatorColor = colors.border
+                                        )
+                                    )
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                    contentArea()
+                                }
+                                AnimatedVisibility(
+                                    visible = hasCurrentEntry,
+                                    enter = slideInVertically(initialOffsetY = { it }),
+                                    exit = slideOutVertically(targetOffsetY = { it })
+                                ) {
+                                    LiveMiniPlayer(viewModel, onClick = { isFullPlayerVisible = true })
+                                }
+                            }
+                        }
+                    } else {
+                        Scaffold(
+                            modifier = Modifier.fillMaxSize(),
+                            containerColor = MaterialTheme.colorScheme.background,
+                            bottomBar = {
+                                Column {
+                                    AnimatedVisibility(
+                                        visible = hasCurrentEntry,
+                                        enter = slideInVertically(initialOffsetY = { it }),
+                                        exit = slideOutVertically(targetOffsetY = { it })
+                                    ) {
+                                        LiveMiniPlayer(viewModel, onClick = { isFullPlayerVisible = true })
+                                    }
+                                    NavigationBar(containerColor = colors.card, tonalElevation = 0.dp) {
+                                        listOf(Screen.Home, Screen.Library, Screen.Search, Screen.Queue, Screen.Settings).forEach { screen ->
+                                            NavigationBarItem(
+                                                selected = currentScreen == screen && currentSubScreen == SubScreen.None,
+                                                onClick = { currentScreen = screen; currentSubScreen = SubScreen.None },
+                                                icon = { Icon(screen.icon, contentDescription = screen.title) },
+                                                label = { Text(screen.title, maxLines = 1) },
+                                                colors = NavigationBarItemDefaults.colors(
+                                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                                    unselectedIconColor = colors.textSecondary,
+                                                    unselectedTextColor = colors.textSecondary,
+                                                    indicatorColor = colors.border
+                                                )
+                                            )
+                                        }
                                     }
                                 }
+                            }
+                        ) { padding ->
+                            Box(Modifier.fillMaxSize().padding(padding)) {
+                                contentArea()
                             }
                         }
                     }
