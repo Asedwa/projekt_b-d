@@ -6,10 +6,13 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
+import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Tracks
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -23,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
@@ -33,6 +37,7 @@ import kotlinx.coroutines.withContext
 import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.deezer.DeezerSession
 import org.kde.plasmawave.deezer.DeezerException
+import org.kde.plasmawave.deezer.StreamingQuality
 import uniffi.plasmawave_core.FfiAdvanceReason
 import uniffi.plasmawave_core.FfiQueueEntry
 import uniffi.plasmawave_core.FfiQueueSnapshot
@@ -51,7 +56,8 @@ data class PlayerUiState(
     val durationMs: Long = 0L,
     val queueSnapshot: FfiQueueSnapshot? = null,
     val isShuffle: Boolean = false,
-    val repeatMode: FfiRepeatMode = FfiRepeatMode.OFF
+    val repeatMode: FfiRepeatMode = FfiRepeatMode.OFF,
+    val audioQualityLabel: String = ""
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -91,10 +97,12 @@ class PlaybackManager private constructor(private val context: Context) {
 
     private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
+    private var currentAudioFormat: Format? = null
 
     init {
         initMediaController()
         refreshQueueSnapshot()
+        observeQualityChanges()
     }
 
     private fun initMediaController() {
@@ -144,6 +152,10 @@ class PlaybackManager private constructor(private val context: Context) {
                 onTrackEnded()
             }
             syncPlayerState()
+        }
+
+        override fun onTracksChanged(tracks: Tracks) {
+            updateQualityFromTracks(tracks)
         }
     }
 
@@ -509,10 +521,186 @@ class PlaybackManager private constructor(private val context: Context) {
             player.setMediaItem(mediaItem)
             player.prepare()
             player.play()
-            _uiState.value = _uiState.value.copy(currentEntry = entry)
+            currentAudioFormat = null
+            val initialQualityLabel = computeInitialQualityLabel(entry, offlinePath)
+            _uiState.value = _uiState.value.copy(currentEntry = entry, audioQualityLabel = initialQualityLabel)
             _progress.value = PlaybackProgress(0L, entry.track.durationMs.toLong())
         } catch (e: Exception) {
             Log.e(TAG, "Error loading media item", e)
         }
     }
+
+    private fun observeQualityChanges() {
+        val deezerSession = DeezerSession.get(context)
+        scope.launch {
+            deezerSession.lastResolvedMedia.collect { pair ->
+                if (pair != null) {
+                    val (trackId, format) = pair
+                    val curTrack = _uiState.value.currentEntry?.track
+                    if (curTrack != null && curTrack.id.removePrefix("deezer:") == trackId) {
+                        val currentDecoded = currentAudioFormat
+                        val label = formatAudioQuality(
+                            mimeType = currentDecoded?.sampleMimeType,
+                            sampleRate = currentDecoded?.sampleRate ?: 44100,
+                            bitrate = currentDecoded?.bitrate ?: 0,
+                            deezerFormat = format,
+                            isPreview = curTrack.isPreview
+                        )
+                        _uiState.value = _uiState.value.copy(audioQualityLabel = label)
+                    }
+                }
+            }
+        }
+        scope.launch {
+            combine(deezerSession.wifiQuality, deezerSession.mobileQuality) { _, _ ->
+                deezerSession.currentStreamingQuality()
+            }.collect { quality ->
+                val curEntry = _uiState.value.currentEntry
+                if (curEntry != null && curEntry.track.provider == "deezer" && !curEntry.track.isPreview) {
+                    val cleanId = curEntry.track.id.removePrefix("deezer:")
+                    val resolved = deezerSession.getResolvedTrackFormat(cleanId)
+                    if (resolved == null) {
+                        val label = when (quality) {
+                            StreamingQuality.FLAC -> "FLAC • 44,1 kHz • Kayıpsız"
+                            StreamingQuality.MP3_320 -> "MP3 • 320 kb/s • 44,1 kHz"
+                            StreamingQuality.MP3_128 -> "MP3 • 128 kb/s • 44,1 kHz"
+                            StreamingQuality.AUTO -> "MP3 • 320 kb/s • 44,1 kHz"
+                        }
+                        _uiState.value = _uiState.value.copy(audioQualityLabel = label)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateQualityFromTracks(tracks: Tracks) {
+        var foundFormat: Format? = null
+        for (group in tracks.groups) {
+            if (group.type == C.TRACK_TYPE_AUDIO && group.isSelected) {
+                for (i in 0 until group.length) {
+                    if (group.isTrackSelected(i)) {
+                        foundFormat = group.getTrackFormat(i)
+                        break
+                    }
+                }
+            }
+            if (foundFormat != null) break
+        }
+        if (foundFormat != null) {
+            currentAudioFormat = foundFormat
+            val curTrack = _uiState.value.currentEntry?.track ?: return
+            val cleanId = curTrack.id.removePrefix("deezer:")
+            val deezerFormat = DeezerSession.get(context).getResolvedTrackFormat(cleanId)
+            val label = formatAudioQuality(
+                mimeType = foundFormat.sampleMimeType,
+                sampleRate = foundFormat.sampleRate,
+                bitrate = foundFormat.bitrate,
+                deezerFormat = deezerFormat,
+                isPreview = curTrack.isPreview
+            )
+            _uiState.value = _uiState.value.copy(audioQualityLabel = label)
+        }
+    }
+
+    private fun computeInitialQualityLabel(entry: FfiQueueEntry, offlinePath: String? = null): String {
+        if (entry.track.isPreview) return "MP3 • 128 kb/s • 44,1 kHz"
+
+        if (offlinePath != null) {
+            val lower = offlinePath.lowercase()
+            return when {
+                lower.endsWith(".flac") -> "FLAC • 44,1 kHz • Kayıpsız"
+                lower.endsWith(".wav") -> "WAV • 44,1 kHz • Kayıpsız"
+                lower.endsWith(".m4a") || lower.endsWith(".aac") -> "AAC • 256 kb/s • 44,1 kHz"
+                lower.endsWith(".ogg") || lower.endsWith(".opus") -> "OGG • 320 kb/s • 44,1 kHz"
+                else -> "MP3 • 320 kb/s • 44,1 kHz"
+            }
+        }
+
+        val deezerSession = DeezerSession.get(context)
+        val cleanId = entry.track.id.removePrefix("deezer:")
+        val resolved = deezerSession.getResolvedTrackFormat(cleanId)
+        if (resolved != null) {
+            return formatAudioQuality(null, 44100, 0, deezerFormat = resolved, isPreview = false)
+        }
+
+        if (entry.track.provider == "deezer" && deezerSession.hasSavedSession) {
+            return when (deezerSession.currentStreamingQuality()) {
+                StreamingQuality.FLAC -> "FLAC • 44,1 kHz • Kayıpsız"
+                StreamingQuality.MP3_128 -> "MP3 • 128 kb/s • 44,1 kHz"
+                StreamingQuality.MP3_320 -> "MP3 • 320 kb/s • 44,1 kHz"
+                StreamingQuality.AUTO -> "MP3 • 320 kb/s • 44,1 kHz"
+            }
+        }
+
+        val uriStr = entry.track.playbackUri.orEmpty().lowercase()
+        return when {
+            uriStr.contains(".flac") || uriStr.contains("flac") -> "FLAC • 44,1 kHz • Kayıpsız"
+            uriStr.contains(".wav") || uriStr.contains("wav") -> "WAV • 44,1 kHz • Kayıpsız"
+            uriStr.contains("128") -> "MP3 • 128 kb/s • 44,1 kHz"
+            uriStr.contains(".m4a") || uriStr.contains(".aac") -> "AAC • 256 kb/s • 44,1 kHz"
+            uriStr.contains(".ogg") || uriStr.contains(".opus") -> "OGG • 320 kb/s • 44,1 kHz"
+            else -> "MP3 • 320 kb/s • 44,1 kHz"
+        }
+    }
+}
+
+internal fun formatAudioQuality(
+    mimeType: String?,
+    sampleRate: Int,
+    bitrate: Int,
+    deezerFormat: String? = null,
+    isPreview: Boolean = false
+): String {
+    if (isPreview) return "MP3 • 128 kb/s • 44,1 kHz"
+
+    val rate = if (sampleRate > 0) sampleRate else 44100
+    val rateText = when (rate) {
+        44100 -> "44,1 kHz"
+        48000 -> "48 kHz"
+        96000 -> "96 kHz"
+        88200 -> "88,2 kHz"
+        192000 -> "192 kHz"
+        else -> "${rate / 1000} kHz"
+    }
+
+    val isFlac = deezerFormat.equals("FLAC", ignoreCase = true) ||
+        mimeType?.contains("flac", ignoreCase = true) == true
+    if (isFlac) {
+        return "FLAC • $rateText • Kayıpsız"
+    }
+
+    val isWav = mimeType?.contains("wav", ignoreCase = true) == true ||
+        mimeType?.contains("pcm", ignoreCase = true) == true
+    if (isWav) {
+        return "WAV • $rateText • Kayıpsız"
+    }
+
+    val kbps = when {
+        deezerFormat.equals("MP3_320", ignoreCase = true) -> 320
+        deezerFormat.equals("MP3_128", ignoreCase = true) -> 128
+        deezerFormat.equals("MP3_64", ignoreCase = true) -> 64
+        bitrate > 0 -> {
+            val rounded = (bitrate + 500) / 1000
+            when {
+                rounded in 310..330 -> 320
+                rounded in 240..265 -> 256
+                rounded in 180..200 -> 192
+                rounded in 120..135 -> 128
+                rounded in 60..70 -> 64
+                else -> rounded
+            }
+        }
+        else -> 320
+    }
+
+    val codec = when {
+        mimeType?.contains("aac", ignoreCase = true) == true ||
+            mimeType?.contains("mp4a", ignoreCase = true) == true -> "AAC"
+        mimeType?.contains("ogg", ignoreCase = true) == true ||
+            mimeType?.contains("vorbis", ignoreCase = true) == true ||
+            mimeType?.contains("opus", ignoreCase = true) == true -> "OGG"
+        else -> "MP3"
+    }
+
+    return "$codec • $kbps kb/s • $rateText"
 }

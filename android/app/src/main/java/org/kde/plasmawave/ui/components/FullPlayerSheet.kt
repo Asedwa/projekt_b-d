@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import org.kde.plasmawave.deezer.DeezerSession
+import org.kde.plasmawave.deezer.StreamingQuality
 import org.kde.plasmawave.player.PlaybackProgress
 import org.kde.plasmawave.player.PlayerUiState
 import org.kde.plasmawave.theme.DynamicThemeHelper
@@ -133,15 +135,27 @@ fun FullPlayerSheet(
     val totalTracks = playerState.queueSnapshot?.entries?.size ?: 1
     val currentTrackIndex = (playerState.queueSnapshot?.currentIndex?.toInt() ?: 0) + 1
 
-    val audioQualityLabel = remember(entry.track.playbackUri, entry.track.isPreview) {
-        if (entry.track.isPreview) {
+    val audioQualityLabel = remember(playerState.audioQualityLabel, entry.track.id, entry.track.playbackUri, entry.track.isPreview) {
+        if (playerState.audioQualityLabel.isNotBlank()) {
+            playerState.audioQualityLabel
+        } else if (entry.track.isPreview) {
             "MP3 • 128 kb/s • 44,1 kHz"
         } else {
-            val uri = entry.track.playbackUri.orEmpty().lowercase()
-            when {
-                uri.contains(".flac") || uri.contains("flac") -> "FLAC • 44,1 kHz • Kayıpsız"
-                uri.contains("mp3_128") -> "MP3 • 128 kb/s • 44,1 kHz"
-                else -> "MP3 • 320 kb/s • 44,1 kHz"
+            val session = DeezerSession.get(context)
+            val format = session.getResolvedTrackFormat(entry.track.id)
+            if (format != null) {
+                when {
+                    format.contains("FLAC", ignoreCase = true) -> "FLAC • 44,1 kHz • Kayıpsız"
+                    format.contains("128") -> "MP3 • 128 kb/s • 44,1 kHz"
+                    else -> "MP3 • 320 kb/s • 44,1 kHz"
+                }
+            } else {
+                when (session.currentStreamingQuality()) {
+                    StreamingQuality.FLAC -> "FLAC • 44,1 kHz • Kayıpsız"
+                    StreamingQuality.MP3_128 -> "MP3 • 128 kb/s • 44,1 kHz"
+                    StreamingQuality.MP3_320 -> "MP3 • 320 kb/s • 44,1 kHz"
+                    StreamingQuality.AUTO -> "MP3 • 320 kb/s • 44,1 kHz"
+                }
             }
         }
     }

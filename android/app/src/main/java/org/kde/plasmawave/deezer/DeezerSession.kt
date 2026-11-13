@@ -65,8 +65,12 @@ class DeezerSession private constructor(context: Context) {
     }
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
+    private val _lastResolvedMedia = MutableStateFlow<Pair<String, String>?>(null)
+    val lastResolvedMedia: StateFlow<Pair<String, String>?> = _lastResolvedMedia.asStateFlow()
+    private val _trackFormats = java.util.concurrent.ConcurrentHashMap<String, String>()
     private var gateway: DeezerGateway? = null
     val hasSavedSession: Boolean get() = prefs.contains("session")
+    val isAccountHighQuality: Boolean get() = gateway?.getAccount()?.highQuality == true
 
     @Synchronized
     fun login(arl: String): FfiDeezerUser {
@@ -99,16 +103,45 @@ class DeezerSession private constructor(context: Context) {
         return gateway ?: throw DeezerException("Tam şarkıları dinlemek için Deezer'a giriş yap")
     }
 
-    internal fun resolve(trackId: String): DeezerGateway.Media {
+    fun currentStreamingQuality(): StreamingQuality {
         val mobile = try {
             val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
             if (capabilities == null) true else useMobileStreamingQuality(
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR), connectivity.isActiveNetworkMetered)
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
+                connectivity.isActiveNetworkMetered
+            )
         } catch (_: Exception) { true }
-        return activeGateway().resolve(trackId, qualityForNetwork(mobile, _wifiQuality.value, _mobileQuality.value).format)
+        return qualityForNetwork(mobile, _wifiQuality.value, _mobileQuality.value)
     }
-    internal fun resolveDownload(trackId: String, format: String): DeezerGateway.Media = activeGateway().resolve(trackId, format)
+
+    fun getResolvedTrackFormat(trackId: String): String? =
+        _trackFormats[trackId.removePrefix("deezer:")]
+
+    internal fun resolve(trackId: String): DeezerGateway.Media {
+        val quality = currentStreamingQuality()
+        val media = try {
+            activeGateway().resolve(trackId, quality.format)
+        } catch (e: DeezerException) {
+            if (quality.format != null) {
+                // Graceful fallback to best available quality if exact format isn't available
+                activeGateway().resolve(trackId, null)
+            } else {
+                throw e
+            }
+        }
+        val cleanId = trackId.removePrefix("deezer:")
+        _trackFormats[cleanId] = media.format
+        _lastResolvedMedia.value = cleanId to media.format
+        return media
+    }
+
+    internal fun resolveDownload(trackId: String, format: String): DeezerGateway.Media {
+        val media = activeGateway().resolve(trackId, format)
+        val cleanId = trackId.removePrefix("deezer:")
+        _trackFormats[cleanId] = media.format
+        return media
+    }
     fun setFavorite(trackId: String, favorite: Boolean) =
         activeGateway().setFavorite(trackId.removePrefix("deezer:"), favorite)
     fun editPlaylist(playlistId: String, trackId: String, add: Boolean) =
@@ -146,6 +179,8 @@ class DeezerSession private constructor(context: Context) {
     fun logout() {
         gateway = null
         _connected.value = false
+        _trackFormats.clear()
+        _lastResolvedMedia.value = null
         prefs.edit().clear().commit()
     }
 
