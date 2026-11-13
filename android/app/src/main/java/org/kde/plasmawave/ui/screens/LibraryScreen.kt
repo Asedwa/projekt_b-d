@@ -45,6 +45,9 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
     val pins by viewModel.pins.collectAsState()
     val deezerUser by viewModel.deezerUser.collectAsState()
+    val flowLibraryPinned by viewModel.flowLibraryPinned.collectAsState()
+    val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
+    val flowLoading by viewModel.flowLoading.collectAsState()
     val deezerBusy by viewModel.deezerBusy.collectAsState()
     val deezerLoginError by viewModel.deezerLoginError.collectAsState()
     val loading by viewModel.deezerLibraryLoading.collectAsState()
@@ -84,6 +87,12 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
         }, sort)
     }
 
+    val showFlow = remember(flowLibraryPinned, deezerUser, filter, query) {
+        flowLibraryPinned && deezerUser != null &&
+            (filter == PlaylistFilter.ALL || filter == PlaylistFilter.DEEZER || filter == PlaylistFilter.PINNED) &&
+            (query.isBlank() || "deezer flow".contains(query.trim(), ignoreCase = true) || "flow".contains(query.trim(), ignoreCase = true))
+    }
+
     Column(modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -119,7 +128,7 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
                 Icon(if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView, contentDescription = if (grid) "Liste görünümü" else "Izgara görünümü")
             }
         }
-        if (visible.isEmpty()) {
+        if (visible.isEmpty() && !showFlow) {
             Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (loading && entries.isEmpty()) { CircularProgressIndicator(modifier = Modifier.size(28.dp)); Spacer(Modifier.height(12.dp)); Text("Kitaplığın yükleniyor…", color = colors.textSecondary) }
                 else {
@@ -131,12 +140,30 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
             LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(bottom = 80.dp)) {
+                if (showFlow) {
+                    item(key = "flow:deezer") {
+                        FlowGridCell(
+                            viewModel = viewModel,
+                            isQuickAccessPinned = flowQuickAccessPinned,
+                            isLoading = flowLoading
+                        )
+                    }
+                }
                 items(visible, key = { it.playlist.id }) { entry ->
                     PlaylistCell(entry.playlist, "playlist:${entry.playlist.id}" in pinnedIds, viewModel, onPlaylistClick, true)
                 }
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+                if (showFlow) {
+                    item(key = "flow:deezer") {
+                        FlowListCell(
+                            viewModel = viewModel,
+                            isQuickAccessPinned = flowQuickAccessPinned,
+                            isLoading = flowLoading
+                        )
+                    }
+                }
                 items(visible, key = { it.playlist.id }) { entry ->
                     PlaylistCell(entry.playlist, "playlist:${entry.playlist.id}" in pinnedIds, viewModel, onPlaylistClick, false)
                 }
@@ -206,6 +233,230 @@ private fun PlaylistCell(playlist: FfiPlaylist, pinned: Boolean, viewModel: Main
                 Text("${playlist.trackCount} şarkı • " + if (playlist.isLocal) "Bu cihaz" else "Deezer", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
             }
             Menu()
+        }
+    }
+}
+
+@Composable
+private fun FlowGridCell(
+    viewModel: MainViewModel,
+    isQuickAccessPinned: Boolean,
+    isLoading: Boolean
+) {
+    val colors = LocalPlasmaColors.current
+    var showMenu by remember { mutableStateOf(false) }
+    val flowGradient = remember {
+        Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF97316)))
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { viewModel.startFlow() }
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(flowGradient),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(32.dp),
+                    color = Color.White,
+                    strokeWidth = 3.dp
+                )
+            } else {
+                Icon(
+                    Icons.Default.AllInclusive,
+                    contentDescription = "Deezer Flow",
+                    modifier = Modifier.fillMaxSize(0.46f),
+                    tint = Color.White
+                )
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(
+            "Deezer Flow",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.PushPin,
+                contentDescription = "Sabitlendi",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(2.dp))
+            Text(
+                "Flow • Deezer",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Flow seçenekleri",
+                        modifier = Modifier.size(20.dp),
+                        tint = colors.textSecondary
+                    )
+                }
+                if (showMenu) {
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Flow başlat") },
+                            leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                            onClick = {
+                                viewModel.startFlow()
+                                showMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Kitaplıktan kaldır") },
+                            leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                            onClick = {
+                                viewModel.setFlowLibraryPinned(false)
+                                showMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isQuickAccessPinned) "Hızlı erişimden kaldır" else "Hızlı erişime sabitle") },
+                            leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                            onClick = {
+                                viewModel.setFlowQuickAccessPinned(!isQuickAccessPinned)
+                                showMenu = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlowListCell(
+    viewModel: MainViewModel,
+    isQuickAccessPinned: Boolean,
+    isLoading: Boolean
+) {
+    val colors = LocalPlasmaColors.current
+    var showMenu by remember { mutableStateOf(false) }
+    val flowGradient = remember {
+        Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF97316)))
+    }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { viewModel.startFlow() }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(60.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(flowGradient),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = Color.White,
+                    strokeWidth = 2.5.dp
+                )
+            } else {
+                Icon(
+                    Icons.Default.AllInclusive,
+                    contentDescription = "Deezer Flow",
+                    modifier = Modifier.size(32.dp),
+                    tint = Color.White
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Deezer Flow",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.PushPin,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "Flow • Deezer (Kişisel Akış)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        IconButton(
+            onClick = { viewModel.startFlow() },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = "Flow Başlat",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        Box {
+            IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Flow seçenekleri",
+                    modifier = Modifier.size(20.dp),
+                    tint = colors.textSecondary
+                )
+            }
+            if (showMenu) {
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Kitaplıktan kaldır") },
+                        leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                        onClick = {
+                            viewModel.setFlowLibraryPinned(false)
+                            showMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (isQuickAccessPinned) "Hızlı erişimden kaldır" else "Hızlı erişime sabitle") },
+                        leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                        onClick = {
+                            viewModel.setFlowQuickAccessPinned(!isQuickAccessPinned)
+                            showMenu = false
+                        }
+                    )
+                }
+            }
         }
     }
 }

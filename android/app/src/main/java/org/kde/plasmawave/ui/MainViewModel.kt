@@ -100,6 +100,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _swipeToSkipEnabled.value = enabled
     }
 
+    private val _flowHeroCardEnabled = MutableStateFlow(displayPrefs.getBoolean("flow_hero_card_enabled", true))
+    val flowHeroCardEnabled = _flowHeroCardEnabled.asStateFlow()
+    fun setFlowHeroCardEnabled(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("flow_hero_card_enabled", enabled).apply()
+        _flowHeroCardEnabled.value = enabled
+    }
+
+    private val _flowQuickAccessPinned = MutableStateFlow(displayPrefs.getBoolean("flow_quick_access_pinned", true))
+    val flowQuickAccessPinned = _flowQuickAccessPinned.asStateFlow()
+    fun setFlowQuickAccessPinned(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("flow_quick_access_pinned", enabled).apply()
+        _flowQuickAccessPinned.value = enabled
+    }
+
+    private val _flowLibraryPinned = MutableStateFlow(displayPrefs.getBoolean("flow_library_pinned", true))
+    val flowLibraryPinned = _flowLibraryPinned.asStateFlow()
+    fun setFlowLibraryPinned(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("flow_library_pinned", enabled).apply()
+        _flowLibraryPinned.value = enabled
+    }
+
     private val _externalSearchTrigger = MutableStateFlow<Pair<String, SearchCategory>?>(null)
     val externalSearchTrigger = _externalSearchTrigger.asStateFlow()
     fun navigateToSearch(query: String, category: SearchCategory) {

@@ -43,6 +43,8 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
     val deezerUser by viewModel.deezerUser.collectAsState()
     val flowLoading by viewModel.flowLoading.collectAsState()
+    val flowHeroCardEnabled by viewModel.flowHeroCardEnabled.collectAsState()
+    val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
     val pins by viewModel.pins.collectAsState()
     val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
     val localPlaylists by viewModel.playlists.collectAsState()
@@ -51,16 +53,22 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
     val colors = LocalPlasmaColors.current
     val likedPlaylist = if (deezerFavorites.isNotEmpty()) FfiPlaylist(DEEZER_FAVORITES_ID, "Sevdiğim Şarkılar", null, false,
         deezerFavorites.size.toUInt(), null, "real") else null
-    val quick = remember(pins, likedPlaylist, deezerPlaylists, localPlaylists) {
+    val quick = remember(pins, likedPlaylist, deezerPlaylists, localPlaylists, flowQuickAccessPinned, deezerUser) {
         val currentPlaylists = (deezerPlaylists.map { it.playlist } + localPlaylists).associateBy { it.id }
         val refreshed = pins.map { pin ->
             if (pin is PinnedItem.Playlist) PinnedItem.Playlist(currentPlaylists[pin.playlist.id] ?: pin.playlist) else pin
         }
-        (listOfNotNull(likedPlaylist?.let { PinnedItem.Playlist(it) }) + refreshed).distinctBy { it.id }
+        val flowItem = if (flowQuickAccessPinned && deezerUser != null) listOf(PinnedItem.Flow) else emptyList()
+        val likedItem = listOfNotNull(likedPlaylist?.let { PinnedItem.Playlist(it) })
+        (flowItem + likedItem + refreshed).distinctBy { it.id }
     }
     val active = downloads.count { it.state == "queued" || it.state == "running" }
     val completed = downloads.count { it.state == "completed" }
-    val pinnedIds = remember(pins) { pins.mapTo(HashSet(pins.size.coerceAtLeast(1))) { it.id } }
+    val pinnedIds = remember(pins, flowQuickAccessPinned) {
+        val set = pins.mapTo(HashSet(pins.size.coerceAtLeast(1) + 1)) { it.id }
+        if (flowQuickAccessPinned) set.add(PinnedItem.Flow.id)
+        set
+    }
     val primary = MaterialTheme.colorScheme.primary
     val bg = MaterialTheme.colorScheme.background
     val bgBrush = remember(primary, bg) {
@@ -83,7 +91,7 @@ fun HomeScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit,
                 }
             }
         }
-        if (deezerUser != null) {
+        if (deezerUser != null && flowHeroCardEnabled) {
             item {
                 DeezerFlowHeroCard(
                     isLoading = flowLoading,
@@ -153,20 +161,41 @@ private val CardBottomScrim = Brush.verticalGradient(listOf(Color.Transparent, C
 @Composable
 private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit, size: androidx.compose.ui.unit.Dp) {
     var menu by remember(pin.id) { mutableStateOf(false) }
-    val title = when (pin) { is PinnedItem.Track -> pin.track.title; is PinnedItem.Playlist -> pin.playlist.name }
-    val art = when (pin) { is PinnedItem.Track -> pin.track.artworkUrl; is PinnedItem.Playlist -> pin.playlist.artworkUrl }
+    val title = when (pin) {
+        is PinnedItem.Track -> pin.track.title
+        is PinnedItem.Playlist -> pin.playlist.name
+        is PinnedItem.Flow -> "Deezer Flow"
+    }
+    val art = when (pin) {
+        is PinnedItem.Track -> pin.track.artworkUrl
+        is PinnedItem.Playlist -> pin.playlist.artworkUrl
+        is PinnedItem.Flow -> null
+    }
     val primary = MaterialTheme.colorScheme.primary
     val deezerFavBrush = remember(primary) {
         Brush.linearGradient(listOf(primary, Color(0xFF7B63DC), Color(0xFFE993BA)))
     }
+    val flowGradient = remember {
+        Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF97316)))
+    }
     Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).clickable {
-        when (pin) { is PinnedItem.Track -> viewModel.playbackManager.playTrackList(listOf(pin.track)); is PinnedItem.Playlist -> onPlaylistClick(pin.playlist) }
+        when (pin) {
+            is PinnedItem.Track -> viewModel.playbackManager.playTrackList(listOf(pin.track))
+            is PinnedItem.Playlist -> onPlaylistClick(pin.playlist)
+            is PinnedItem.Flow -> viewModel.startFlow()
+        }
     }) {
-        if (pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID) {
+        if (pin is PinnedItem.Flow) {
+            Box(Modifier.fillMaxSize().background(flowGradient), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.AllInclusive, contentDescription = "Deezer Flow", tint = Color.White, modifier = Modifier.size(38.dp))
+            }
+        } else if (pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID) {
             Box(Modifier.fillMaxSize().background(deezerFavBrush), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Favorite, contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
             }
-        } else ArtworkImage(art, modifier = Modifier.fillMaxSize(), fallback = if (pin is PinnedItem.Playlist) Icons.AutoMirrored.Filled.PlaylistPlay else Icons.Default.MusicNote)
+        } else {
+            ArtworkImage(art, modifier = Modifier.fillMaxSize(), fallback = if (pin is PinnedItem.Playlist) Icons.AutoMirrored.Filled.PlaylistPlay else Icons.Default.MusicNote)
+        }
         Box(Modifier.fillMaxWidth().height(52.dp).align(Alignment.BottomCenter).background(CardBottomScrim))
         Text(title, modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, end = 6.dp, bottom = 6.dp), color = Color.White,
             style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -176,9 +205,28 @@ private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel
             }
             if (menu) {
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text(if (pinned) "Ana sayfadan kaldır" else "Ana sayfaya sabitle") }, onClick = {
-                        if (pin is PinnedItem.Playlist) viewModel.togglePinnedPlaylist(pin.playlist); menu = false
-                    })
+                    if (pin is PinnedItem.Flow) {
+                        DropdownMenuItem(
+                            text = { Text("Hızlı erişimden kaldır") },
+                            leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                            onClick = {
+                                viewModel.setFlowQuickAccessPinned(false)
+                                menu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Flow başlat") },
+                            leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                            onClick = {
+                                viewModel.startFlow()
+                                menu = false
+                            }
+                        )
+                    } else {
+                        DropdownMenuItem(text = { Text(if (pinned) "Ana sayfadan kaldır" else "Ana sayfaya sabitle") }, onClick = {
+                            if (pin is PinnedItem.Playlist) viewModel.togglePinnedPlaylist(pin.playlist); menu = false
+                        })
+                    }
                 }
             }
         }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.AllInclusive
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.MusicNote
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +71,9 @@ fun CustomizationScreen(
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val albumFrame by viewModel.albumFrame.collectAsState()
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
+    val flowHeroCardEnabled by viewModel.flowHeroCardEnabled.collectAsState()
+    val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
+    val flowLibraryPinned by viewModel.flowLibraryPinned.collectAsState()
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
 
@@ -163,7 +168,159 @@ fun CustomizationScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // 2. Albüm Kapağını Kaydırarak Şarkı Değiştir
+                // 2. Deezer Flow Yerleşimi
+                Text(
+                    text = "DEEZER FLOW YERLEŞİMİ (AI MÜZİK AKIŞI)",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = colors.card),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(
+                                                Color(0xFF8B5CF6),
+                                                Color(0xFFEC4899),
+                                                Color(0xFFF97316)
+                                            )
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.AllInclusive,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Deezer Flow Konumları",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                                Text(
+                                    text = "Flow'un nerelerde gösterileceğini özelleştirin",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = colors.border.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Switch 1: Ana Sayfa Büyük Afişi
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setFlowHeroCardEnabled(!flowHeroCardEnabled) }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Ana Sayfa Afişi",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                                )
+                                Text(
+                                    text = "Ana sayfanın üstündeki renkli büyük Flow paneli",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                            }
+                            Switch(
+                                checked = flowHeroCardEnabled,
+                                onCheckedChange = viewModel::setFlowHeroCardEnabled,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = primary
+                                )
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        HorizontalDivider(color = colors.border.copy(alpha = 0.3f))
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Switch 2: Hızlı Erişime Sabitle
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setFlowQuickAccessPinned(!flowQuickAccessPinned) }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Hızlı Erişime Sabitle",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                                )
+                                Text(
+                                    text = "Ana sayfadaki 'Hızlı erişim' listesine Flow kartı ekle",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                            }
+                            Switch(
+                                checked = flowQuickAccessPinned,
+                                onCheckedChange = viewModel::setFlowQuickAccessPinned,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = primary
+                                )
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        HorizontalDivider(color = colors.border.copy(alpha = 0.3f))
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Switch 3: Kitaplığa Sabitle
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setFlowLibraryPinned(!flowLibraryPinned) }
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Kitaplığa Sabitle",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                                )
+                                Text(
+                                    text = "Kitaplığım sekmesinde çalma listelerinin başında göster",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                            }
+                            Switch(
+                                checked = flowLibraryPinned,
+                                onCheckedChange = viewModel::setFlowLibraryPinned,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = primary
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // 3. Albüm Kapağını Kaydırarak Şarkı Değiştir
                 Text(
                     text = "ALBÜM KAPAĞI HAREKETİ",
                     style = MaterialTheme.typography.bodySmall.copy(
