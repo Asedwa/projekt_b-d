@@ -2,6 +2,12 @@
 
 **PlasmaWave** is a production-oriented, modular, open-source Android music player built with a **Rust-first** architecture and styled with **KDE Plasma's Breeze Dark** design language.
 
+## Android APK
+
+[**Download the latest Android APK**](https://github.com/Asedwa/plasmawave/releases/latest/download/PlasmaWave.apk)
+
+The downloadable APK is a debug build of the latest published source. This private repository and its releases require GitHub access.
+
 ---
 
 ## 🌟 Key Features
