@@ -87,6 +87,8 @@ impl ThemeRegistry {
             || id == "org.kde.breeze-light"
             || id == "org.plasmawave.oxygen-night"
             || id == "org.plasmawave.nothing"
+            || id == "org.plasmawave.twilight-sparkle"
+            || id == "org.plasmawave.pinkie-pie"
         {
             return Err(DomainError::InvalidInput(
                 "cannot remove built-in themes".into(),

@@ -16,8 +16,12 @@ use core_mods::{ModManager, ModPermission, ModState};
 use core_providers::{AuthorizedDownload, MusicProvider};
 use core_queue::{AdvanceReason, PreviousOutcome, Queue, RepeatMode};
 use core_settings::{Language, Settings, SettingsService};
-use core_storage::Database;
-use core_themes::{ThemeManifest, ThemeRegistry};
+use core_storage::{
+    now_epoch_ms, Database, StoredHistoryEntry, StoredPinnedItem, StoredPlaylistRecord,
+    StoredPlaylistTrackEntry, StoredResumePlaybackState, StoredTrackListeningStat,
+    StoredTrackRecord,
+};
+use core_themes::{CustomThemeSpec, ThemeManifest, ThemeRegistry};
 use provider_deezer::{DeezerAppConfig, DeezerProvider};
 use provider_dev::DevProvider;
 use provider_local::{LocalProvider, LocalTrackInput};
@@ -309,6 +313,23 @@ pub struct FfiSettings {
     pub deezer_user_id: Option<String>,
     pub deezer_access_token: Option<String>,
     pub custom_accent_color: Option<String>,
+    pub high_refresh_rate: bool,
+    pub dynamic_color_enabled: bool,
+    pub swipe_to_skip: bool,
+    pub seekbar_style: String,
+    pub album_frame: String,
+    pub header_logo_style: String,
+    pub home_feed_type: String,
+    pub flow_hero_card_enabled: bool,
+    pub flow_quick_access_pinned: bool,
+    pub flow_library_pinned: bool,
+    pub downloads_quick_access_pinned: bool,
+    pub downloads_library_pinned: bool,
+    pub resume_playback_enabled: bool,
+    pub collect_listening_stats: bool,
+    pub collect_listening_history: bool,
+    pub save_resume_position: bool,
+    pub enabled_home_widgets: Vec<String>,
 }
 
 impl From<Settings> for FfiSettings {
@@ -323,8 +344,284 @@ impl From<Settings> for FfiSettings {
             deezer_user_id: s.deezer_user_id,
             deezer_access_token: s.deezer_access_token,
             custom_accent_color: s.custom_accent_color,
+            high_refresh_rate: s.high_refresh_rate,
+            dynamic_color_enabled: s.dynamic_color_enabled,
+            swipe_to_skip: s.swipe_to_skip,
+            seekbar_style: s.seekbar_style,
+            album_frame: s.album_frame,
+            header_logo_style: s.header_logo_style,
+            home_feed_type: s.home_feed_type,
+            flow_hero_card_enabled: s.flow_hero_card_enabled,
+            flow_quick_access_pinned: s.flow_quick_access_pinned,
+            flow_library_pinned: s.flow_library_pinned,
+            downloads_quick_access_pinned: s.downloads_quick_access_pinned,
+            downloads_library_pinned: s.downloads_library_pinned,
+            resume_playback_enabled: s.resume_playback_enabled,
+            collect_listening_stats: s.collect_listening_stats,
+            collect_listening_history: s.collect_listening_history,
+            save_resume_position: s.save_resume_position,
+            enabled_home_widgets: s.enabled_home_widgets,
         }
     }
+}
+
+impl From<FfiTrack> for StoredTrackRecord {
+    fn from(f: FfiTrack) -> Self {
+        Self {
+            id: f.id,
+            provider: f.provider,
+            title: f.title,
+            artist: f.artist,
+            album: f.album,
+            duration_ms: f.duration_ms,
+            artwork_url: f.artwork_url,
+            playback_uri: f.playback_uri,
+            is_preview: f.is_preview,
+            origin: f.origin,
+        }
+    }
+}
+
+impl From<StoredTrackRecord> for FfiTrack {
+    fn from(s: StoredTrackRecord) -> Self {
+        Self {
+            id: s.id,
+            provider: s.provider,
+            title: s.title,
+            artist: s.artist,
+            album: s.album,
+            duration_ms: s.duration_ms,
+            artwork_url: s.artwork_url,
+            playback_uri: s.playback_uri,
+            is_preview: s.is_preview,
+            origin: s.origin,
+        }
+    }
+}
+
+impl From<FfiPlaylist> for StoredPlaylistRecord {
+    fn from(f: FfiPlaylist) -> Self {
+        Self {
+            id: f.id,
+            name: f.name,
+            description: f.description,
+            is_local: f.is_local,
+            track_count: f.track_count,
+            artwork_url: f.artwork_url,
+            origin: f.origin,
+        }
+    }
+}
+
+impl From<StoredPlaylistRecord> for FfiPlaylist {
+    fn from(s: StoredPlaylistRecord) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            is_local: s.is_local,
+            track_count: s.track_count,
+            artwork_url: s.artwork_url,
+            origin: s.origin,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiCustomThemeSpec {
+    pub id: String,
+    pub name: String,
+    pub background_hex: String,
+    pub card_hex: String,
+    pub accent_hex: String,
+    pub text_hex: String,
+}
+
+impl From<CustomThemeSpec> for FfiCustomThemeSpec {
+    fn from(s: CustomThemeSpec) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            background_hex: s.background_hex,
+            card_hex: s.card_hex,
+            accent_hex: s.accent_hex,
+            text_hex: s.text_hex,
+        }
+    }
+}
+
+impl From<FfiCustomThemeSpec> for CustomThemeSpec {
+    fn from(f: FfiCustomThemeSpec) -> Self {
+        Self {
+            id: f.id,
+            name: f.name,
+            background_hex: f.background_hex,
+            card_hex: f.card_hex,
+            accent_hex: f.accent_hex,
+            text_hex: f.text_hex,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiTrackListeningStat {
+    pub track: FfiTrack,
+    pub play_count: u32,
+    pub total_listened_ms: u64,
+    pub last_played_at_ms: u64,
+}
+
+impl From<StoredTrackListeningStat> for FfiTrackListeningStat {
+    fn from(r: StoredTrackListeningStat) -> Self {
+        Self {
+            track: FfiTrack::from(r.track),
+            play_count: r.play_count,
+            total_listened_ms: r.total_listened_ms,
+            last_played_at_ms: r.last_played_at_ms,
+        }
+    }
+}
+
+impl From<FfiTrackListeningStat> for StoredTrackListeningStat {
+    fn from(f: FfiTrackListeningStat) -> Self {
+        Self {
+            track: StoredTrackRecord::from(f.track),
+            play_count: f.play_count,
+            total_listened_ms: f.total_listened_ms,
+            last_played_at_ms: f.last_played_at_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiResumePlaybackState {
+    pub track: FfiTrack,
+    pub position_ms: u64,
+    pub duration_ms: u64,
+    pub updated_at_ms: u64,
+    pub queue_tracks: Vec<FfiTrack>,
+    pub queue_index: u32,
+}
+
+impl From<StoredResumePlaybackState> for FfiResumePlaybackState {
+    fn from(r: StoredResumePlaybackState) -> Self {
+        Self {
+            track: FfiTrack::from(r.track),
+            position_ms: r.position_ms,
+            duration_ms: r.duration_ms,
+            updated_at_ms: r.updated_at_ms,
+            queue_tracks: r.queue_tracks.into_iter().map(FfiTrack::from).collect(),
+            queue_index: r.queue_index,
+        }
+    }
+}
+
+impl From<FfiResumePlaybackState> for StoredResumePlaybackState {
+    fn from(f: FfiResumePlaybackState) -> Self {
+        Self {
+            track: StoredTrackRecord::from(f.track),
+            position_ms: f.position_ms,
+            duration_ms: f.duration_ms,
+            updated_at_ms: f.updated_at_ms,
+            queue_tracks: f
+                .queue_tracks
+                .into_iter()
+                .map(StoredTrackRecord::from)
+                .collect(),
+            queue_index: f.queue_index,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiPinnedItem {
+    pub pin_id: String,
+    pub pin_type: String,
+    pub track: Option<FfiTrack>,
+    pub playlist: Option<FfiPlaylist>,
+}
+
+impl From<StoredPinnedItem> for FfiPinnedItem {
+    fn from(p: StoredPinnedItem) -> Self {
+        Self {
+            pin_id: p.pin_id,
+            pin_type: p.pin_type,
+            track: p.track.map(FfiTrack::from),
+            playlist: p.playlist.map(FfiPlaylist::from),
+        }
+    }
+}
+
+impl From<FfiPinnedItem> for StoredPinnedItem {
+    fn from(f: FfiPinnedItem) -> Self {
+        Self {
+            pin_id: f.pin_id,
+            pin_type: f.pin_type,
+            track: f.track.map(StoredTrackRecord::from),
+            playlist: f.playlist.map(StoredPlaylistRecord::from),
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiPlaylistTrackEntry {
+    pub track: FfiTrack,
+    pub added_at: Option<i64>,
+    pub original_index: u32,
+}
+
+impl From<StoredPlaylistTrackEntry> for FfiPlaylistTrackEntry {
+    fn from(e: StoredPlaylistTrackEntry) -> Self {
+        Self {
+            track: FfiTrack::from(e.track),
+            added_at: e.added_at,
+            original_index: e.original_index,
+        }
+    }
+}
+
+impl From<FfiPlaylistTrackEntry> for StoredPlaylistTrackEntry {
+    fn from(f: FfiPlaylistTrackEntry) -> Self {
+        Self {
+            track: StoredTrackRecord::from(f.track),
+            added_at: f.added_at,
+            original_index: f.original_index,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiPlaylistTrackSort {
+    Default,
+    NewestFirst,
+    OldestFirst,
+    TitleAz,
+    ArtistAz,
+    AlbumAz,
+    DurationAsc,
+    DurationDesc,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiLibraryPlaylistEntry {
+    pub playlist: FfiPlaylist,
+    pub is_pinned: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiLibraryPlaylistSort {
+    Default,
+    TitleAz,
+    TitleZa,
+    TrackCountDesc,
+    TrackCountAsc,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiQuickArtistItem {
+    pub artist: String,
+    pub play_count: u32,
+    pub sample_track: FfiTrack,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -387,6 +684,13 @@ impl PlasmaWaveCore {
         let library_service = LibraryService::new(database.clone());
         let settings_service = SettingsService::new(database.clone());
         let theme_registry = ThemeRegistry::new();
+        if let Ok(custom_themes) = database.list_user_custom_themes() {
+            for spec in custom_themes {
+                if let Ok(manifest) = spec.to_manifest() {
+                    let _ = theme_registry.register(manifest);
+                }
+            }
+        }
         let mod_manager = ModManager::new();
         let local_provider = LocalProvider::new();
         let deezer_provider = DeezerProvider::new(DeezerAppConfig::default())?;
@@ -1498,10 +1802,704 @@ impl PlasmaWaveCore {
             s.download_storage_limit_mib = settings.download_storage_limit_mib;
             s.mods_enabled = settings.mods_enabled;
             s.deezer_user_id = settings.deezer_user_id.clone();
+            s.deezer_access_token = settings.deezer_access_token.clone();
             s.custom_accent_color = settings.custom_accent_color.clone();
+            s.high_refresh_rate = settings.high_refresh_rate;
+            s.dynamic_color_enabled = settings.dynamic_color_enabled;
+            s.swipe_to_skip = settings.swipe_to_skip;
+            s.seekbar_style = settings.seekbar_style.clone();
+            s.album_frame = settings.album_frame.clone();
+            s.header_logo_style = settings.header_logo_style.clone();
+            s.home_feed_type = settings.home_feed_type.clone();
+            s.flow_hero_card_enabled = settings.flow_hero_card_enabled;
+            s.flow_quick_access_pinned = settings.flow_quick_access_pinned;
+            s.flow_library_pinned = settings.flow_library_pinned;
+            s.downloads_quick_access_pinned = settings.downloads_quick_access_pinned;
+            s.downloads_library_pinned = settings.downloads_library_pinned;
+            s.resume_playback_enabled = settings.resume_playback_enabled;
+            s.collect_listening_stats = settings.collect_listening_stats;
+            s.collect_listening_history = settings.collect_listening_history;
+            s.save_resume_position = settings.save_resume_position;
+            s.enabled_home_widgets = settings.enabled_home_widgets.clone();
         })?;
         *self.active_theme_id.write().unwrap() = updated.theme_id.clone();
         Ok(FfiSettings::from(updated))
+    }
+
+    // ------------------------------------------------------------------------
+    // User Custom Themes (Rust Color Luminance/Contrast & SQLite Persistence)
+    // ------------------------------------------------------------------------
+    pub fn list_user_custom_themes(&self) -> FfiResult<Vec<FfiCustomThemeSpec>> {
+        let list = self.database.list_user_custom_themes()?;
+        Ok(list.into_iter().map(FfiCustomThemeSpec::from).collect())
+    }
+
+    pub fn save_user_custom_theme(&self, spec: FfiCustomThemeSpec) -> FfiResult<FfiTheme> {
+        let core_spec = CustomThemeSpec::from(spec).normalized();
+        let manifest = core_spec.to_manifest()?;
+        self.database
+            .save_user_custom_theme(&core_spec, now_epoch_ms())?;
+        self.theme_registry.register(manifest.clone())?;
+        *self.active_theme_id.write().unwrap() = manifest.id.clone();
+        self.settings_service.update(|s| {
+            s.theme_id = manifest.id.clone();
+            s.custom_accent_color = Some(core_spec.accent_hex.clone());
+        })?;
+        Ok(self.get_current_theme())
+    }
+
+    pub fn delete_user_custom_theme(&self, theme_id: String) -> FfiResult<FfiTheme> {
+        self.database.delete_user_custom_theme(&theme_id)?;
+        let _ = self.theme_registry.remove(&theme_id);
+        let current_id = self.active_theme_id.read().unwrap().clone();
+        if current_id == theme_id {
+            let fallback_id = "org.kde.breeze-dark".to_string();
+            *self.active_theme_id.write().unwrap() = fallback_id.clone();
+            let _ = self.settings_service.update(|s| {
+                s.theme_id = fallback_id.clone();
+                s.custom_accent_color = None;
+            });
+        }
+        Ok(self.get_current_theme())
+    }
+
+    // ------------------------------------------------------------------------
+    // Listening Statistics, History, Privacy & User Data Export
+    // ------------------------------------------------------------------------
+    pub fn record_track_play(
+        &self,
+        track: FfiTrack,
+        collect_stats: bool,
+        collect_history: bool,
+        timestamp_ms: u64,
+    ) -> FfiResult<()> {
+        let stored = StoredTrackRecord::from(track);
+        let ts = if timestamp_ms > 0 {
+            timestamp_ms
+        } else {
+            now_epoch_ms()
+        };
+        if collect_stats {
+            self.database.record_track_play_stat(&stored, ts)?;
+        }
+        if collect_history {
+            self.database.record_history_entry(&stored, ts)?;
+        }
+        Ok(())
+    }
+
+    pub fn record_listening_tick(
+        &self,
+        track: FfiTrack,
+        delta_ms: u64,
+        collect_stats: bool,
+        timestamp_ms: u64,
+    ) -> FfiResult<u64> {
+        if !collect_stats {
+            return Ok(self.database.get_total_listening_time_ms()?);
+        }
+        let stored = StoredTrackRecord::from(track);
+        let ts = if timestamp_ms > 0 {
+            timestamp_ms
+        } else {
+            now_epoch_ms()
+        };
+        let total = self.database.record_listening_tick(&stored, delta_ms, ts)?;
+        Ok(total)
+    }
+
+    pub fn get_listening_stats(&self, limit: u32) -> FfiResult<Vec<FfiTrackListeningStat>> {
+        let stats = self.database.get_listening_stats(limit.max(1))?;
+        Ok(stats
+            .into_iter()
+            .map(FfiTrackListeningStat::from)
+            .collect())
+    }
+
+    pub fn upsert_listening_stats_batch(&self, stats: Vec<FfiTrackListeningStat>) -> FfiResult<()> {
+        let core_stats: Vec<StoredTrackListeningStat> = stats
+            .into_iter()
+            .map(StoredTrackListeningStat::from)
+            .collect();
+        self.database.upsert_listening_stats_batch(&core_stats)?;
+        Ok(())
+    }
+
+    pub fn get_recent_tracks(&self, limit: u32) -> FfiResult<Vec<FfiTrack>> {
+        let tracks = self.database.get_recent_tracks(limit.max(1))?;
+        Ok(tracks.into_iter().map(FfiTrack::from).collect())
+    }
+
+    pub fn set_recent_tracks(&self, tracks: Vec<FfiTrack>) -> FfiResult<()> {
+        let base_ts = now_epoch_ms();
+        let total = tracks.len() as u64;
+        let entries: Vec<StoredHistoryEntry> = tracks
+            .into_iter()
+            .enumerate()
+            .map(|(idx, t)| StoredHistoryEntry {
+                track: StoredTrackRecord::from(t),
+                play_count: 1,
+                played_at_ms: base_ts.saturating_sub((total - idx as u64) * 1000),
+            })
+            .collect();
+        self.database.upsert_history_batch(&entries)?;
+        Ok(())
+    }
+
+    pub fn get_most_played_tracks(&self, limit: u32) -> FfiResult<Vec<FfiTrack>> {
+        let tracks = self.database.get_most_played_tracks(limit.max(1))?;
+        Ok(tracks.into_iter().map(FfiTrack::from).collect())
+    }
+
+    pub fn get_total_listening_time_ms(&self) -> FfiResult<u64> {
+        Ok(self.database.get_total_listening_time_ms()?)
+    }
+
+    pub fn set_total_listening_time_ms(&self, total_ms: u64) -> FfiResult<()> {
+        self.database.set_total_listening_time_ms(total_ms)?;
+        Ok(())
+    }
+
+    pub fn format_duration_tr(&self, ms: u64) -> String {
+        let total_seconds = ms / 1000;
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        let seconds = total_seconds % 60;
+        if hours > 0 {
+            format!("{hours} sa {minutes} dk")
+        } else if minutes > 0 {
+            format!("{minutes} dk {seconds} sn")
+        } else {
+            format!("{seconds} sn")
+        }
+    }
+
+    pub fn build_user_data_export_json(&self, exported_at_epoch_ms: u64) -> FfiResult<String> {
+        let settings = self.settings_service.load().unwrap_or_default();
+        let total_ms = self.database.get_total_listening_time_ms()?;
+        let stats = self.database.get_listening_stats(500)?;
+        let recent = self.database.get_recent_tracks(200)?;
+        let resume = self.database.get_resume_state()?;
+        let custom_themes = self.database.list_user_custom_themes()?;
+
+        let stats_json: Vec<serde_json::Value> = stats
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "trackId": s.track.id,
+                    "title": s.track.title,
+                    "artist": s.track.artist,
+                    "album": s.track.album,
+                    "playCount": s.play_count,
+                    "totalListenedMs": s.total_listened_ms,
+                    "totalListenedFormatted": self.format_duration_tr(s.total_listened_ms),
+                    "lastPlayedAtMs": s.last_played_at_ms,
+                })
+            })
+            .collect();
+
+        let recent_json: Vec<serde_json::Value> = recent
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "id": t.id,
+                    "title": t.title,
+                    "artist": t.artist,
+                    "album": t.album,
+                })
+            })
+            .collect();
+
+        let resume_json = resume.map(|r| {
+            serde_json::json!({
+                "trackId": r.track.id,
+                "title": r.track.title,
+                "artist": r.track.artist,
+                "positionMs": r.position_ms,
+                "durationMs": r.duration_ms,
+                "updatedAtMs": r.updated_at_ms,
+            })
+        });
+
+        let root = serde_json::json!({
+            "app": "projekt_b-d",
+            "engine": "PlasmaWave Rust Core (SQLite v2)",
+            "exportedAtEpochMs": exported_at_epoch_ms,
+            "totalListeningTimeMs": total_ms,
+            "totalListeningTimeFormatted": self.format_duration_tr(total_ms),
+            "privacySettings": {
+                "collectListeningStats": settings.collect_listening_stats,
+                "collectListeningHistory": settings.collect_listening_history,
+                "saveResumePosition": settings.save_resume_position,
+                "resumePlaybackEnabled": settings.resume_playback_enabled,
+            },
+            "listeningStats": stats_json,
+            "recentHistory": recent_json,
+            "resumeState": resume_json,
+            "customThemesCount": custom_themes.len(),
+        });
+
+        serde_json::to_string_pretty(&root).map_err(|e| FfiError::OperationFailed {
+            reason: format!("JSON export serialization failed: {e}"),
+        })
+    }
+
+    pub fn clear_all_collected_user_data(&self) -> FfiResult<()> {
+        self.database.clear_all_collected_user_data()?;
+        Ok(())
+    }
+
+    // ------------------------------------------------------------------------
+    // Resume Playback State
+    // ------------------------------------------------------------------------
+    pub fn save_resume_playback_state(&self, state: FfiResumePlaybackState) -> FfiResult<()> {
+        let mut core_state = StoredResumePlaybackState::from(state);
+        if core_state.updated_at_ms == 0 {
+            core_state.updated_at_ms = now_epoch_ms();
+        }
+        self.database.save_resume_state(&core_state)?;
+        Ok(())
+    }
+
+    pub fn get_resume_playback_state(&self) -> FfiResult<Option<FfiResumePlaybackState>> {
+        let state = self.database.get_resume_state()?;
+        Ok(state.map(FfiResumePlaybackState::from))
+    }
+
+    pub fn clear_resume_playback_state(&self) -> FfiResult<()> {
+        self.database.clear_resume_state()?;
+        Ok(())
+    }
+
+    // ------------------------------------------------------------------------
+    // Pinned Items & Fast Playlist Entries Cache
+    // ------------------------------------------------------------------------
+    pub fn get_pinned_items(&self) -> FfiResult<Vec<FfiPinnedItem>> {
+        let items = self.database.get_pinned_items()?;
+        Ok(items.into_iter().map(FfiPinnedItem::from).collect())
+    }
+
+    pub fn set_pinned_items(&self, items: Vec<FfiPinnedItem>) -> FfiResult<()> {
+        let core_items: Vec<StoredPinnedItem> =
+            items.into_iter().map(StoredPinnedItem::from).collect();
+        self.database.set_pinned_items(&core_items)?;
+        Ok(())
+    }
+
+    pub fn toggle_pinned_item(&self, item: FfiPinnedItem) -> FfiResult<Vec<FfiPinnedItem>> {
+        let updated = self
+            .database
+            .toggle_pinned_item(StoredPinnedItem::from(item))?;
+        Ok(updated.into_iter().map(FfiPinnedItem::from).collect())
+    }
+
+    pub fn remove_pinned_item(&self, pin_id: String) -> FfiResult<Vec<FfiPinnedItem>> {
+        let updated = self.database.remove_pinned_item(&pin_id)?;
+        Ok(updated.into_iter().map(FfiPinnedItem::from).collect())
+    }
+
+    pub fn get_cached_playlist_entries(
+        &self,
+        playlist_id: String,
+    ) -> FfiResult<Option<Vec<FfiPlaylistTrackEntry>>> {
+        let entries = self.database.get_cached_playlist_entries(&playlist_id)?;
+        Ok(entries.map(|list| {
+            list.into_iter()
+                .map(FfiPlaylistTrackEntry::from)
+                .collect()
+        }))
+    }
+
+    pub fn set_cached_playlist_entries(
+        &self,
+        playlist_id: String,
+        entries: Vec<FfiPlaylistTrackEntry>,
+    ) -> FfiResult<()> {
+        let core_entries: Vec<StoredPlaylistTrackEntry> = entries
+            .into_iter()
+            .map(StoredPlaylistTrackEntry::from)
+            .collect();
+        self.database
+            .set_cached_playlist_entries(&playlist_id, &core_entries, now_epoch_ms())?;
+        Ok(())
+    }
+
+    pub fn get_all_cached_playlist_entries(
+        &self,
+    ) -> FfiResult<std::collections::HashMap<String, Vec<FfiPlaylistTrackEntry>>> {
+        let pairs = self.database.get_all_cached_playlist_entries()?;
+        let mut out = std::collections::HashMap::with_capacity(pairs.len());
+        for (pid, list) in pairs {
+            out.insert(
+                pid,
+                list.into_iter()
+                    .map(FfiPlaylistTrackEntry::from)
+                    .collect(),
+            );
+        }
+        Ok(out)
+    }
+
+    // ------------------------------------------------------------------------
+    // Rust Sorting & Home Widget Algorithms
+    // ------------------------------------------------------------------------
+    pub fn sort_playlist_tracks(
+        &self,
+        mut entries: Vec<FfiPlaylistTrackEntry>,
+        sort: FfiPlaylistTrackSort,
+    ) -> Vec<FfiPlaylistTrackEntry> {
+        match sort {
+            FfiPlaylistTrackSort::Default => {
+                entries.sort_by(|a, b| a.original_index.cmp(&b.original_index));
+                entries
+            }
+            FfiPlaylistTrackSort::NewestFirst => {
+                entries.sort_by(|a, b| {
+                    b.added_at
+                        .is_some()
+                        .cmp(&a.added_at.is_some())
+                        .then_with(|| b.added_at.cmp(&a.added_at))
+                        .then_with(|| a.original_index.cmp(&b.original_index))
+                });
+                entries
+            }
+            FfiPlaylistTrackSort::OldestFirst => {
+                entries.sort_by(|a, b| {
+                    b.added_at
+                        .is_some()
+                        .cmp(&a.added_at.is_some())
+                        .then_with(|| a.added_at.cmp(&b.added_at))
+                        .then_with(|| a.original_index.cmp(&b.original_index))
+                });
+                entries
+            }
+            FfiPlaylistTrackSort::TitleAz => {
+                entries.sort_by(|a, b| {
+                    a.track
+                        .title
+                        .to_lowercase()
+                        .cmp(&b.track.title.to_lowercase())
+                        .then_with(|| a.original_index.cmp(&b.original_index))
+                });
+                entries
+            }
+            FfiPlaylistTrackSort::ArtistAz => {
+                entries.sort_by(|a, b| {
+                    a.track
+                        .artist
+                        .to_lowercase()
+                        .cmp(&b.track.artist.to_lowercase())
+                        .then_with(|| {
+                            a.track
+                                .title
+                                .to_lowercase()
+                                .cmp(&b.track.title.to_lowercase())
+                        })
+                });
+                entries
+            }
+            FfiPlaylistTrackSort::AlbumAz => {
+                entries.sort_by(|a, b| {
+                    a.track
+                        .album
+                        .to_lowercase()
+                        .cmp(&b.track.album.to_lowercase())
+                        .then_with(|| {
+                            a.track
+                                .title
+                                .to_lowercase()
+                                .cmp(&b.track.title.to_lowercase())
+                        })
+                });
+                entries
+            }
+            FfiPlaylistTrackSort::DurationAsc => {
+                entries.sort_by(|a, b| {
+                    a.track
+                        .duration_ms
+                        .cmp(&b.track.duration_ms)
+                        .then_with(|| a.original_index.cmp(&b.original_index))
+                });
+                entries
+            }
+            FfiPlaylistTrackSort::DurationDesc => {
+                entries.sort_by(|a, b| {
+                    b.track
+                        .duration_ms
+                        .cmp(&a.track.duration_ms)
+                        .then_with(|| a.original_index.cmp(&b.original_index))
+                });
+                entries
+            }
+        }
+    }
+
+    pub fn sort_library_playlists(
+        &self,
+        mut playlists: Vec<FfiLibraryPlaylistEntry>,
+        sort: FfiLibraryPlaylistSort,
+    ) -> Vec<FfiPlaylist> {
+        match sort {
+            FfiLibraryPlaylistSort::Default => {
+                playlists.sort_by(|a, b| b.is_pinned.cmp(&a.is_pinned));
+            }
+            FfiLibraryPlaylistSort::TitleAz => {
+                playlists.sort_by(|a, b| {
+                    b.is_pinned.cmp(&a.is_pinned).then_with(|| {
+                        a.playlist
+                            .name
+                            .to_lowercase()
+                            .cmp(&b.playlist.name.to_lowercase())
+                    })
+                });
+            }
+            FfiLibraryPlaylistSort::TitleZa => {
+                playlists.sort_by(|a, b| {
+                    b.is_pinned.cmp(&a.is_pinned).then_with(|| {
+                        b.playlist
+                            .name
+                            .to_lowercase()
+                            .cmp(&a.playlist.name.to_lowercase())
+                    })
+                });
+            }
+            FfiLibraryPlaylistSort::TrackCountDesc => {
+                playlists.sort_by(|a, b| {
+                    b.is_pinned
+                        .cmp(&a.is_pinned)
+                        .then_with(|| b.playlist.track_count.cmp(&a.playlist.track_count))
+                        .then_with(|| {
+                            a.playlist
+                                .name
+                                .to_lowercase()
+                                .cmp(&b.playlist.name.to_lowercase())
+                        })
+                });
+            }
+            FfiLibraryPlaylistSort::TrackCountAsc => {
+                playlists.sort_by(|a, b| {
+                    b.is_pinned
+                        .cmp(&a.is_pinned)
+                        .then_with(|| a.playlist.track_count.cmp(&b.playlist.track_count))
+                        .then_with(|| {
+                            a.playlist
+                                .name
+                                .to_lowercase()
+                                .cmp(&b.playlist.name.to_lowercase())
+                        })
+                });
+            }
+        }
+        playlists.into_iter().map(|e| e.playlist).collect()
+    }
+
+    pub fn get_quick_artists(
+        &self,
+        limit: u32,
+        fallback_tracks: Vec<FfiTrack>,
+    ) -> FfiResult<Vec<FfiQuickArtistItem>> {
+        let stats = self.database.get_listening_stats(200)?;
+        let recent = self.database.get_recent_tracks(100)?;
+
+        struct Acc {
+            display_name: String,
+            play_count: u32,
+            sample_track: FfiTrack,
+            order: usize,
+        }
+
+        let mut map: std::collections::HashMap<String, Acc> = std::collections::HashMap::new();
+        let mut seq = 0usize;
+
+        for s in stats {
+            let trimmed = s.track.artist.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let key = trimmed.to_lowercase();
+            let ffi_track = FfiTrack::from(s.track);
+            match map.get_mut(&key) {
+                Some(acc) => {
+                    acc.play_count = acc.play_count.saturating_add(s.play_count);
+                    if acc.sample_track.artwork_url.is_none() && ffi_track.artwork_url.is_some() {
+                        acc.sample_track = ffi_track;
+                    }
+                }
+                None => {
+                    map.insert(
+                        key,
+                        Acc {
+                            display_name: trimmed,
+                            play_count: s.play_count,
+                            sample_track: ffi_track,
+                            order: seq,
+                        },
+                    );
+                    seq += 1;
+                }
+            }
+        }
+
+        for r in recent.into_iter().map(FfiTrack::from).chain(fallback_tracks) {
+            let trimmed = r.artist.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let key = trimmed.to_lowercase();
+            match map.get_mut(&key) {
+                Some(acc) => {
+                    if acc.sample_track.artwork_url.is_none() && r.artwork_url.is_some() {
+                        acc.sample_track = r;
+                    }
+                }
+                None => {
+                    map.insert(
+                        key,
+                        Acc {
+                            display_name: trimmed,
+                            play_count: 0,
+                            sample_track: r,
+                            order: seq,
+                        },
+                    );
+                    seq += 1;
+                }
+            }
+        }
+
+        let mut items: Vec<Acc> = map.into_values().collect();
+        items.sort_by(|a, b| {
+            b.play_count
+                .cmp(&a.play_count)
+                .then_with(|| a.order.cmp(&b.order))
+        });
+
+        Ok(items
+            .into_iter()
+            .take(limit as usize)
+            .map(|a| FfiQuickArtistItem {
+                artist: a.display_name,
+                play_count: a.play_count,
+                sample_track: a.sample_track,
+            })
+            .collect())
+    }
+
+    pub fn generate_mood_mix(
+        &self,
+        mood: String,
+        limit: u32,
+        candidate_tracks: Vec<FfiTrack>,
+    ) -> Vec<FfiTrack> {
+        let mut seen = std::collections::HashSet::new();
+        let mut pool = Vec::new();
+
+        // Include recent & stats tracks alongside candidates
+        let stats = self.database.get_listening_stats(200).unwrap_or_default();
+        let mut play_counts: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        for s in &stats {
+            play_counts.insert(s.track.id.clone(), s.play_count);
+        }
+
+        for t in candidate_tracks
+            .into_iter()
+            .chain(stats.into_iter().map(|s| FfiTrack::from(s.track)))
+        {
+            if seen.insert(t.id.clone()) {
+                pool.push(t);
+            }
+        }
+
+        if pool.is_empty() {
+            return Vec::new();
+        }
+
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u64 ^ d.as_secs())
+            .unwrap_or(0x9E37_79B9_7F4A_7C15);
+
+        let mood_key = mood.trim().to_lowercase();
+
+        let mut scored: Vec<(i64, u64, FfiTrack)> = pool
+            .into_iter()
+            .enumerate()
+            .map(|(idx, track)| {
+                let text = format!(
+                    "{} {} {}",
+                    track.title.to_lowercase(),
+                    track.artist.to_lowercase(),
+                    track.album.to_lowercase()
+                );
+                let mut score: i64 = 0;
+                match mood_key.as_str() {
+                    "enerjik" => {
+                        if (110_000..=235_000).contains(&track.duration_ms) {
+                            score += 35;
+                        }
+                        for kw in [
+                            "remix", "dance", "club", "rock", "rap", "pop", "beat", "fast",
+                            "fire", "party", "phonk", "hyper", "power", "action",
+                        ] {
+                            if text.contains(kw) {
+                                score += 45;
+                            }
+                        }
+                    }
+                    "chill" => {
+                        if track.duration_ms >= 200_000 {
+                            score += 35;
+                        }
+                        for kw in [
+                            "chill", "acoustic", "lofi", "ambient", "piano", "slow", "soft",
+                            "dream", "instrumental", "rain", "calm", "jazz",
+                        ] {
+                            if text.contains(kw) {
+                                score += 45;
+                            }
+                        }
+                    }
+                    "gece" => {
+                        if track.duration_ms >= 185_000 {
+                            score += 30;
+                        }
+                        for kw in [
+                            "night", "dark", "moon", "gece", "noir", "ost", "soundtrack",
+                            "synth", "wave", "after", "midnight", "shadow", "senfoni",
+                        ] {
+                            if text.contains(kw) {
+                                score += 45;
+                            }
+                        }
+                    }
+                    "kesif" | "keşif" => {
+                        let count = play_counts.get(&track.id).copied().unwrap_or(0);
+                        if count == 0 {
+                            score += 60;
+                        } else if count <= 2 {
+                            score += 30;
+                        }
+                    }
+                    _ => {}
+                }
+
+                // Deterministic pseudo-random jitter mixed with time seed so repeated clicks vary
+                let mut h = seed ^ ((idx as u64).wrapping_mul(0x517C_C1B7_2722_0A95));
+                for b in track.id.bytes() {
+                    h = h.wrapping_mul(1099511628211).wrapping_add(b as u64);
+                }
+                let jitter = (h % 50) as i64;
+                (score + jitter, h, track)
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        scored
+            .into_iter()
+            .take(limit as usize)
+            .map(|(_, _, t)| t)
+            .collect()
     }
 }
 
@@ -1623,5 +2621,38 @@ mod tests {
         assert!(core.set_custom_accent_color(Some("not-a-color".into())).is_err());
         let reset_theme = core.set_custom_accent_color(None).unwrap();
         assert_eq!(reset_theme.accent_color.to_uppercase(), "#3DAEE9");
+
+        // Custom theme creation & persistence
+        let saved_custom = core
+            .save_user_custom_theme(FfiCustomThemeSpec {
+                id: "org.custom.user.test1".into(),
+                name: "Test Custom Theme".into(),
+                background_hex: "#120924".into(),
+                card_hex: "#231442".into(),
+                accent_hex: "#E066FF".into(),
+                text_hex: "#F8F2FF".into(),
+            })
+            .unwrap();
+        assert_eq!(saved_custom.id, "org.custom.user.test1");
+        assert_eq!(core.list_user_custom_themes().unwrap().len(), 1);
+
+        // Stats, history, resume & export
+        core.record_track_play(track.clone(), true, true, 1_700_000_000_000)
+            .unwrap();
+        let total = core
+            .record_listening_tick(track.clone(), 65_000, true, 1_700_000_065_000)
+            .unwrap();
+        assert_eq!(total, 65_000);
+        assert_eq!(core.format_duration_tr(total), "1 dk 5 sn");
+
+        let quick_artists = core.get_quick_artists(5, vec![]).unwrap();
+        assert_eq!(quick_artists.len(), 1);
+        assert_eq!(quick_artists[0].artist, "Daft Punk");
+
+        let mix = core.generate_mood_mix("enerjik".into(), 5, vec![track.clone()]);
+        assert_eq!(mix.len(), 1);
+
+        let exported = core.build_user_data_export_json(1_700_000_100_000).unwrap();
+        assert!(exported.contains("Daft Punk"));
     }
 }

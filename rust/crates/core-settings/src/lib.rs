@@ -46,6 +46,17 @@ impl Language {
 
 pub const DEFAULT_THEME_ID: &str = "org.kde.breeze-dark";
 
+pub fn default_home_widgets() -> Vec<String> {
+    vec![
+        "stats".into(),
+        "quick_artist".into(),
+        "quick_theme".into(),
+        "lucky_pick".into(),
+        "sleep_timer".into(),
+        "mood_mix".into(),
+    ]
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     pub theme_id: String,
@@ -62,6 +73,23 @@ pub struct Settings {
     pub deezer_access_token: Option<String>,
     /// Optional custom accent hex color (`#RRGGBB`) overriding the active theme's accent.
     pub custom_accent_color: Option<String>,
+    pub high_refresh_rate: bool,
+    pub dynamic_color_enabled: bool,
+    pub swipe_to_skip: bool,
+    pub seekbar_style: String,
+    pub album_frame: String,
+    pub header_logo_style: String,
+    pub home_feed_type: String,
+    pub flow_hero_card_enabled: bool,
+    pub flow_quick_access_pinned: bool,
+    pub flow_library_pinned: bool,
+    pub downloads_quick_access_pinned: bool,
+    pub downloads_library_pinned: bool,
+    pub resume_playback_enabled: bool,
+    pub collect_listening_stats: bool,
+    pub collect_listening_history: bool,
+    pub save_resume_position: bool,
+    pub enabled_home_widgets: Vec<String>,
 }
 
 impl Default for Settings {
@@ -76,6 +104,23 @@ impl Default for Settings {
             deezer_user_id: None,
             deezer_access_token: None,
             custom_accent_color: None,
+            high_refresh_rate: true,
+            dynamic_color_enabled: true,
+            swipe_to_skip: true,
+            seekbar_style: "CLASSIC".into(),
+            album_frame: "MODERN_ROUNDED".into(),
+            header_logo_style: "ORIGINAL".into(),
+            home_feed_type: "FOR_YOU".into(),
+            flow_hero_card_enabled: true,
+            flow_quick_access_pinned: true,
+            flow_library_pinned: true,
+            downloads_quick_access_pinned: true,
+            downloads_library_pinned: true,
+            resume_playback_enabled: true,
+            collect_listening_stats: true,
+            collect_listening_history: true,
+            save_resume_position: true,
+            enabled_home_widgets: default_home_widgets(),
         }
     }
 }
@@ -90,6 +135,23 @@ mod keys {
     pub const DEEZER_USER_ID: &str = "deezer.user_id";
     pub const DEEZER_ACCESS_TOKEN: &str = "deezer.access_token";
     pub const CUSTOM_ACCENT_COLOR: &str = "ui.custom_accent_color";
+    pub const HIGH_REFRESH_RATE: &str = "ui.high_refresh_rate";
+    pub const DYNAMIC_COLOR_ENABLED: &str = "ui.dynamic_color_enabled";
+    pub const SWIPE_TO_SKIP: &str = "ui.swipe_to_skip";
+    pub const SEEKBAR_STYLE: &str = "ui.seekbar_style";
+    pub const ALBUM_FRAME: &str = "ui.album_frame";
+    pub const HEADER_LOGO_STYLE: &str = "ui.header_logo_style";
+    pub const HOME_FEED_TYPE: &str = "ui.home_feed_type";
+    pub const FLOW_HERO_CARD: &str = "ui.flow_hero_card_enabled";
+    pub const FLOW_QUICK_ACCESS: &str = "ui.flow_quick_access_pinned";
+    pub const FLOW_LIBRARY: &str = "ui.flow_library_pinned";
+    pub const DOWNLOADS_QUICK_ACCESS: &str = "ui.downloads_quick_access_pinned";
+    pub const DOWNLOADS_LIBRARY: &str = "ui.downloads_library_pinned";
+    pub const RESUME_PLAYBACK: &str = "ui.resume_playback_enabled";
+    pub const COLLECT_STATS: &str = "privacy.collect_listening_stats";
+    pub const COLLECT_HISTORY: &str = "privacy.collect_listening_history";
+    pub const SAVE_RESUME_POS: &str = "privacy.save_resume_position";
+    pub const ENABLED_HOME_WIDGETS: &str = "ui.enabled_home_widgets";
 }
 
 #[derive(Clone)]
@@ -122,6 +184,10 @@ impl SettingsService {
             .get(keys::LANGUAGE)?
             .and_then(|l| Language::from_key(&l))
             .unwrap_or(d.language);
+        let enabled_home_widgets = match self.store.get(keys::ENABLED_HOME_WIDGETS)? {
+            Some(raw) => serde_json::from_str::<Vec<String>>(&raw).unwrap_or(d.enabled_home_widgets),
+            None => d.enabled_home_widgets,
+        };
         Ok(Settings {
             theme_id,
             language,
@@ -148,6 +214,72 @@ impl SettingsService {
                 .store
                 .get(keys::CUSTOM_ACCENT_COLOR)?
                 .filter(|c| is_valid_hex_color(c)),
+            high_refresh_rate: parse_bool(
+                self.store.get(keys::HIGH_REFRESH_RATE)?,
+                d.high_refresh_rate,
+            ),
+            dynamic_color_enabled: parse_bool(
+                self.store.get(keys::DYNAMIC_COLOR_ENABLED)?,
+                d.dynamic_color_enabled,
+            ),
+            swipe_to_skip: parse_bool(self.store.get(keys::SWIPE_TO_SKIP)?, d.swipe_to_skip),
+            seekbar_style: self
+                .store
+                .get(keys::SEEKBAR_STYLE)?
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(d.seekbar_style),
+            album_frame: self
+                .store
+                .get(keys::ALBUM_FRAME)?
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(d.album_frame),
+            header_logo_style: self
+                .store
+                .get(keys::HEADER_LOGO_STYLE)?
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(d.header_logo_style),
+            home_feed_type: self
+                .store
+                .get(keys::HOME_FEED_TYPE)?
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(d.home_feed_type),
+            flow_hero_card_enabled: parse_bool(
+                self.store.get(keys::FLOW_HERO_CARD)?,
+                d.flow_hero_card_enabled,
+            ),
+            flow_quick_access_pinned: parse_bool(
+                self.store.get(keys::FLOW_QUICK_ACCESS)?,
+                d.flow_quick_access_pinned,
+            ),
+            flow_library_pinned: parse_bool(
+                self.store.get(keys::FLOW_LIBRARY)?,
+                d.flow_library_pinned,
+            ),
+            downloads_quick_access_pinned: parse_bool(
+                self.store.get(keys::DOWNLOADS_QUICK_ACCESS)?,
+                d.downloads_quick_access_pinned,
+            ),
+            downloads_library_pinned: parse_bool(
+                self.store.get(keys::DOWNLOADS_LIBRARY)?,
+                d.downloads_library_pinned,
+            ),
+            resume_playback_enabled: parse_bool(
+                self.store.get(keys::RESUME_PLAYBACK)?,
+                d.resume_playback_enabled,
+            ),
+            collect_listening_stats: parse_bool(
+                self.store.get(keys::COLLECT_STATS)?,
+                d.collect_listening_stats,
+            ),
+            collect_listening_history: parse_bool(
+                self.store.get(keys::COLLECT_HISTORY)?,
+                d.collect_listening_history,
+            ),
+            save_resume_position: parse_bool(
+                self.store.get(keys::SAVE_RESUME_POS)?,
+                d.save_resume_position,
+            ),
+            enabled_home_widgets,
         })
     }
 
@@ -189,6 +321,56 @@ impl SettingsService {
         } else {
             self.store.remove(keys::CUSTOM_ACCENT_COLOR)?;
         }
+        self.store
+            .set(keys::HIGH_REFRESH_RATE, &s.high_refresh_rate.to_string())?;
+        self.store.set(
+            keys::DYNAMIC_COLOR_ENABLED,
+            &s.dynamic_color_enabled.to_string(),
+        )?;
+        self.store
+            .set(keys::SWIPE_TO_SKIP, &s.swipe_to_skip.to_string())?;
+        self.store.set(keys::SEEKBAR_STYLE, &s.seekbar_style)?;
+        self.store.set(keys::ALBUM_FRAME, &s.album_frame)?;
+        self.store
+            .set(keys::HEADER_LOGO_STYLE, &s.header_logo_style)?;
+        self.store.set(keys::HOME_FEED_TYPE, &s.home_feed_type)?;
+        self.store.set(
+            keys::FLOW_HERO_CARD,
+            &s.flow_hero_card_enabled.to_string(),
+        )?;
+        self.store.set(
+            keys::FLOW_QUICK_ACCESS,
+            &s.flow_quick_access_pinned.to_string(),
+        )?;
+        self.store
+            .set(keys::FLOW_LIBRARY, &s.flow_library_pinned.to_string())?;
+        self.store.set(
+            keys::DOWNLOADS_QUICK_ACCESS,
+            &s.downloads_quick_access_pinned.to_string(),
+        )?;
+        self.store.set(
+            keys::DOWNLOADS_LIBRARY,
+            &s.downloads_library_pinned.to_string(),
+        )?;
+        self.store.set(
+            keys::RESUME_PLAYBACK,
+            &s.resume_playback_enabled.to_string(),
+        )?;
+        self.store.set(
+            keys::COLLECT_STATS,
+            &s.collect_listening_stats.to_string(),
+        )?;
+        self.store.set(
+            keys::COLLECT_HISTORY,
+            &s.collect_listening_history.to_string(),
+        )?;
+        self.store.set(
+            keys::SAVE_RESUME_POS,
+            &s.save_resume_position.to_string(),
+        )?;
+        let widgets_json =
+            serde_json::to_string(&s.enabled_home_widgets).unwrap_or_else(|_| "[]".into());
+        self.store.set(keys::ENABLED_HOME_WIDGETS, &widgets_json)?;
         Ok(())
     }
 

@@ -389,6 +389,7 @@ fun HomeScreen(
             if (HomeWidgetType.QUICK_ARTIST in enabledWidgets && allKnownTracks.isNotEmpty()) {
                 item(key = "widget_quick_artist") {
                     QuickArtistWidgetCard(
+                        viewModel = viewModel,
                         allTracks = allKnownTracks,
                         stats = trackStats,
                         onArtistClick = { artistName -> selectedQuickArtist = artistName },
@@ -435,6 +436,7 @@ fun HomeScreen(
             if (HomeWidgetType.MOOD_MIX in enabledWidgets && allKnownTracks.isNotEmpty()) {
                 item(key = "widget_mood_mix") {
                     MoodMixWidgetCard(
+                        viewModel = viewModel,
                         tracks = allKnownTracks,
                         onStartMix = { moodTracks ->
                             if (moodTracks.isNotEmpty()) {
@@ -1114,6 +1116,7 @@ private fun StatsHomeWidgetCard(
 
 @Composable
 private fun QuickArtistWidgetCard(
+    viewModel: MainViewModel,
     allTracks: List<FfiTrack>,
     stats: List<TrackListeningStat>,
     onArtistClick: (String) -> Unit,
@@ -1123,20 +1126,10 @@ private fun QuickArtistWidgetCard(
     val primary = MaterialTheme.colorScheme.primary
 
     val artists = remember(allTracks, stats) {
-        val playCountsByArtist = stats.groupBy { it.track.artist.trim() }
-            .mapValues { (_, list) -> list.sumOf { it.playCount } }
-        allTracks
-            .filter { it.artist.isNotBlank() }
-            .groupBy { it.artist.split(",").first().trim() }
-            .map { (artist, tracks) ->
-                Triple(
-                    artist,
-                    tracks.firstNotNullOfOrNull { it.artworkUrl },
-                    playCountsByArtist[artist] ?: tracks.size
-                )
-            }
-            .sortedByDescending { it.third }
-            .take(12)
+        viewModel.getQuickArtists(limit = 12, fallbackTracks = allTracks).map { item ->
+            val primaryArtist = item.artist.split(",").first().trim().ifEmpty { item.artist }
+            Triple(primaryArtist, item.sampleTrack.artworkUrl, item.playCount.toInt())
+        }.distinctBy { it.first }
     }
 
     Card(
@@ -1488,6 +1481,7 @@ private fun SleepTimerWidgetCard(
 
 @Composable
 private fun MoodMixWidgetCard(
+    viewModel: MainViewModel,
     tracks: List<FfiTrack>,
     onStartMix: (List<FfiTrack>) -> Unit,
     modifier: Modifier = Modifier
@@ -1496,10 +1490,10 @@ private fun MoodMixWidgetCard(
     val primary = MaterialTheme.colorScheme.primary
 
     val moods = listOf(
-        Triple("Enerjik ⚡", Color(0xFFF59E0B), 101L),
-        Triple("Gece Modu 🌙", Color(0xFF8B5CF6), 202L),
-        Triple("Odaklanma 🎯", Color(0xFF10B981), 303L),
-        Triple("Karışık Keyif 🎧", Color(0xFFEC4899), 404L)
+        Triple("Enerjik ⚡", Color(0xFFF59E0B), "enerjik"),
+        Triple("Gece Modu 🌙", Color(0xFF8B5CF6), "gece"),
+        Triple("Odaklanma 🎯", Color(0xFF10B981), "chill"),
+        Triple("Karışık Keyif 🎧", Color(0xFFEC4899), "kesif")
     )
 
     Card(
@@ -1537,10 +1531,10 @@ private fun MoodMixWidgetCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                moods.forEach { (title, color, seed) ->
+                moods.forEach { (title, color, moodKey) ->
                     Button(
                         onClick = {
-                            val mix = tracks.shuffled(Random(seed + System.currentTimeMillis() / 60000L)).take(25)
+                            val mix = viewModel.generateMoodMix(mood = moodKey, limit = 25, candidateTracks = tracks)
                             onStartMix(mix)
                         },
                         modifier = Modifier.weight(1f),

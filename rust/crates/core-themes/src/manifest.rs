@@ -3,6 +3,120 @@ use serde::{Deserialize, Serialize};
 
 pub const CURRENT_SCHEMA_VERSION: u32 = 1;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomThemeSpec {
+    pub id: String,
+    pub name: String,
+    pub background_hex: String,
+    pub card_hex: String,
+    pub accent_hex: String,
+    pub text_hex: String,
+}
+
+fn normalize_hex6(input: &str, fallback: &str) -> String {
+    let cleaned = input.trim().trim_start_matches('#');
+    if cleaned.len() == 6 && cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
+        format!("#{}", cleaned.to_uppercase())
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn parse_rgb(hex: &str) -> (u8, u8, u8) {
+    let c = hex.trim().trim_start_matches('#');
+    if c.len() == 6 {
+        let r = u8::from_str_radix(&c[0..2], 16).unwrap_or(20);
+        let g = u8::from_str_radix(&c[2..4], 16).unwrap_or(18);
+        let b = u8::from_str_radix(&c[4..6], 16).unwrap_or(36);
+        (r, g, b)
+    } else {
+        (20, 18, 36)
+    }
+}
+
+fn blend_hex(a: &str, b: &str, ratio: f32) -> String {
+    let (ar, ag, ab) = parse_rgb(a);
+    let (br, bg, bb) = parse_rgb(b);
+    let t = ratio.clamp(0.0, 1.0);
+    let r = ((ar as f32) * (1.0 - t) + (br as f32) * t).round().clamp(0.0, 255.0) as u8;
+    let g = ((ag as f32) * (1.0 - t) + (bg as f32) * t).round().clamp(0.0, 255.0) as u8;
+    let bl = ((ab as f32) * (1.0 - t) + (bb as f32) * t).round().clamp(0.0, 255.0) as u8;
+    format!("#{r:02X}{g:02X}{bl:02X}")
+}
+
+impl CustomThemeSpec {
+    pub fn normalized(&self) -> Self {
+        let id = if self.id.trim().is_empty() || !self.id.contains('.') {
+            format!("custom.theme.{}", self.id.trim())
+        } else {
+            self.id.trim().to_string()
+        };
+        let name = if self.name.trim().is_empty() {
+            "Özel Tema".to_string()
+        } else {
+            self.name.trim().to_string()
+        };
+        Self {
+            id,
+            name,
+            background_hex: normalize_hex6(&self.background_hex, "#141224"),
+            card_hex: normalize_hex6(&self.card_hex, "#282348"),
+            accent_hex: normalize_hex6(&self.accent_hex, "#ED438D"),
+            text_hex: normalize_hex6(&self.text_hex, "#F5EEF8"),
+        }
+    }
+
+    pub fn to_manifest(&self) -> DomainResult<ThemeManifest> {
+        let norm = self.normalized();
+        let (br, bg, bb) = parse_rgb(&norm.background_hex);
+        let luminance = (0.299 * (br as f32) + 0.587 * (bg as f32) + 0.114 * (bb as f32)) / 255.0;
+        let is_dark = luminance < 0.55;
+        let surface_hex = blend_hex(&norm.background_hex, &norm.card_hex, 0.5);
+        let border_hex = blend_hex(&norm.card_hex, &norm.accent_hex, 0.35);
+        let text_secondary_hex = blend_hex(&norm.text_hex, &norm.background_hex, 0.32);
+
+        let manifest = ThemeManifest {
+            schema_version: CURRENT_SCHEMA_VERSION,
+            id: norm.id,
+            name: norm.name,
+            author: "Kullanıcı".into(),
+            description: Some("Kullanıcı tarafından oluşturulan özel tema".into()),
+            dark: is_dark,
+            colors: ColorTokens {
+                background: norm.background_hex,
+                surface: surface_hex.clone(),
+                surface_variant: surface_hex,
+                card: norm.card_hex.clone(),
+                card_pressed: blend_hex(&norm.card_hex, &norm.accent_hex, 0.2),
+                accent: norm.accent_hex.clone(),
+                accent_muted: blend_hex(&norm.accent_hex, &norm.card_hex, 0.45),
+                on_accent: "#FFFFFF".into(),
+                text: norm.text_hex,
+                text_secondary: text_secondary_hex.clone(),
+                text_disabled: text_secondary_hex,
+                border: border_hex.clone(),
+                divider: border_hex,
+                positive: default_positive(),
+                warning: default_warning(),
+                negative: default_negative(),
+                scrim: default_scrim(),
+            },
+            shapes: ShapeTokens {
+                small_radius: 8,
+                medium_radius: 14,
+                large_radius: 22,
+            },
+            spacing: SpacingTokens::default(),
+            typography: TypographyTokens::default(),
+            elevation: ElevationTokens::default(),
+            motion: MotionTokens::default(),
+        };
+        manifest.validate()?;
+        Ok(manifest)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeManifest {

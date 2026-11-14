@@ -49,14 +49,18 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import uniffi.plasmawave_core.FfiAlbum
 import uniffi.plasmawave_core.FfiArtist
+import uniffi.plasmawave_core.FfiCustomThemeSpec
 import uniffi.plasmawave_core.FfiDeezerUser
 import uniffi.plasmawave_core.FfiDownloadTask
 import uniffi.plasmawave_core.FfiLocalTrackInput
 import uniffi.plasmawave_core.FfiModInfo
 import uniffi.plasmawave_core.FfiPlaylist
+import uniffi.plasmawave_core.FfiQuickArtistItem
+import uniffi.plasmawave_core.FfiResumePlaybackState
 import uniffi.plasmawave_core.FfiSettings
 import uniffi.plasmawave_core.FfiTheme
 import uniffi.plasmawave_core.FfiTrack
+import uniffi.plasmawave_core.FfiTrackListeningStat
 
 const val LOCAL_FAVORITES_ID = "local:favorite_tracks"
 const val DEEZER_FAVORITES_ID = "deezer:loved_tracks"
@@ -77,6 +81,24 @@ data class CustomThemeSpec(
     val textHex: String
 )
 
+internal fun CustomThemeSpec.toFfi(): FfiCustomThemeSpec = FfiCustomThemeSpec(
+    id = id,
+    name = name,
+    backgroundHex = backgroundHex,
+    cardHex = cardHex,
+    accentHex = accentHex,
+    textHex = textHex
+)
+
+internal fun FfiCustomThemeSpec.toUi(): CustomThemeSpec = CustomThemeSpec(
+    id = id,
+    name = name,
+    backgroundHex = backgroundHex,
+    cardHex = cardHex,
+    accentHex = accentHex,
+    textHex = textHex
+)
+
 data class ResumePlaybackState(
     val track: FfiTrack,
     val positionMs: Long,
@@ -86,6 +108,24 @@ data class ResumePlaybackState(
     val queueIndex: Int = 0
 )
 
+internal fun ResumePlaybackState.toFfi(): FfiResumePlaybackState = FfiResumePlaybackState(
+    track = track,
+    positionMs = positionMs.coerceAtLeast(0L).toULong(),
+    durationMs = durationMs.coerceAtLeast(0L).toULong(),
+    updatedAtMs = updatedAtMs.coerceAtLeast(0L).toULong(),
+    queueTracks = queueTracks,
+    queueIndex = queueIndex.coerceAtLeast(0).toUInt()
+)
+
+internal fun FfiResumePlaybackState.toUi(): ResumePlaybackState = ResumePlaybackState(
+    track = track,
+    positionMs = positionMs.toLong(),
+    durationMs = durationMs.toLong(),
+    updatedAtMs = updatedAtMs.toLong(),
+    queueTracks = queueTracks,
+    queueIndex = queueIndex.toInt()
+)
+
 data class TrackListeningStat(
     val track: FfiTrack,
     val playCount: Int,
@@ -93,99 +133,166 @@ data class TrackListeningStat(
     val lastPlayedAtMs: Long
 )
 
+internal fun TrackListeningStat.toFfi(): FfiTrackListeningStat = FfiTrackListeningStat(
+    track = track,
+    playCount = playCount.coerceAtLeast(1).toUInt(),
+    totalListenedMs = totalListenedMs.coerceAtLeast(0L).toULong(),
+    lastPlayedAtMs = lastPlayedAtMs.coerceAtLeast(0L).toULong()
+)
+
+internal fun FfiTrackListeningStat.toUi(): TrackListeningStat = TrackListeningStat(
+    track = track,
+    playCount = playCount.toInt(),
+    totalListenedMs = totalListenedMs.toLong(),
+    lastPlayedAtMs = lastPlayedAtMs.toLong()
+)
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val core = PlasmaWaveApp.core
     private val displayPrefs = application.getSharedPreferences("display_preferences", android.content.Context.MODE_PRIVATE)
-    private val _highRefreshRate = MutableStateFlow(displayPrefs.getBoolean("high_refresh_rate", true))
-    val highRefreshRate = _highRefreshRate.asStateFlow()
-    fun setHighRefreshRate(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("high_refresh_rate", enabled).apply()
-        _highRefreshRate.value = enabled
+    private val customThemesPrefs = application.getSharedPreferences("user_custom_themes", android.content.Context.MODE_PRIVATE)
+    private val historyPrefs = application.getSharedPreferences("playback_history_v2", android.content.Context.MODE_PRIVATE)
+    private val privacyPrefs = application.getSharedPreferences("privacy_and_stats_v1", android.content.Context.MODE_PRIVATE)
+    private val resumePrefs = application.getSharedPreferences("resume_playback_v1", android.content.Context.MODE_PRIVATE)
+    private val playlistCachePrefs = application.getSharedPreferences("fast_playlist_cache_v1", android.content.Context.MODE_PRIVATE)
+    private val playlistTracksMemCache = ConcurrentHashMap<String, List<PlaylistTrackEntry>>()
+
+    init {
+        migrateLegacyPrefsToRustOnce()
     }
 
-    private val _dynamicColorEnabled = MutableStateFlow(displayPrefs.getBoolean("dynamic_color_enabled", true))
+    private val initialCoreSettings = runCatching { core.getSettings() }.getOrElse {
+        FfiSettings(
+            themeId = "org.kde.breeze-dark",
+            language = "system",
+            showDevFixtures = false,
+            downloadsWifiOnly = false,
+            downloadStorageLimitMib = 4096u,
+            modsEnabled = true,
+            deezerUserId = null,
+            deezerAccessToken = null,
+            customAccentColor = null,
+            highRefreshRate = true,
+            dynamicColorEnabled = true,
+            swipeToSkip = true,
+            seekbarStyle = "CLASSIC",
+            albumFrame = "MODERN_ROUNDED",
+            headerLogoStyle = "ORIGINAL",
+            homeFeedType = "FOR_YOU",
+            flowHeroCardEnabled = true,
+            flowQuickAccessPinned = true,
+            flowLibraryPinned = true,
+            downloadsQuickAccessPinned = true,
+            downloadsLibraryPinned = true,
+            resumePlaybackEnabled = true,
+            collectListeningStats = true,
+            collectListeningHistory = true,
+            saveResumePosition = true,
+            enabledHomeWidgets = HomeWidgetType.entries.filter { it.defaultEnabled }.map { it.id }
+        )
+    }
+
+    private val _settings = MutableStateFlow(initialCoreSettings)
+    val settings: StateFlow<FfiSettings> = _settings.asStateFlow()
+
+    private fun updateCoreSettings(block: (FfiSettings) -> FfiSettings) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val next = block(_settings.value)
+                _settings.value = core.updateSettings(next)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to update settings in Rust core", e)
+            }
+        }
+    }
+
+    fun updateSettings(settings: FfiSettings) {
+        try { _settings.value = core.updateSettings(settings) }
+        catch (_: Exception) { _statusMessage.value = "Ayar kaydedilemedi" }
+    }
+
+    private val _highRefreshRate = MutableStateFlow(initialCoreSettings.highRefreshRate)
+    val highRefreshRate = _highRefreshRate.asStateFlow()
+    fun setHighRefreshRate(enabled: Boolean) {
+        _highRefreshRate.value = enabled
+        updateCoreSettings { it.copy(highRefreshRate = enabled) }
+    }
+
+    private val _dynamicColorEnabled = MutableStateFlow(initialCoreSettings.dynamicColorEnabled)
     val dynamicColorEnabled = _dynamicColorEnabled.asStateFlow()
     fun setDynamicColorEnabled(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("dynamic_color_enabled", enabled).apply()
         _dynamicColorEnabled.value = enabled
+        updateCoreSettings { it.copy(dynamicColorEnabled = enabled) }
     }
 
     private val _seekbarStyle = MutableStateFlow(
-        runCatching {
-            SeekbarStyle.valueOf(displayPrefs.getString("seekbar_style", null) ?: "CLASSIC")
-        }.getOrDefault(SeekbarStyle.CLASSIC)
+        runCatching { SeekbarStyle.valueOf(initialCoreSettings.seekbarStyle) }.getOrDefault(SeekbarStyle.CLASSIC)
     )
     val seekbarStyle = _seekbarStyle.asStateFlow()
     fun setSeekbarStyle(style: SeekbarStyle) {
-        displayPrefs.edit().putString("seekbar_style", style.name).apply()
         _seekbarStyle.value = style
+        updateCoreSettings { it.copy(seekbarStyle = style.name) }
     }
 
     private val _albumFrame = MutableStateFlow(
-        runCatching {
-            AlbumCoverFrame.valueOf(displayPrefs.getString("album_frame", null) ?: "MODERN_ROUNDED")
-        }.getOrDefault(AlbumCoverFrame.MODERN_ROUNDED)
+        runCatching { AlbumCoverFrame.valueOf(initialCoreSettings.albumFrame) }.getOrDefault(AlbumCoverFrame.MODERN_ROUNDED)
     )
     val albumFrame = _albumFrame.asStateFlow()
     fun setAlbumFrame(frame: AlbumCoverFrame) {
-        displayPrefs.edit().putString("album_frame", frame.name).apply()
         _albumFrame.value = frame
+        updateCoreSettings { it.copy(albumFrame = frame.name) }
     }
 
-    private val _swipeToSkipEnabled = MutableStateFlow(
-        displayPrefs.getBoolean("swipe_to_skip", true)
-    )
+    private val _swipeToSkipEnabled = MutableStateFlow(initialCoreSettings.swipeToSkip)
     val swipeToSkipEnabled = _swipeToSkipEnabled.asStateFlow()
     fun setSwipeToSkipEnabled(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("swipe_to_skip", enabled).apply()
         _swipeToSkipEnabled.value = enabled
+        updateCoreSettings { it.copy(swipeToSkip = enabled) }
     }
 
-    private val _flowHeroCardEnabled = MutableStateFlow(displayPrefs.getBoolean("flow_hero_card_enabled", true))
+    private val _flowHeroCardEnabled = MutableStateFlow(initialCoreSettings.flowHeroCardEnabled)
     val flowHeroCardEnabled = _flowHeroCardEnabled.asStateFlow()
     fun setFlowHeroCardEnabled(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("flow_hero_card_enabled", enabled).apply()
         _flowHeroCardEnabled.value = enabled
+        updateCoreSettings { it.copy(flowHeroCardEnabled = enabled) }
     }
 
-    private val _flowQuickAccessPinned = MutableStateFlow(displayPrefs.getBoolean("flow_quick_access_pinned", true))
+    private val _flowQuickAccessPinned = MutableStateFlow(initialCoreSettings.flowQuickAccessPinned)
     val flowQuickAccessPinned = _flowQuickAccessPinned.asStateFlow()
     fun setFlowQuickAccessPinned(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("flow_quick_access_pinned", enabled).apply()
         _flowQuickAccessPinned.value = enabled
+        updateCoreSettings { it.copy(flowQuickAccessPinned = enabled) }
     }
 
-    private val _flowLibraryPinned = MutableStateFlow(displayPrefs.getBoolean("flow_library_pinned", true))
+    private val _flowLibraryPinned = MutableStateFlow(initialCoreSettings.flowLibraryPinned)
     val flowLibraryPinned = _flowLibraryPinned.asStateFlow()
     fun setFlowLibraryPinned(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("flow_library_pinned", enabled).apply()
         _flowLibraryPinned.value = enabled
+        updateCoreSettings { it.copy(flowLibraryPinned = enabled) }
     }
 
-    private val _downloadsQuickAccessPinned = MutableStateFlow(displayPrefs.getBoolean("downloads_quick_access_pinned", true))
+    private val _downloadsQuickAccessPinned = MutableStateFlow(initialCoreSettings.downloadsQuickAccessPinned)
     val downloadsQuickAccessPinned = _downloadsQuickAccessPinned.asStateFlow()
     fun setDownloadsQuickAccessPinned(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("downloads_quick_access_pinned", enabled).apply()
         _downloadsQuickAccessPinned.value = enabled
+        updateCoreSettings { it.copy(downloadsQuickAccessPinned = enabled) }
     }
 
-    private val _downloadsLibraryPinned = MutableStateFlow(displayPrefs.getBoolean("downloads_library_pinned", true))
+    private val _downloadsLibraryPinned = MutableStateFlow(initialCoreSettings.downloadsLibraryPinned)
     val downloadsLibraryPinned = _downloadsLibraryPinned.asStateFlow()
     fun setDownloadsLibraryPinned(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("downloads_library_pinned", enabled).apply()
         _downloadsLibraryPinned.value = enabled
+        updateCoreSettings { it.copy(downloadsLibraryPinned = enabled) }
     }
 
     private val _headerLogoStyle = MutableStateFlow(
-        runCatching {
-            HeaderLogoStyle.valueOf(displayPrefs.getString("header_logo_style", null) ?: "ORIGINAL")
-        }.getOrDefault(HeaderLogoStyle.ORIGINAL)
+        runCatching { HeaderLogoStyle.valueOf(initialCoreSettings.headerLogoStyle) }.getOrDefault(HeaderLogoStyle.ORIGINAL)
     )
     val headerLogoStyle = _headerLogoStyle.asStateFlow()
     fun setHeaderLogoStyle(style: HeaderLogoStyle) {
-        displayPrefs.edit().putString("header_logo_style", style.name).apply()
         _headerLogoStyle.value = style
+        updateCoreSettings { it.copy(headerLogoStyle = style.name) }
     }
 
     private val _customHeaderLogoTimestamp = MutableStateFlow(System.currentTimeMillis())
@@ -206,14 +313,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val _homeFeedType = MutableStateFlow(
-        runCatching {
-            HomeFeedType.valueOf(displayPrefs.getString("home_feed_type", null) ?: "FOR_YOU")
-        }.getOrDefault(HomeFeedType.FOR_YOU)
+        runCatching { HomeFeedType.valueOf(initialCoreSettings.homeFeedType) }.getOrDefault(HomeFeedType.FOR_YOU)
     )
     val homeFeedType = _homeFeedType.asStateFlow()
     fun setHomeFeedType(feed: HomeFeedType) {
-        displayPrefs.edit().putString("home_feed_type", feed.name).apply()
         _homeFeedType.value = feed
+        updateCoreSettings { it.copy(homeFeedType = feed.name) }
     }
 
     private val _launcherIcon = MutableStateFlow(
@@ -227,139 +332,171 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _launcherIcon.value = icon
     }
 
-    private val customThemesPrefs = application.getSharedPreferences("user_custom_themes", android.content.Context.MODE_PRIVATE)
-    private val _userCustomThemes = MutableStateFlow<List<CustomThemeSpec>>(readUserCustomThemes())
+    private val _userCustomThemes = MutableStateFlow<List<CustomThemeSpec>>(
+        runCatching { core.listUserCustomThemes().map { it.toUi() } }.getOrDefault(emptyList())
+    )
     val userCustomThemes: StateFlow<List<CustomThemeSpec>> = _userCustomThemes.asStateFlow()
 
-    private fun readUserCustomThemes(): List<CustomThemeSpec> = try {
-        val raw = customThemesPrefs.getString("themes", "[]") ?: "[]"
-        val arr = JSONArray(raw)
-        (0 until arr.length()).mapNotNull { i ->
-            runCatching {
-                val obj = arr.getJSONObject(i)
-                CustomThemeSpec(
-                    id = obj.getString("id"),
-                    name = obj.getString("name"),
-                    backgroundHex = obj.optString("backgroundHex", "#141224"),
-                    cardHex = obj.optString("cardHex", "#282348"),
-                    accentHex = obj.optString("accentHex", "#ED438D"),
-                    textHex = obj.optString("textHex", "#F5EEF8")
-                )
-            }.getOrNull()
-        }
-    } catch (_: Exception) { emptyList() }
-
-    private fun persistUserCustomThemes(list: List<CustomThemeSpec>) {
-        val arr = JSONArray()
-        list.forEach { spec ->
-            arr.put(
-                JSONObject()
-                    .put("id", spec.id)
-                    .put("name", spec.name)
-                    .put("backgroundHex", spec.backgroundHex)
-                    .put("cardHex", spec.cardHex)
-                    .put("accentHex", spec.accentHex)
-                    .put("textHex", spec.textHex)
-            )
-        }
-        customThemesPrefs.edit().putString("themes", arr.toString()).apply()
-        _userCustomThemes.value = list
-    }
-
-    private val historyPrefs = application.getSharedPreferences("playback_history_v2", android.content.Context.MODE_PRIVATE)
-    private val privacyPrefs = application.getSharedPreferences("privacy_and_stats_v1", android.content.Context.MODE_PRIVATE)
-    private val resumePrefs = application.getSharedPreferences("resume_playback_v1", android.content.Context.MODE_PRIVATE)
-    private val playlistCachePrefs = application.getSharedPreferences("fast_playlist_cache_v1", android.content.Context.MODE_PRIVATE)
-    private val playlistTracksMemCache = ConcurrentHashMap<String, List<PlaylistTrackEntry>>()
-
     // 1. Kaldığın Yerden Devam Et (UI görünürlüğü & kayıt)
-    private val _resumePlaybackEnabled = MutableStateFlow(displayPrefs.getBoolean("resume_playback_enabled", true))
+    private val _resumePlaybackEnabled = MutableStateFlow(initialCoreSettings.resumePlaybackEnabled)
     val resumePlaybackEnabled: StateFlow<Boolean> = _resumePlaybackEnabled.asStateFlow()
     fun setResumePlaybackEnabled(enabled: Boolean) {
-        displayPrefs.edit().putBoolean("resume_playback_enabled", enabled).apply()
         _resumePlaybackEnabled.value = enabled
+        updateCoreSettings { it.copy(resumePlaybackEnabled = enabled) }
     }
 
     // 2. Veri ve Gizlilik Ayarları (İsteyen istediği zaman açıp kapatabilir)
-    private val _collectListeningStatsEnabled = MutableStateFlow(privacyPrefs.getBoolean("collect_listening_stats", true))
+    private val _collectListeningStatsEnabled = MutableStateFlow(initialCoreSettings.collectListeningStats)
     val collectListeningStatsEnabled: StateFlow<Boolean> = _collectListeningStatsEnabled.asStateFlow()
     fun setCollectListeningStatsEnabled(enabled: Boolean) {
-        privacyPrefs.edit().putBoolean("collect_listening_stats", enabled).apply()
         _collectListeningStatsEnabled.value = enabled
+        updateCoreSettings { it.copy(collectListeningStats = enabled) }
     }
 
-    private val _collectListeningHistoryEnabled = MutableStateFlow(privacyPrefs.getBoolean("collect_listening_history", true))
+    private val _collectListeningHistoryEnabled = MutableStateFlow(initialCoreSettings.collectListeningHistory)
     val collectListeningHistoryEnabled: StateFlow<Boolean> = _collectListeningHistoryEnabled.asStateFlow()
     fun setCollectListeningHistoryEnabled(enabled: Boolean) {
-        privacyPrefs.edit().putBoolean("collect_listening_history", enabled).apply()
         _collectListeningHistoryEnabled.value = enabled
+        updateCoreSettings { it.copy(collectListeningHistory = enabled) }
     }
 
-    private val _saveResumePositionEnabled = MutableStateFlow(privacyPrefs.getBoolean("save_resume_position", true))
+    private val _saveResumePositionEnabled = MutableStateFlow(initialCoreSettings.saveResumePosition)
     val saveResumePositionEnabled: StateFlow<Boolean> = _saveResumePositionEnabled.asStateFlow()
     fun setSaveResumePositionEnabled(enabled: Boolean) {
-        privacyPrefs.edit().putBoolean("save_resume_position", enabled).apply()
         _saveResumePositionEnabled.value = enabled
+        updateCoreSettings { it.copy(saveResumePosition = enabled) }
     }
 
     // 3. Ana Sayfa Widget'ları
-    private val _enabledHomeWidgets = MutableStateFlow<Set<HomeWidgetType>>(readEnabledHomeWidgets())
+    private val _enabledHomeWidgets = MutableStateFlow<Set<HomeWidgetType>>(
+        HomeWidgetType.entries.filter { it.id in initialCoreSettings.enabledHomeWidgets }.toSet()
+    )
     val enabledHomeWidgets: StateFlow<Set<HomeWidgetType>> = _enabledHomeWidgets.asStateFlow()
-
-    private fun readEnabledHomeWidgets(): Set<HomeWidgetType> {
-        val saved = displayPrefs.getStringSet("enabled_home_widgets", null)
-        if (saved == null) {
-            return HomeWidgetType.entries.filter { it.defaultEnabled }.toSet()
-        }
-        return HomeWidgetType.entries.filter { it.id in saved }.toSet()
-    }
 
     fun setHomeWidgetEnabled(widget: HomeWidgetType, enabled: Boolean) {
         val next = _enabledHomeWidgets.value.toMutableSet().apply {
             if (enabled) add(widget) else remove(widget)
         }
-        displayPrefs.edit().putStringSet("enabled_home_widgets", next.map { it.id }.toSet()).apply()
         _enabledHomeWidgets.value = next
+        updateCoreSettings { it.copy(enabledHomeWidgets = next.map { w -> w.id }) }
     }
 
-    // 4. Dinleme İstatistikleri (Hangi şarkı kaç kere dinlendi, toplam dinleme süresi)
-    private val _recentTracks = MutableStateFlow<List<FfiTrack>>(readRecentTracks())
+    // 4. Dinleme İstatistikleri (Hangi şarkı kaç kere dinlendi, toplam dinleme süresi — Rust SQLite v2)
+    private val _recentTracks = MutableStateFlow<List<FfiTrack>>(
+        runCatching { core.getRecentTracks(100u) }.getOrDefault(emptyList())
+    )
     val recentTracks: StateFlow<List<FfiTrack>> = _recentTracks.asStateFlow()
 
-    private val _mostPlayedTracks = MutableStateFlow<List<FfiTrack>>(readMostPlayedTracks())
+    private val _mostPlayedTracks = MutableStateFlow<List<FfiTrack>>(
+        runCatching { core.getMostPlayedTracks(100u) }.getOrDefault(emptyList())
+    )
     val mostPlayedTracks: StateFlow<List<FfiTrack>> = _mostPlayedTracks.asStateFlow()
 
-    private val _trackListeningStats = MutableStateFlow<List<TrackListeningStat>>(readTrackListeningStats())
+    private val _trackListeningStats = MutableStateFlow<List<TrackListeningStat>>(
+        runCatching { core.getListeningStats(300u).map { it.toUi() } }.getOrDefault(emptyList())
+    )
     val trackListeningStats: StateFlow<List<TrackListeningStat>> = _trackListeningStats.asStateFlow()
 
-    private val _totalListeningTimeMs = MutableStateFlow<Long>(readTotalListeningTimeMs())
+    private val _totalListeningTimeMs = MutableStateFlow<Long>(
+        runCatching { core.getTotalListeningTimeMs().toLong() }.getOrDefault(0L)
+    )
     val totalListeningTimeMs: StateFlow<Long> = _totalListeningTimeMs.asStateFlow()
 
-    private val _resumePlaybackState = MutableStateFlow<ResumePlaybackState?>(readResumePlaybackState())
+    private val _resumePlaybackState = MutableStateFlow<ResumePlaybackState?>(
+        runCatching { core.getResumePlaybackState()?.toUi() }.getOrNull() ?: run {
+            val recent = _recentTracks.value
+            val first = recent.firstOrNull()
+            if (first != null) {
+                val dur = first.durationMs.toLong().takeIf { it > 0L } ?: 210_000L
+                ResumePlaybackState(
+                    track = first,
+                    positionMs = (dur * 0.35).toLong(),
+                    durationMs = dur,
+                    updatedAtMs = System.currentTimeMillis(),
+                    queueTracks = recent.take(20),
+                    queueIndex = 0
+                )
+            } else null
+        }
+    )
     val resumePlaybackState: StateFlow<ResumePlaybackState?> = _resumePlaybackState.asStateFlow()
 
-    private fun readHistoryEntries(): List<Pair<FfiTrack, Int>> = try {
-        val raw = historyPrefs.getString("entries", "[]") ?: "[]"
-        val array = JSONArray(raw)
-        (0 until array.length()).mapNotNull { i ->
-            runCatching {
-                val obj = array.getJSONObject(i)
-                val track = jsonTrack(obj.getJSONObject("track"))
-                val count = obj.optInt("count", 1)
-                Pair(track, count)
-            }.getOrNull()
-        }
-    } catch (_: Exception) { emptyList() }
+    private fun migrateLegacyPrefsToRustOnce() {
+        try {
+            if (displayPrefs.getBoolean("migrated_to_rust_v2", false)) return
 
-    private fun readRecentTracks(): List<FfiTrack> = readHistoryEntries().map { it.first }
-    private fun readMostPlayedTracks(): List<FfiTrack> = readHistoryEntries().sortedByDescending { it.second }.map { it.first }
+            // 1. Migrate UI & Privacy settings from displayPrefs & privacyPrefs
+            val cur = core.getSettings()
+            val savedWidgets = displayPrefs.getStringSet("enabled_home_widgets", null)?.toList()
+                ?: cur.enabledHomeWidgets
+            val migratedSettings = cur.copy(
+                highRefreshRate = displayPrefs.getBoolean("high_refresh_rate", cur.highRefreshRate),
+                dynamicColorEnabled = displayPrefs.getBoolean("dynamic_color_enabled", cur.dynamicColorEnabled),
+                swipeToSkip = displayPrefs.getBoolean("swipe_to_skip", cur.swipeToSkip),
+                seekbarStyle = displayPrefs.getString("seekbar_style", cur.seekbarStyle) ?: cur.seekbarStyle,
+                albumFrame = displayPrefs.getString("album_frame", cur.albumFrame) ?: cur.albumFrame,
+                headerLogoStyle = displayPrefs.getString("header_logo_style", cur.headerLogoStyle) ?: cur.headerLogoStyle,
+                homeFeedType = displayPrefs.getString("home_feed_type", cur.homeFeedType) ?: cur.homeFeedType,
+                flowHeroCardEnabled = displayPrefs.getBoolean("flow_hero_card_enabled", cur.flowHeroCardEnabled),
+                flowQuickAccessPinned = displayPrefs.getBoolean("flow_quick_access_pinned", cur.flowQuickAccessPinned),
+                flowLibraryPinned = displayPrefs.getBoolean("flow_library_pinned", cur.flowLibraryPinned),
+                downloadsQuickAccessPinned = displayPrefs.getBoolean("downloads_quick_access_pinned", cur.downloadsQuickAccessPinned),
+                downloadsLibraryPinned = displayPrefs.getBoolean("downloads_library_pinned", cur.downloadsLibraryPinned),
+                resumePlaybackEnabled = displayPrefs.getBoolean("resume_playback_enabled", cur.resumePlaybackEnabled),
+                collectListeningStats = privacyPrefs.getBoolean("collect_listening_stats", cur.collectListeningStats),
+                collectListeningHistory = privacyPrefs.getBoolean("collect_listening_history", cur.collectListeningHistory),
+                saveResumePosition = privacyPrefs.getBoolean("save_resume_position", cur.saveResumePosition),
+                enabledHomeWidgets = savedWidgets
+            )
+            core.updateSettings(migratedSettings)
 
-    private fun readTrackListeningStats(): List<TrackListeningStat> {
-        return try {
-            val raw = privacyPrefs.getString("track_stats", null)
-            if (raw != null) {
-                val arr = JSONArray(raw)
-                val parsed = (0 until arr.length()).mapNotNull { i ->
+            // 2. Migrate user custom themes
+            val rawThemes = customThemesPrefs.getString("themes", null)
+            if (!rawThemes.isNullOrBlank()) {
+                val arr = JSONArray(rawThemes)
+                for (i in 0 until arr.length()) {
+                    runCatching {
+                        val obj = arr.getJSONObject(i)
+                        core.saveUserCustomTheme(
+                            FfiCustomThemeSpec(
+                                id = obj.getString("id"),
+                                name = obj.getString("name"),
+                                backgroundHex = obj.optString("backgroundHex", "#141224"),
+                                cardHex = obj.optString("cardHex", "#282348"),
+                                accentHex = obj.optString("accentHex", "#ED438D"),
+                                textHex = obj.optString("textHex", "#F5EEF8")
+                            )
+                        )
+                    }
+                }
+                // Restore original active theme id if needed
+                if (migratedSettings.themeId.isNotBlank()) {
+                    runCatching { core.setTheme(migratedSettings.themeId) }
+                }
+            }
+
+            // 3. Migrate playback history & listening stats
+            val rawHistory = historyPrefs.getString("entries", null)
+            val legacyHistoryPairs = mutableListOf<Pair<FfiTrack, Int>>()
+            if (!rawHistory.isNullOrBlank()) {
+                val arr = JSONArray(rawHistory)
+                for (i in 0 until arr.length()) {
+                    runCatching {
+                        val obj = arr.getJSONObject(i)
+                        val track = jsonTrack(obj.getJSONObject("track"))
+                        val count = obj.optInt("count", 1)
+                        legacyHistoryPairs.add(Pair(track, count))
+                    }
+                }
+                if (legacyHistoryPairs.isNotEmpty()) {
+                    core.setRecentTracks(legacyHistoryPairs.map { it.first })
+                }
+            }
+
+            val rawStats = privacyPrefs.getString("track_stats", null)
+            if (!rawStats.isNullOrBlank()) {
+                val arr = JSONArray(rawStats)
+                val batch = (0 until arr.length()).mapNotNull { i ->
                     runCatching {
                         val obj = arr.getJSONObject(i)
                         TrackListeningStat(
@@ -367,91 +504,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             playCount = obj.optInt("playCount", 1),
                             totalListenedMs = obj.optLong("totalListenedMs", 0L),
                             lastPlayedAtMs = obj.optLong("lastPlayedAtMs", System.currentTimeMillis())
-                        )
+                        ).toFfi()
                     }.getOrNull()
                 }
-                if (parsed.isNotEmpty()) {
-                    return parsed.sortedWith(compareByDescending<TrackListeningStat> { it.playCount }.thenByDescending { it.totalListenedMs })
+                if (batch.isNotEmpty()) {
+                    core.upsertListeningStatsBatch(batch)
+                }
+            } else if (legacyHistoryPairs.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                val seeded = legacyHistoryPairs.mapIndexed { idx, (t, count) ->
+                    val estDuration = (t.durationMs.toLong().takeIf { it > 0L } ?: 180_000L) * count
+                    TrackListeningStat(
+                        track = t,
+                        playCount = count,
+                        totalListenedMs = estDuration,
+                        lastPlayedAtMs = now - idx * 60_000L
+                    ).toFfi()
+                }
+                core.upsertListeningStatsBatch(seeded)
+            }
+
+            val savedTotalMs = privacyPrefs.getLong("total_listening_time_ms", -1L)
+            if (savedTotalMs > 0L) {
+                core.setTotalListeningTimeMs(savedTotalMs.toULong())
+            }
+
+            // 4. Migrate resume playback state
+            val rawResume = resumePrefs.getString("state", null)
+            if (!rawResume.isNullOrBlank()) {
+                runCatching {
+                    val obj = JSONObject(rawResume)
+                    val track = jsonTrack(obj.getJSONObject("track"))
+                    val qArr = obj.optJSONArray("queue") ?: JSONArray()
+                    val queue = (0 until qArr.length()).mapNotNull { i ->
+                        runCatching { jsonTrack(qArr.getJSONObject(i)) }.getOrNull()
+                    }
+                    core.saveResumePlaybackState(
+                        ResumePlaybackState(
+                            track = track,
+                            positionMs = obj.optLong("positionMs", 0L),
+                            durationMs = obj.optLong("durationMs", track.durationMs.toLong()),
+                            updatedAtMs = obj.optLong("updatedAtMs", System.currentTimeMillis()),
+                            queueTracks = queue.ifEmpty { listOf(track) },
+                            queueIndex = obj.optInt("queueIndex", 0)
+                        ).toFfi()
+                    )
                 }
             }
-            // Seed from existing history entries if track_stats wasn't populated yet
-            val history = readHistoryEntries()
-            val now = System.currentTimeMillis()
-            val seeded = history.mapIndexed { idx, (t, count) ->
-                val estDuration = (t.durationMs.toLong().takeIf { it > 0L } ?: 180_000L) * count
-                TrackListeningStat(
-                    track = t,
-                    playCount = count,
-                    totalListenedMs = estDuration,
-                    lastPlayedAtMs = now - idx * 60_000L
-                )
-            }.sortedWith(compareByDescending<TrackListeningStat> { it.playCount }.thenByDescending { it.totalListenedMs })
-            if (seeded.isNotEmpty()) {
-                persistTrackListeningStats(seeded)
-            }
-            seeded
-        } catch (_: Exception) {
-            emptyList()
-        }
-    }
 
-    private fun readTotalListeningTimeMs(): Long {
-        val saved = privacyPrefs.getLong("total_listening_time_ms", -1L)
-        if (saved >= 0L) return saved
-        val sum = readTrackListeningStats().sumOf { it.totalListenedMs }
-        privacyPrefs.edit().putLong("total_listening_time_ms", sum).apply()
-        return sum
-    }
-
-    private fun persistTrackListeningStats(stats: List<TrackListeningStat>) {
-        val sorted = stats.sortedWith(compareByDescending<TrackListeningStat> { it.playCount }.thenByDescending { it.totalListenedMs }).take(300)
-        val arr = JSONArray()
-        sorted.forEach { s ->
-            arr.put(
-                JSONObject()
-                    .put("track", trackJson(s.track))
-                    .put("playCount", s.playCount)
-                    .put("totalListenedMs", s.totalListenedMs)
-                    .put("lastPlayedAtMs", s.lastPlayedAtMs)
-            )
-        }
-        privacyPrefs.edit().putString("track_stats", arr.toString()).apply()
-        _trackListeningStats.value = sorted
-    }
-
-    private fun readResumePlaybackState(): ResumePlaybackState? {
-        return try {
-            val raw = resumePrefs.getString("state", null)
-            if (raw != null) {
-                val obj = JSONObject(raw)
-                val track = jsonTrack(obj.getJSONObject("track"))
-                val qArr = obj.optJSONArray("queue") ?: JSONArray()
-                val queue = (0 until qArr.length()).mapNotNull { i ->
-                    runCatching { jsonTrack(qArr.getJSONObject(i)) }.getOrNull()
-                }
-                return ResumePlaybackState(
-                    track = track,
-                    positionMs = obj.optLong("positionMs", 0L),
-                    durationMs = obj.optLong("durationMs", track.durationMs.toLong()),
-                    updatedAtMs = obj.optLong("updatedAtMs", System.currentTimeMillis()),
-                    queueTracks = queue.ifEmpty { listOf(track) },
-                    queueIndex = obj.optInt("queueIndex", 0)
-                )
-            }
-            // Seed from most recent track if available so "Kaldığın yerden devam et" is immediately usable
-            val recent = readRecentTracks()
-            val first = recent.firstOrNull() ?: return null
-            val dur = first.durationMs.toLong().takeIf { it > 0L } ?: 210_000L
-            ResumePlaybackState(
-                track = first,
-                positionMs = (dur * 0.35).toLong(),
-                durationMs = dur,
-                updatedAtMs = System.currentTimeMillis(),
-                queueTracks = recent.take(20),
-                queueIndex = 0
-            )
-        } catch (_: Exception) {
-            null
+            displayPrefs.edit().putBoolean("migrated_to_rust_v2", true).apply()
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Legacy prefs migration error", e)
         }
     }
 
@@ -478,16 +581,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _resumePlaybackState.value = state
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val qArr = JSONArray()
-                trimmedQueue.forEach { qArr.put(trackJson(it)) }
-                val json = JSONObject()
-                    .put("track", trackJson(track))
-                    .put("positionMs", safePos)
-                    .put("durationMs", safeDur)
-                    .put("updatedAtMs", state.updatedAtMs)
-                    .put("queue", qArr)
-                    .put("queueIndex", safeIdx)
-                resumePrefs.edit().putString("state", json.toString()).apply()
+                core.saveResumePlaybackState(state.toFfi())
             } catch (_: Exception) {}
         }
     }
@@ -510,143 +604,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun recordTrackPlay(track: FfiTrack) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (_collectListeningHistoryEnabled.value) {
-                val list = readHistoryEntries().toMutableList()
-                val existingIdx = list.indexOfFirst { it.first.id == track.id }
-                val count = if (existingIdx >= 0) list[existingIdx].second + 1 else 1
-                if (existingIdx >= 0) list.removeAt(existingIdx)
-                list.add(0, Pair(track, count))
-                val trimmed = list.take(100)
-                val jsonArray = JSONArray()
-                trimmed.forEach { (t, c) ->
-                    jsonArray.put(JSONObject().put("count", c).put("track", trackJson(t)))
+            try {
+                val now = System.currentTimeMillis().toULong()
+                core.recordTrackPlay(
+                    track = track,
+                    collectStats = _collectListeningStatsEnabled.value,
+                    collectHistory = _collectListeningHistoryEnabled.value,
+                    timestampMs = now
+                )
+                if (_collectListeningHistoryEnabled.value) {
+                    _recentTracks.value = core.getRecentTracks(100u)
+                    _mostPlayedTracks.value = core.getMostPlayedTracks(100u)
                 }
-                historyPrefs.edit().putString("entries", jsonArray.toString()).apply()
-                _recentTracks.value = trimmed.map { it.first }
-                _mostPlayedTracks.value = trimmed.sortedByDescending { it.second }.map { it.first }
-            }
-            if (_collectListeningStatsEnabled.value) {
-                val currentStats = _trackListeningStats.value.toMutableList()
-                val idx = currentStats.indexOfFirst { it.track.id == track.id }
-                val now = System.currentTimeMillis()
-                if (idx >= 0) {
-                    val existing = currentStats[idx]
-                    currentStats[idx] = existing.copy(
-                        track = track,
-                        playCount = existing.playCount + 1,
-                        lastPlayedAtMs = now
-                    )
-                } else {
-                    currentStats.add(
-                        TrackListeningStat(
-                            track = track,
-                            playCount = 1,
-                            totalListenedMs = 0L,
-                            lastPlayedAtMs = now
-                        )
-                    )
+                if (_collectListeningStatsEnabled.value) {
+                    _trackListeningStats.value = core.getListeningStats(300u).map { it.toUi() }
                 }
-                persistTrackListeningStats(currentStats)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "recordTrackPlay failed", e)
             }
         }
     }
 
     private fun recordActiveListeningTick(track: FfiTrack, deltaMs: Long) {
         if (!_collectListeningStatsEnabled.value || deltaMs <= 0L) return
-        val newTotal = _totalListeningTimeMs.value + deltaMs
-        _totalListeningTimeMs.value = newTotal
-        privacyPrefs.edit().putLong("total_listening_time_ms", newTotal).apply()
-
-        val currentStats = _trackListeningStats.value.toMutableList()
-        val idx = currentStats.indexOfFirst { it.track.id == track.id }
-        val now = System.currentTimeMillis()
-        if (idx >= 0) {
-            val existing = currentStats[idx]
-            currentStats[idx] = existing.copy(
-                totalListenedMs = existing.totalListenedMs + deltaMs,
-                lastPlayedAtMs = now
+        try {
+            val now = System.currentTimeMillis().toULong()
+            val updatedTotal = core.recordListeningTick(
+                track = track,
+                deltaMs = deltaMs.toULong(),
+                collectStats = true,
+                timestampMs = now
             )
-        } else {
-            currentStats.add(
-                TrackListeningStat(
-                    track = track,
-                    playCount = 1,
-                    totalListenedMs = deltaMs,
-                    lastPlayedAtMs = now
-                )
-            )
-        }
-        persistTrackListeningStats(currentStats)
-    }
-
-    fun formatDurationTr(ms: Long): String {
-        val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
-        val hours = totalSeconds / 3600L
-        val minutes = (totalSeconds % 3600L) / 60L
-        val seconds = totalSeconds % 60L
-        return when {
-            hours > 0L -> "${hours} sa ${minutes} dk"
-            minutes > 0L -> "${minutes} dk ${seconds} sn"
-            else -> "${seconds} sn"
+            _totalListeningTimeMs.value = updatedTotal.toLong()
+            _trackListeningStats.value = core.getListeningStats(300u).map { it.toUi() }
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "recordActiveListeningTick failed", e)
         }
     }
 
-    fun buildUserDataExportJson(): String {
-        val stats = _trackListeningStats.value
-        val totalMs = _totalListeningTimeMs.value
-        val totalPlays = stats.sumOf { it.playCount }
-        val topArtist = stats
-            .groupBy { it.track.artist }
-            .maxByOrNull { (_, list) -> list.sumOf { it.playCount } }
-            ?.key ?: "-"
+    fun formatDurationTr(ms: Long): String =
+        core.formatDurationTr(ms.coerceAtLeast(0L).toULong())
 
-        val statsArr = JSONArray()
-        stats.forEach { s ->
-            statsArr.put(
-                JSONObject()
-                    .put("id", s.track.id)
-                    .put("title", s.track.title)
-                    .put("artist", s.track.artist)
-                    .put("album", s.track.album)
-                    .put("playCount", s.playCount)
-                    .put("totalListenedMs", s.totalListenedMs)
-                    .put("totalListenedFormatted", formatDurationTr(s.totalListenedMs))
-                    .put("lastPlayedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(s.lastPlayedAtMs)))
-            )
-        }
-
-        val resumeObj = _resumePlaybackState.value?.let { r ->
-            JSONObject()
-                .put("trackTitle", r.track.title)
-                .put("artist", r.track.artist)
-                .put("positionMs", r.positionMs)
-                .put("durationMs", r.durationMs)
-        } ?: JSONObject.NULL
-
-        return JSONObject()
-            .put("app", "projekt_b-d")
-            .put("exportedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
-            .put(
-                "privacySettings",
-                JSONObject()
-                    .put("collectListeningStatsEnabled", _collectListeningStatsEnabled.value)
-                    .put("collectListeningHistoryEnabled", _collectListeningHistoryEnabled.value)
-                    .put("saveResumePositionEnabled", _saveResumePositionEnabled.value)
-                    .put("resumePlaybackCardEnabled", _resumePlaybackEnabled.value)
-            )
-            .put(
-                "summary",
-                JSONObject()
-                    .put("totalListeningTimeMs", totalMs)
-                    .put("totalListeningFormatted", formatDurationTr(totalMs))
-                    .put("totalTrackPlays", totalPlays)
-                    .put("uniqueTracksCount", stats.size)
-                    .put("topArtist", topArtist)
-            )
-            .put("trackStatistics", statsArr)
-            .put("resumePlaybackState", resumeObj)
-            .toString(2)
-    }
+    fun buildUserDataExportJson(): String =
+        runCatching { core.buildUserDataExportJson(System.currentTimeMillis().toULong()) }
+            .getOrElse { "{}" }
 
     fun exportUserDataToDownloads(): String? {
         return try {
@@ -673,6 +674,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearAllCollectedUserData() {
         viewModelScope.launch(Dispatchers.IO) {
+            runCatching { core.clearAllCollectedUserData() }
             historyPrefs.edit().clear().apply()
             privacyPrefs.edit()
                 .remove("track_stats")
@@ -687,6 +689,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _statusMessage.value = "Toplanan tüm dinleme istatistikleri ve geçmiş verileri silindi"
         }
     }
+
+    fun getQuickArtists(limit: Int = 12, fallbackTracks: List<FfiTrack> = emptyList()): List<FfiQuickArtistItem> =
+        runCatching { core.getQuickArtists(limit.coerceAtLeast(1).toUInt(), fallbackTracks) }
+            .getOrDefault(emptyList())
+
+    fun generateMoodMix(mood: String, limit: Int = 25, candidateTracks: List<FfiTrack> = emptyList()): List<FfiTrack> =
+        runCatching { core.generateMoodMix(mood, limit.coerceAtLeast(1).toUInt(), candidateTracks) }
+            .getOrDefault(emptyList())
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
@@ -782,14 +792,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _downloadedTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
     val downloadedTracks: StateFlow<List<FfiTrack>> = _downloadedTracks.asStateFlow()
-
-    private val _settings = MutableStateFlow(core.getSettings())
-    val settings: StateFlow<FfiSettings> = _settings.asStateFlow()
-
-    fun updateSettings(settings: FfiSettings) {
-        try { _settings.value = core.updateSettings(settings) }
-        catch (_: Exception) { _statusMessage.value = "Ayar kaydedilemedi" }
-    }
 
     // Contextual Long-press state
     private val _selectedTrackForMenu = MutableStateFlow<FfiTrack?>(null)
@@ -974,86 +976,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         for (json in themesJson) {
             runCatching { core.importThemeJson(json) }
         }
-        val customList = readUserCustomThemes()
+        val customList = runCatching { core.listUserCustomThemes().map { it.toUi() } }.getOrDefault(emptyList())
         _userCustomThemes.value = customList
-        for (spec in customList) {
-            runCatching { core.importThemeJson(buildCustomThemeManifestJson(spec)) }
-        }
-    }
-
-    private fun blendHexColors(hex1: String, hex2: String, ratio: Float): String {
-        return try {
-            val c1 = android.graphics.Color.parseColor(hex1)
-            val c2 = android.graphics.Color.parseColor(hex2)
-            val r = (android.graphics.Color.red(c1) * (1f - ratio) + android.graphics.Color.red(c2) * ratio).toInt().coerceIn(0, 255)
-            val g = (android.graphics.Color.green(c1) * (1f - ratio) + android.graphics.Color.green(c2) * ratio).toInt().coerceIn(0, 255)
-            val b = (android.graphics.Color.blue(c1) * (1f - ratio) + android.graphics.Color.blue(c2) * ratio).toInt().coerceIn(0, 255)
-            String.format("#%02X%02X%02X", r, g, b)
-        } catch (_: Exception) {
-            hex1
-        }
-    }
-
-    private fun buildCustomThemeManifestJson(spec: CustomThemeSpec): String {
-        val bg = spec.backgroundHex
-        val card = spec.cardHex
-        val accent = spec.accentHex
-        val text = spec.textHex
-        val surface = blendHexColors(bg, card, 0.5f)
-        val surfaceVariant = blendHexColors(bg, card, 0.85f)
-        val cardPressed = blendHexColors(card, accent, 0.22f)
-        val accentMuted = blendHexColors(bg, accent, 0.35f)
-        val textSecondary = blendHexColors(text, bg, 0.32f)
-        val textDisabled = blendHexColors(text, bg, 0.55f)
-        val border = blendHexColors(card, accent, 0.28f)
-        val divider = blendHexColors(bg, card, 0.75f)
-
-        val colorsObj = JSONObject()
-            .put("background", bg)
-            .put("surface", surface)
-            .put("surfaceVariant", surfaceVariant)
-            .put("card", card)
-            .put("cardPressed", cardPressed)
-            .put("accent", accent)
-            .put("accentMuted", accentMuted)
-            .put("onAccent", "#FCFCFC")
-            .put("text", text)
-            .put("textSecondary", textSecondary)
-            .put("textDisabled", textDisabled)
-            .put("border", border)
-            .put("divider", divider)
-            .put("positive", "#27AE60")
-            .put("warning", "#F67400")
-            .put("negative", "#DA4453")
-            .put("scrim", "#B3000000")
-
-        return JSONObject()
-            .put("schemaVersion", 1)
-            .put("id", spec.id)
-            .put("name", spec.name)
-            .put("author", "Custom")
-            .put("description", "${spec.name} özel kullanıcı teması")
-            .put("dark", true)
-            .put("colors", colorsObj)
-            .put("shapes", JSONObject().put("smallRadius", 6).put("mediumRadius", 10).put("largeRadius", 18))
-            .put("spacing", JSONObject().put("xs", 4).put("sm", 8).put("md", 12).put("lg", 16).put("xl", 24))
-            .put("typography", JSONObject().put("fontFamily", "system").put("scale", 1.0))
-            .put("elevation", JSONObject().put("low", 1).put("medium", 4).put("high", 12))
-            .put("motion", JSONObject().put("shortMs", 120).put("mediumMs", 220).put("longMs", 360))
-            .toString()
     }
 
     fun saveUserCustomTheme(spec: CustomThemeSpec) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val current = readUserCustomThemes().toMutableList()
-                val idx = current.indexOfFirst { it.id == spec.id }
-                if (idx >= 0) current[idx] = spec else current.add(spec)
-                persistUserCustomThemes(current)
-                val manifestJson = buildCustomThemeManifestJson(spec)
-                core.importThemeJson(manifestJson)
-                try { core.setCustomAccentColor(null) } catch (_: Exception) { }
-                val applied = core.setTheme(spec.id)
+                val applied = core.saveUserCustomTheme(spec.toFfi())
+                _userCustomThemes.value = core.listUserCustomThemes().map { it.toUi() }
                 _activeTheme.value = applied
                 _settings.value = core.getSettings()
                 _availableThemes.value = core.listThemes()
@@ -1068,14 +999,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteUserCustomTheme(themeId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val current = readUserCustomThemes().filterNot { it.id == themeId }
-                persistUserCustomThemes(current)
-                if (_activeTheme.value.id == themeId) {
-                    try { core.setCustomAccentColor(null) } catch (_: Exception) { }
-                    val fallback = core.setTheme("mlp.twilight-sparkle")
-                    _activeTheme.value = fallback
-                    _settings.value = core.getSettings()
-                }
+                val updatedTheme = core.deleteUserCustomTheme(themeId)
+                _userCustomThemes.value = core.listUserCustomThemes().map { it.toUi() }
+                _activeTheme.value = updatedTheme
+                _settings.value = core.getSettings()
+                _availableThemes.value = core.listThemes()
                 _statusMessage.value = "Özel tema silindi"
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to delete custom theme", e)
@@ -1480,9 +1408,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun warmupPlaylistCacheFromDisk() {
         try {
+            val cachedFromRust = core.getAllCachedPlaylistEntries()
+            for ((playlistId, entries) in cachedFromRust) {
+                if (entries.isNotEmpty()) {
+                    playlistTracksMemCache[playlistId] = entries.map { it.toUi() }
+                }
+            }
+            // Also migrate any legacy SharedPreferences playlist cache into Rust SQLite once
             for ((key, raw) in playlistCachePrefs.all) {
                 if (!key.startsWith("pl:") || raw !is String) continue
                 val playlistId = key.removePrefix("pl:")
+                if (playlistTracksMemCache.containsKey(playlistId)) continue
                 val arr = JSONArray(raw)
                 val entries = (0 until arr.length()).mapNotNull { i ->
                     runCatching {
@@ -1496,6 +1432,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (entries.isNotEmpty()) {
                     playlistTracksMemCache[playlistId] = entries
+                    runCatching { core.setCachedPlaylistEntries(playlistId, entries.map { it.toFfi() }) }
                 }
             }
         } catch (_: Exception) {}
@@ -1503,15 +1440,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun persistCachedPlaylistEntries(playlistId: String, entries: List<PlaylistTrackEntry>) {
         try {
-            val arr = JSONArray()
-            entries.take(300).forEach { entry ->
-                val obj = JSONObject()
-                    .put("track", trackJson(entry.track))
-                    .put("originalIndex", entry.originalIndex)
-                if (entry.addedAt != null) obj.put("addedAt", entry.addedAt)
-                arr.put(obj)
-            }
-            playlistCachePrefs.edit().putString("pl:$playlistId", arr.toString()).apply()
+            core.setCachedPlaylistEntries(playlistId, entries.take(300).map { it.toFfi() })
         } catch (_: Exception) {}
     }
 

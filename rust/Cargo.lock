@@ -421,6 +421,7 @@ version = "0.1.0"
 dependencies = [
  "core-domain",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -431,6 +432,7 @@ dependencies = [
  "core-downloads",
  "core-library",
  "core-settings",
+ "core-themes",
  "rusqlite",
  "serde",
  "serde_json",

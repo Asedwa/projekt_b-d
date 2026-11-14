@@ -11,6 +11,7 @@ core-domain.workspace = true
 core-library.workspace = true
 core-downloads.workspace = true
 core-settings.workspace = true
+core-themes.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

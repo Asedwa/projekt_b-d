@@ -29,6 +29,7 @@ class PlasmaWaveApp : Application(), ImageLoaderFactory {
             val storageDir = File(filesDir, "plasmawave_data").apply { mkdirs() }
             core = PlasmaWaveCore(storageDir.absolutePath)
             Log.i(TAG, "PlasmaWave core initialized: ${core.getVersion()}")
+            org.kde.plasmawave.ui.components.LauncherIconManager.syncLauncherIcon(this)
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to initialize PlasmaWave core", e)
             throw e

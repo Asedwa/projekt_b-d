@@ -8,7 +8,7 @@ mod manifest;
 mod registry;
 
 pub use manifest::{
-    ColorTokens, ElevationTokens, MotionTokens, ShapeTokens, SpacingTokens, ThemeManifest,
-    TypographyTokens, CURRENT_SCHEMA_VERSION,
+    ColorTokens, CustomThemeSpec, ElevationTokens, MotionTokens, ShapeTokens, SpacingTokens,
+    ThemeManifest, TypographyTokens, CURRENT_SCHEMA_VERSION,
 };
 pub use registry::{ThemeRegistry, DEFAULT_THEME_ID};

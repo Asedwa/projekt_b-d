@@ -74,13 +74,11 @@ object LauncherIconManager {
         // Always keep target MainActivity enabled so intents & running task are never killed
         try {
             val mainComp = ComponentName(pkg, MAIN_ACTIVITY_CLASS)
-            if (pm.getComponentEnabledSetting(mainComp) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
-                pm.setComponentEnabledSetting(
-                    mainComp,
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    PackageManager.DONT_KILL_APP
-                )
-            }
+            pm.setComponentEnabledSetting(
+                mainComp,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to ensure MainActivity enabled", e)
         }

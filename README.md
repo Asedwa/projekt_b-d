@@ -8,6 +8,10 @@ Deezer kitaplığını ve çalma listelerini kişiselleştirilebilir bir oynatı
 
 Açılan sayfada **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını seç. Depo özel olduğu için GitHub hesabınla giriş yapman gerekir. APK, uygulamanın debug derlemesidir.
 
+## 0.6 sürüm notu
+
+Rust’a kısmi geçiş yapıldı: bazı ayarlar ve kullanıcı verileri Rust çekirdeğine taşındı. Geçiş devam ediyor.
+
 ## Özellikler
 
 - Deezer hesabıyla giriş, beğenilen şarkılar ve çalma listeleri.

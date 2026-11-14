@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const _CURRENT_SCHEMA_VERSION: i32 = 1;
+pub const _CURRENT_SCHEMA_VERSION: i32 = 2;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -123,6 +123,71 @@ impl Database {
                 .map_err(|e| DomainError::Storage(format!("commit migration v1 error: {e}")))?;
         }
 
+        if version < 2 {
+            let tx = conn
+                .transaction()
+                .map_err(|e| DomainError::Storage(format!("migration v2 transaction error: {e}")))?;
+
+            tx.execute_batch(
+                "CREATE TABLE IF NOT EXISTS listening_stats (
+                    track_id TEXT PRIMARY KEY,
+                    track_json TEXT NOT NULL,
+                    play_count INTEGER NOT NULL DEFAULT 1,
+                    total_listened_ms INTEGER NOT NULL DEFAULT 0,
+                    last_played_at_ms INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_listening_stats_plays ON listening_stats(play_count DESC, total_listened_ms DESC);
+
+                CREATE TABLE IF NOT EXISTS listening_history (
+                    track_id TEXT PRIMARY KEY,
+                    track_json TEXT NOT NULL,
+                    play_count INTEGER NOT NULL DEFAULT 1,
+                    played_at_ms INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_listening_history_time ON listening_history(played_at_ms DESC);
+
+                CREATE TABLE IF NOT EXISTS resume_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    track_json TEXT NOT NULL,
+                    position_ms INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER NOT NULL DEFAULT 0,
+                    updated_at_ms INTEGER NOT NULL DEFAULT 0,
+                    queue_json TEXT NOT NULL DEFAULT '[]',
+                    queue_index INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS user_custom_themes (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    background_hex TEXT NOT NULL,
+                    card_hex TEXT NOT NULL,
+                    accent_hex TEXT NOT NULL,
+                    text_hex TEXT NOT NULL,
+                    updated_at_ms INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS pinned_items (
+                    pin_id TEXT PRIMARY KEY,
+                    pin_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    position INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_pinned_items_pos ON pinned_items(position ASC);
+
+                CREATE TABLE IF NOT EXISTS playlist_entries_cache (
+                    playlist_id TEXT PRIMARY KEY,
+                    entries_json TEXT NOT NULL,
+                    updated_at_ms INTEGER NOT NULL DEFAULT 0
+                );
+
+                PRAGMA user_version = 2;",
+            )
+            .map_err(|e| DomainError::Storage(format!("failed to execute migration v2: {e}")))?;
+
+            tx.commit()
+                .map_err(|e| DomainError::Storage(format!("commit migration v2 error: {e}")))?;
+        }
+
         Ok(())
     }
 }
@@ -138,6 +203,6 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
     }
 }

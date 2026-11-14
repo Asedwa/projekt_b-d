@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import org.kde.plasmawave.PlasmaWaveApp
+import uniffi.plasmawave_core.FfiPinnedItem
 import uniffi.plasmawave_core.FfiPlaylist
 import uniffi.plasmawave_core.FfiTrack
 
@@ -13,6 +15,19 @@ sealed interface PinnedItem {
     data class Track(val track: FfiTrack) : PinnedItem { override val id get() = "track:${track.id}" }
     data class Playlist(val playlist: FfiPlaylist) : PinnedItem { override val id get() = "playlist:${playlist.id}" }
     data object Flow : PinnedItem { override val id get() = "flow:deezer" }
+}
+
+internal fun PinnedItem.toFfi(): FfiPinnedItem = when (this) {
+    is PinnedItem.Track -> FfiPinnedItem(pinId = id, pinType = "track", track = track, playlist = null)
+    is PinnedItem.Playlist -> FfiPinnedItem(pinId = id, pinType = "playlist", track = null, playlist = playlist)
+    is PinnedItem.Flow -> FfiPinnedItem(pinId = id, pinType = "flow", track = null, playlist = null)
+}
+
+internal fun FfiPinnedItem.toUi(): PinnedItem? = when (pinType) {
+    "track" -> track?.let { PinnedItem.Track(it) }
+    "playlist" -> playlist?.let { PinnedItem.Playlist(it) }
+    "flow" -> PinnedItem.Flow
+    else -> null
 }
 
 internal fun trackJson(track: FfiTrack): JSONObject = JSONObject()
@@ -30,43 +45,51 @@ internal fun jsonTrack(json: JSONObject): FfiTrack = FfiTrack(
     isPreview = json.optBoolean("preview"), origin = json.optString("origin", "real")
 )
 
-/** Persists display metadata only; account credentials and Deezer media URLs are never stored. */
+/** Persists pinned items in Rust SQLite (core-storage) with automatic legacy SharedPreferences migration. */
 class PinnedItems(context: Context) {
+    private val core = PlasmaWaveApp.core
     private val prefs = context.getSharedPreferences("pinned_items", Context.MODE_PRIVATE)
-    private val _items = MutableStateFlow(read())
+    private val _items = MutableStateFlow(loadInitial())
     val items = _items.asStateFlow()
 
     @Synchronized fun toggle(item: PinnedItem) {
-        val current = _items.value
-        val next = if (current.any { it.id == item.id }) current.filterNot { it.id == item.id } else current + item
-        persist(next)
+        try {
+            val updated = core.togglePinnedItem(item.toFfi()).mapNotNull { it.toUi() }
+            _items.value = updated
+        } catch (_: Exception) {
+            val current = _items.value
+            val next = if (current.any { it.id == item.id }) current.filterNot { it.id == item.id } else current + item
+            _items.value = next
+        }
     }
 
     @Synchronized fun remove(id: String) {
-        val current = _items.value
-        if (current.none { it.id == id }) return
-        persist(current.filterNot { it.id == id })
-    }
-
-    private fun persist(next: List<PinnedItem>) {
-        val json = JSONArray()
-        next.forEach { entry ->
-            when (entry) {
-                is PinnedItem.Track -> json.put(JSONObject().put("type", "track").put("data", trackJson(entry.track)))
-                is PinnedItem.Playlist -> {
-                    val p = entry.playlist
-                    json.put(JSONObject().put("type", "playlist").put("data", JSONObject()
-                        .put("id", p.id).put("name", p.name).put("description", p.description)
-                        .put("local", p.isLocal).put("count", p.trackCount.toLong()).put("artwork", p.artworkUrl).put("origin", p.origin)))
-                }
-                is PinnedItem.Flow -> json.put(JSONObject().put("type", "flow").put("data", JSONObject()))
-            }
+        try {
+            val updated = core.removePinnedItem(id).mapNotNull { it.toUi() }
+            _items.value = updated
+        } catch (_: Exception) {
+            _items.value = _items.value.filterNot { it.id == id }
         }
-        prefs.edit().putString("items", json.toString()).apply()
-        _items.value = next
     }
 
-    private fun read(): List<PinnedItem> = try {
+    private fun loadInitial(): List<PinnedItem> {
+        return try {
+            val rustItems = core.getPinnedItems().mapNotNull { it.toUi() }
+            if (rustItems.isNotEmpty() || prefs.getBoolean("migrated_to_rust_v2", false)) {
+                return rustItems
+            }
+            val legacy = readLegacy()
+            if (legacy.isNotEmpty()) {
+                core.setPinnedItems(legacy.map { it.toFfi() })
+            }
+            prefs.edit().putBoolean("migrated_to_rust_v2", true).apply()
+            legacy
+        } catch (_: Exception) {
+            readLegacy()
+        }
+    }
+
+    private fun readLegacy(): List<PinnedItem> = try {
         val json = JSONArray(prefs.getString("items", "[]"))
         (0 until json.length()).mapNotNull { i ->
             runCatching {
