@@ -71,6 +71,8 @@ fun isPngUri(context: Context, uri: Uri): Boolean {
 @Composable
 fun ImageCropperDialog(
     imageUri: Uri,
+    targetFileName: String = "custom_header_logo.png",
+    titleText: String = "PNG Logoyu Kırp ve Konumlandır",
     onDismiss: () -> Unit,
     onCroppedSaved: (File) -> Unit
 ) {
@@ -130,7 +132,7 @@ fun ImageCropperDialog(
                             Icon(Icons.Default.Close, contentDescription = "Kapat", tint = Color.White)
                         }
                         Text(
-                            "PNG Logoyu Kırp ve Konumlandır",
+                            titleText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White
@@ -145,11 +147,11 @@ fun ImageCropperDialog(
                                     scale = scale,
                                     offset = offset,
                                     rotation = rotation,
-                                    cropBoxPx = cropBoxPx
+                                    cropBoxPx = cropBoxPx,
+                                    targetFileName = targetFileName
                                 ) { file ->
                                     isSaving = false
                                     if (file != null) {
-                                        Toast.makeText(context, "Özel logo kaydedildi!", Toast.LENGTH_SHORT).show()
                                         onCroppedSaved(file)
                                     } else {
                                         Toast.makeText(context, "Kırpma başarısız oldu", Toast.LENGTH_SHORT).show()
@@ -316,11 +318,11 @@ fun ImageCropperDialog(
                                 scale = scale,
                                 offset = offset,
                                 rotation = rotation,
-                                cropBoxPx = cropBoxPx
+                                cropBoxPx = cropBoxPx,
+                                targetFileName = targetFileName
                             ) { file ->
                                 isSaving = false
                                 if (file != null) {
-                                    Toast.makeText(context, "Özel PNG logosu başarıyla ayarlandı!", Toast.LENGTH_SHORT).show()
                                     onCroppedSaved(file)
                                 } else {
                                     Toast.makeText(context, "Kırpma başarısız oldu", Toast.LENGTH_SHORT).show()
@@ -333,7 +335,7 @@ fun ImageCropperDialog(
                         if (isSaving) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
                         } else {
-                            Text("Kırp ve Logoyu Uygula", fontWeight = FontWeight.Bold)
+                            Text("Kırp ve Uygula", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -349,6 +351,7 @@ private fun cropAndSave(
     offset: Offset,
     rotation: Float,
     cropBoxPx: Float,
+    targetFileName: String,
     onResult: (File?) -> Unit
 ) {
     try {
@@ -371,7 +374,7 @@ private fun cropAndSave(
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         canvas.drawBitmap(bmp, matrix, paint)
 
-        val outputFile = File(context.filesDir, "custom_header_logo.png")
+        val outputFile = File(context.filesDir, targetFileName)
         FileOutputStream(outputFile).use { out ->
             resultBmp.compress(Bitmap.CompressFormat.PNG, 100, out)
         }

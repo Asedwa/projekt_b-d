@@ -1,6 +1,9 @@
 package org.kde.plasmawave.ui.screens
 
 import android.graphics.BitmapFactory
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,27 +21,30 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.util.lerp
 import java.io.File
+import kotlin.math.roundToInt
 import org.kde.plasmawave.R
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
+import org.kde.plasmawave.ui.LOCAL_DOWNLOADS_ID
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PinnedItem
 import org.kde.plasmawave.ui.components.ArtworkImage
@@ -60,6 +66,8 @@ fun HomeScreen(
     val flowLoading by viewModel.flowLoading.collectAsState()
     val flowHeroCardEnabled by viewModel.flowHeroCardEnabled.collectAsState()
     val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
+    val downloadsQuickAccessPinned by viewModel.downloadsQuickAccessPinned.collectAsState()
+    val downloadedTracks by viewModel.downloadedTracks.collectAsState()
     val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
     val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
     val homeFeedType by viewModel.homeFeedType.collectAsState()
@@ -87,20 +95,33 @@ fun HomeScreen(
         deezerFavorites.size.toUInt(), null, "real"
     ) else null
 
-    val quick = remember(pins, likedPlaylist, deezerPlaylists, localPlaylists, flowQuickAccessPinned, deezerUser) {
+    val downloadedPlaylist = remember(downloadedTracks) {
+        FfiPlaylist(
+            id = LOCAL_DOWNLOADS_ID,
+            name = "İndirilen Müzikler",
+            description = "Cihaza indirilen çevrimdışı şarkılar",
+            isLocal = true,
+            trackCount = downloadedTracks.size.toUInt(),
+            artworkUrl = null,
+            origin = "real"
+        )
+    }
+
+    val quick = remember(pins, likedPlaylist, downloadedPlaylist, downloadsQuickAccessPinned, deezerPlaylists, localPlaylists, flowQuickAccessPinned, deezerUser) {
         val currentPlaylists = (deezerPlaylists.map { it.playlist } + localPlaylists).associateBy { it.id }
         val refreshed = pins.map { pin ->
             if (pin is PinnedItem.Playlist) PinnedItem.Playlist(currentPlaylists[pin.playlist.id] ?: pin.playlist) else pin
         }
         val flowItem = if (flowQuickAccessPinned && deezerUser != null) listOf(PinnedItem.Flow) else emptyList()
+        val downloadsItem = if (downloadsQuickAccessPinned) listOf(PinnedItem.Playlist(downloadedPlaylist)) else emptyList()
         val likedItem = listOfNotNull(likedPlaylist?.let { PinnedItem.Playlist(it) })
-        (flowItem + likedItem + refreshed).distinctBy { it.id }
+        (flowItem + downloadsItem + likedItem + refreshed).distinctBy { it.id }
     }
     val active = downloads.count { it.state == "queued" || it.state == "running" }
-    val completed = downloads.count { it.state == "completed" }
-    val pinnedIds = remember(pins, flowQuickAccessPinned) {
-        val set = pins.mapTo(HashSet(pins.size.coerceAtLeast(1) + 1)) { it.id }
+    val pinnedIds = remember(pins, flowQuickAccessPinned, downloadsQuickAccessPinned) {
+        val set = pins.mapTo(HashSet(pins.size.coerceAtLeast(1) + 2)) { it.id }
         if (flowQuickAccessPinned) set.add(PinnedItem.Flow.id)
+        if (downloadsQuickAccessPinned) set.add("playlist:$LOCAL_DOWNLOADS_ID")
         set
     }
 
@@ -110,28 +131,48 @@ fun HomeScreen(
         Brush.verticalGradient(listOf(primary.copy(alpha = 0.16f), bg, bg))
     }
 
+    val expandedHeaderHeight = 156.dp
+    val collapsedHeaderHeight = 60.dp
+    val collapseRangeDp = expandedHeaderHeight - collapsedHeaderHeight // 96.dp
+
     val listState = rememberLazyListState()
     val density = LocalDensity.current
-    val maxCollapseDistancePx = with(density) { 92.dp.toPx() }
+    val maxCollapseDistancePx = with(density) { collapseRangeDp.toPx() }
 
-    val collapseFraction by remember {
+    val rawCollapseFraction by remember {
         derivedStateOf {
             if (listState.firstVisibleItemIndex > 0) 1f
             else (listState.firstVisibleItemScrollOffset / maxCollapseDistancePx).coerceIn(0f, 1f)
         }
     }
 
-    val headerHeight = lerp(148.dp, 58.dp, collapseFraction)
+    val collapseFraction by animateFloatAsState(
+        targetValue = rawCollapseFraction,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "headerCollapseFraction"
+    )
+
+    // Smoothstep easing for balanced horizontal & size transition
+    val smoothFraction = collapseFraction * collapseFraction * (3f - 2f * collapseFraction)
+    val headerHeight = lerp(expandedHeaderHeight, collapsedHeaderHeight, collapseFraction)
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     Box(modifier = modifier.fillMaxSize().background(bgBrush)) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = statusBarTop + 148.dp, bottom = 80.dp)
+            contentPadding = PaddingValues(top = statusBarTop + collapsedHeaderHeight, bottom = 80.dp)
         ) {
+            // Item 0: Dedicated collapse range spacer so firstVisibleItemIndex stays 0 throughout 0..collapseRangeDp
+            item(key = "header_collapse_spacer") {
+                Spacer(Modifier.fillMaxWidth().height(collapseRangeDp))
+            }
+
             if (deezerUser != null && flowHeroCardEnabled) {
-                item {
+                item(key = "flow_hero_card") {
                     DeezerFlowHeroCard(
                         isLoading = flowLoading,
                         onStartFlow = { viewModel.startFlow() },
@@ -140,7 +181,7 @@ fun HomeScreen(
                     Spacer(Modifier.height(10.dp))
                 }
             }
-            item {
+            item(key = "quick_access_header") {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Hızlı erişim",
@@ -156,7 +197,7 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(10.dp))
             }
-            if (quick.isNotEmpty()) item {
+            if (quick.isNotEmpty()) item(key = "quick_access_grid") {
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val isLandscape = maxWidth > 600.dp
                     val cardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
@@ -177,7 +218,7 @@ fun HomeScreen(
                         }
                     }
                 }
-            } else item {
+            } else item(key = "quick_access_empty") {
                 Text(
                     "Şarkı veya listelerin menüsünden ana sayfaya sabitleyebilirsin.",
                     color = colors.textSecondary,
@@ -193,7 +234,7 @@ fun HomeScreen(
             }
 
             if (feedTracks.isNotEmpty()) {
-                item {
+                item(key = "feed_header_${homeFeedType.name}") {
                     Spacer(Modifier.height(28.dp))
                     Row(
                         Modifier
@@ -229,7 +270,7 @@ fun HomeScreen(
             }
 
             if (favorites.isNotEmpty() && homeFeedType == HomeFeedType.FOR_YOU && deezerFavorites.isNotEmpty()) {
-                item {
+                item(key = "local_fav_header") {
                     Spacer(Modifier.height(24.dp))
                     Text(
                         "Bu cihazda beğendiklerin",
@@ -249,35 +290,110 @@ fun HomeScreen(
             }
         }
 
-        // Pinned Collapsing Header with status bar protection
+        // Pinned Collapsing Header with balanced, jump-free coordinate interpolation
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter),
-            color = if (collapseFraction > 0.03f) {
+            color = if (collapseFraction > 0.02f) {
                 bg.copy(alpha = (collapseFraction * 0.98f).coerceIn(0f, 0.98f))
             } else Color.Transparent
         ) {
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
                     .height(headerHeight)
             ) {
-                if (collapseFraction > 0.85f) {
-                    HorizontalDivider(
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                        thickness = 0.5.dp,
-                        color = colors.border.copy(alpha = (collapseFraction - 0.85f) * 6.6f)
+                val maxWidthDp = maxWidth
+                val logoSize = lerp(80.dp, 38.dp, smoothFraction)
+                val expandedLogoX = (maxWidthDp - logoSize) / 2
+                val collapsedLogoX = 16.dp
+                val logoXDp = lerp(expandedLogoX, collapsedLogoX, smoothFraction)
+
+                val expandedLogoY = 12.dp
+                val collapsedLogoY = (collapsedHeaderHeight - logoSize) / 2
+                val logoYDp = lerp(expandedLogoY, collapsedLogoY, smoothFraction)
+
+                val logoXPx = with(density) { logoXDp.toPx().roundToInt() }
+                val logoYPx = with(density) { logoYDp.toPx().roundToInt() }
+
+                // Underneath centered title ("projekt_b-d") when expanded
+                val bottomTitleAlpha = (1f - collapseFraction * 2.2f).coerceIn(0f, 1f)
+                val bottomTitleScale = 0.85f + 0.15f * bottomTitleAlpha
+                val bottomTitleWidthDp = 140.dp
+                val bottomTitleXDp = logoXDp + (logoSize - bottomTitleWidthDp) / 2
+                val bottomTitleYDp = logoYDp + logoSize + 6.dp
+                val bottomTitleXPx = with(density) { bottomTitleXDp.toPx().roundToInt() }
+                val bottomTitleYPx = with(density) { bottomTitleYDp.toPx().roundToInt() }
+
+                // Side title ("projekt_b-d") next to compact logo when collapsed
+                val sideTitleAlpha = ((collapseFraction - 0.50f) / 0.50f).coerceIn(0f, 1f)
+                val sideTitleSlidePx = with(density) { ((1f - sideTitleAlpha) * (-10).dp.toPx()) }
+                val sideTitleXDp = collapsedLogoX + 38.dp + 12.dp
+                val sideTitleXPx = with(density) { sideTitleXDp.toPx().roundToInt() }
+
+                // 1. Logo Box
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(logoXPx, logoYPx) }
+                        .size(logoSize),
+                    contentAlignment = Alignment.Center
+                ) {
+                    HeaderLogoView(
+                        style = headerLogoStyle,
+                        customBitmap = customLogoBitmap,
+                        size = logoSize
                     )
                 }
 
-                // Top Right Downloads Button
+                // 2. Expanded Title below the logo (always kept in composition to avoid layout jumps)
+                Text(
+                    text = "projekt_b-d",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    ),
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier
+                        .width(bottomTitleWidthDp)
+                        .offset { IntOffset(bottomTitleXPx, bottomTitleYPx) }
+                        .graphicsLayer {
+                            alpha = bottomTitleAlpha
+                            scaleX = bottomTitleScale
+                            scaleY = bottomTitleScale
+                        }
+                )
+
+                // 3. Collapsed Title beside the logo in the top bar
+                Box(
+                    modifier = Modifier
+                        .height(collapsedHeaderHeight)
+                        .offset { IntOffset(sideTitleXPx, 0) }
+                        .graphicsLayer {
+                            alpha = sideTitleAlpha
+                            translationX = sideTitleSlidePx
+                        },
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(
+                        text = "projekt_b-d",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.4.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+
+                // 4. Top Right Downloads Button
+                val downloadTopPad = lerp(10.dp, 6.dp, smoothFraction)
                 IconButton(
                     onClick = onDownloadsClick,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 12.dp)
+                        .padding(top = downloadTopPad, end = 12.dp)
                 ) {
                     if (active > 0) {
                         BadgedBox(badge = { Badge { Text("$active") } }) {
@@ -288,36 +404,12 @@ fun HomeScreen(
                     }
                 }
 
-                // Animated Collapsible Logo and Title
-                val hBias = lerp(0f, -1f, collapseFraction)
-                val vBias = lerp(-0.25f, 0f, collapseFraction)
-                val logoSize = lerp(76.dp, 38.dp, collapseFraction)
-                val startPad = lerp(0.dp, 16.dp, collapseFraction)
-                val textAlpha = (1f - collapseFraction * 2.2f).coerceIn(0f, 1f)
-
-                Column(
-                    modifier = Modifier
-                        .align(BiasAlignment(horizontalBias = hBias, verticalBias = vBias))
-                        .padding(start = startPad),
-                    horizontalAlignment = if (collapseFraction < 0.5f) Alignment.CenterHorizontally else Alignment.Start
-                ) {
-                    HeaderLogoView(
-                        style = headerLogoStyle,
-                        customBitmap = customLogoBitmap,
-                        size = logoSize
+                if (collapseFraction > 0.85f) {
+                    HorizontalDivider(
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        thickness = 0.5.dp,
+                        color = colors.border.copy(alpha = ((collapseFraction - 0.85f) / 0.15f).coerceIn(0f, 1f))
                     )
-
-                    if (textAlpha > 0.01f) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "projekt_b-d",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = textAlpha)
-                        )
-                    }
                 }
             }
         }
@@ -331,26 +423,6 @@ private fun HeaderLogoView(
     size: Dp
 ) {
     when (style) {
-        HeaderLogoStyle.TWILIGHT -> {
-            Image(
-                painter = painterResource(R.drawable.ic_header_twilight),
-                contentDescription = "Twilight Sparkle",
-                modifier = Modifier
-                    .size(size)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Fit
-            )
-        }
-        HeaderLogoStyle.PINKIE -> {
-            Image(
-                painter = painterResource(R.drawable.ic_header_pinkie),
-                contentDescription = "Pinkie Pie",
-                modifier = Modifier
-                    .size(size)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Fit
-            )
-        }
         HeaderLogoStyle.CUSTOM -> {
             if (customBitmap != null) {
                 Image(
@@ -358,7 +430,7 @@ private fun HeaderLogoView(
                     contentDescription = "Özel Logo",
                     modifier = Modifier
                         .size(size)
-                        .clip(RoundedCornerShape(8.dp)),
+                        .clip(RoundedCornerShape(10.dp)),
                     contentScale = ContentScale.Fit
                 )
             } else {
@@ -403,6 +475,10 @@ private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel
     val flowGradient = remember {
         Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF97316)))
     }
+    val downloadsBrush = remember(primary) {
+        Brush.linearGradient(listOf(Color(0xFF0EA5E9), Color(0xFF10B981), primary))
+    }
+    val downloadedTracks by viewModel.downloadedTracks.collectAsState()
     Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).clickable {
         when (pin) {
             is PinnedItem.Track -> viewModel.playbackManager.playTrackList(listOf(pin.track))
@@ -417,6 +493,10 @@ private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel
         } else if (pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID) {
             Box(Modifier.fillMaxSize().background(deezerFavBrush), contentAlignment = Alignment.Center) {
                 Icon(Icons.Default.Favorite, contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
+            }
+        } else if (pin is PinnedItem.Playlist && pin.playlist.id == LOCAL_DOWNLOADS_ID) {
+            Box(Modifier.fillMaxSize().background(downloadsBrush), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.DownloadDone, contentDescription = "İndirilen Müzikler", tint = Color.White, modifier = Modifier.size(42.dp))
             }
         } else {
             ArtworkImage(art, modifier = Modifier.fillMaxSize(), fallback = if (pin is PinnedItem.Playlist) Icons.AutoMirrored.Filled.PlaylistPlay else Icons.Default.MusicNote)
@@ -444,6 +524,25 @@ private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel
                             leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
                             onClick = {
                                 viewModel.startFlow()
+                                menu = false
+                            }
+                        )
+                    } else if (pin is PinnedItem.Playlist && pin.playlist.id == LOCAL_DOWNLOADS_ID) {
+                        if (downloadedTracks.isNotEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("Tümünü çal") },
+                                leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                                onClick = {
+                                    viewModel.playbackManager.playTrackList(downloadedTracks, 0)
+                                    menu = false
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Hızlı erişimden kaldır") },
+                            leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                            onClick = {
+                                viewModel.setDownloadsQuickAccessPinned(false)
                                 menu = false
                             }
                         )

@@ -26,6 +26,7 @@ import org.kde.plasmawave.deezer.DeezerException
 import org.kde.plasmawave.deezer.StreamingQuality
 import org.kde.plasmawave.download.Downloads
 import org.kde.plasmawave.download.DownloadQuality
+import org.kde.plasmawave.download.DownloadStorage
 import org.kde.plasmawave.download.SavedDownload
 import org.kde.plasmawave.ui.components.SeekbarStyle
 import org.kde.plasmawave.ui.components.AlbumCoverFrame
@@ -51,12 +52,22 @@ import uniffi.plasmawave_core.FfiTrack
 
 const val LOCAL_FAVORITES_ID = "local:favorite_tracks"
 const val DEEZER_FAVORITES_ID = "deezer:loved_tracks"
+const val LOCAL_DOWNLOADS_ID = "local:downloaded_tracks"
 
 enum class SearchCategory {
     TRACKS, ALBUMS, ARTISTS, PLAYLISTS
 }
 
 data class TrackMenuContext(val playlist: FfiPlaylist, val originalIndex: Int)
+
+data class CustomThemeSpec(
+    val id: String,
+    val name: String,
+    val backgroundHex: String,
+    val cardHex: String,
+    val accentHex: String,
+    val textHex: String
+)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -128,10 +139,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _flowLibraryPinned.value = enabled
     }
 
+    private val _downloadsQuickAccessPinned = MutableStateFlow(displayPrefs.getBoolean("downloads_quick_access_pinned", true))
+    val downloadsQuickAccessPinned = _downloadsQuickAccessPinned.asStateFlow()
+    fun setDownloadsQuickAccessPinned(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("downloads_quick_access_pinned", enabled).apply()
+        _downloadsQuickAccessPinned.value = enabled
+    }
+
+    private val _downloadsLibraryPinned = MutableStateFlow(displayPrefs.getBoolean("downloads_library_pinned", true))
+    val downloadsLibraryPinned = _downloadsLibraryPinned.asStateFlow()
+    fun setDownloadsLibraryPinned(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("downloads_library_pinned", enabled).apply()
+        _downloadsLibraryPinned.value = enabled
+    }
+
     private val _headerLogoStyle = MutableStateFlow(
         runCatching {
-            HeaderLogoStyle.valueOf(displayPrefs.getString("header_logo_style", null) ?: "TWILIGHT")
-        }.getOrDefault(HeaderLogoStyle.TWILIGHT)
+            HeaderLogoStyle.valueOf(displayPrefs.getString("header_logo_style", null) ?: "ORIGINAL")
+        }.getOrDefault(HeaderLogoStyle.ORIGINAL)
     )
     val headerLogoStyle = _headerLogoStyle.asStateFlow()
     fun setHeaderLogoStyle(style: HeaderLogoStyle) {
@@ -148,6 +173,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshCustomHeaderLogo()
     }
 
+    private val _customLauncherIconTimestamp = MutableStateFlow(System.currentTimeMillis())
+    val customLauncherIconTimestamp = _customLauncherIconTimestamp.asStateFlow()
+    fun updateCustomLauncherIcon() {
+        _customLauncherIconTimestamp.value = System.currentTimeMillis()
+        LauncherIconManager.setLauncherIcon(getApplication(), AppLauncherIcon.CUSTOM, requestPin = true)
+        _launcherIcon.value = AppLauncherIcon.CUSTOM
+    }
+
     private val _homeFeedType = MutableStateFlow(
         runCatching {
             HomeFeedType.valueOf(displayPrefs.getString("home_feed_type", null) ?: "FOR_YOU")
@@ -159,11 +192,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _homeFeedType.value = feed
     }
 
-    private val _launcherIcon = MutableStateFlow(LauncherIconManager.getSelectedIcon(application))
+    private val _launcherIcon = MutableStateFlow(
+        LauncherIconManager.getSelectedIcon(application).also {
+            LauncherIconManager.syncLauncherIcon(application)
+        }
+    )
     val launcherIcon = _launcherIcon.asStateFlow()
     fun setLauncherIcon(icon: AppLauncherIcon) {
-        LauncherIconManager.setLauncherIcon(getApplication(), icon)
+        LauncherIconManager.setLauncherIcon(getApplication(), icon, requestPin = (icon == AppLauncherIcon.CUSTOM))
         _launcherIcon.value = icon
+    }
+
+    private val customThemesPrefs = application.getSharedPreferences("user_custom_themes", android.content.Context.MODE_PRIVATE)
+    private val _userCustomThemes = MutableStateFlow<List<CustomThemeSpec>>(readUserCustomThemes())
+    val userCustomThemes: StateFlow<List<CustomThemeSpec>> = _userCustomThemes.asStateFlow()
+
+    private fun readUserCustomThemes(): List<CustomThemeSpec> = try {
+        val raw = customThemesPrefs.getString("themes", "[]") ?: "[]"
+        val arr = JSONArray(raw)
+        (0 until arr.length()).mapNotNull { i ->
+            runCatching {
+                val obj = arr.getJSONObject(i)
+                CustomThemeSpec(
+                    id = obj.getString("id"),
+                    name = obj.getString("name"),
+                    backgroundHex = obj.optString("backgroundHex", "#141224"),
+                    cardHex = obj.optString("cardHex", "#282348"),
+                    accentHex = obj.optString("accentHex", "#ED438D"),
+                    textHex = obj.optString("textHex", "#F5EEF8")
+                )
+            }.getOrNull()
+        }
+    } catch (_: Exception) { emptyList() }
+
+    private fun persistUserCustomThemes(list: List<CustomThemeSpec>) {
+        val arr = JSONArray()
+        list.forEach { spec ->
+            arr.put(
+                JSONObject()
+                    .put("id", spec.id)
+                    .put("name", spec.name)
+                    .put("backgroundHex", spec.backgroundHex)
+                    .put("cardHex", spec.cardHex)
+                    .put("accentHex", spec.accentHex)
+                    .put("textHex", spec.textHex)
+            )
+        }
+        customThemesPrefs.edit().putString("themes", arr.toString()).apply()
+        _userCustomThemes.value = list
     }
 
     private val historyPrefs = application.getSharedPreferences("playback_history_v2", android.content.Context.MODE_PRIVATE)
@@ -296,6 +372,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _downloads = MutableStateFlow<List<FfiDownloadTask>>(emptyList())
     val downloads: StateFlow<List<FfiDownloadTask>> = _downloads.asStateFlow()
 
+    private val _downloadedTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
+    val downloadedTracks: StateFlow<List<FfiTrack>> = _downloadedTracks.asStateFlow()
+
     private val _settings = MutableStateFlow(core.getSettings())
     val settings: StateFlow<FfiSettings> = _settings.asStateFlow()
 
@@ -341,6 +420,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        viewModelScope.launch(Dispatchers.IO) {
+            fullDownloadManager.items.collect {
+                refreshDownloadedTracks()
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _deezerFavorites.collect {
+                refreshDownloadedTracks()
+            }
+        }
         loadData()
     }
 
@@ -367,9 +456,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             """{
   "schemaVersion": 1,
   "id": "mlp.twilight-sparkle",
-  "name": "Twilight Sparkle",
+  "name": "Twilight",
   "author": "projekt_b-d",
-  "description": "My Little Pony - Twilight Sparkle lavanta, gece mavisi ve macenta yıldız teması.",
+  "description": "Twilight lavanta, gece mavisi ve macenta yıldız teması.",
   "dark": true,
   "colors": {
     "background": "#141224",
@@ -399,9 +488,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             """{
   "schemaVersion": 1,
   "id": "mlp.pinkie-pie",
-  "name": "Pinkie Pie",
+  "name": "Pinkie",
   "author": "projekt_b-d",
-  "description": "My Little Pony - Pinkie Pie neşeli pembe, pamuk şeker ve gökyüzü mavisi teması.",
+  "description": "Pinkie neşeli pembe, pamuk şeker ve gökyüzü mavisi teması.",
   "dark": true,
   "colors": {
     "background": "#1E0F18",
@@ -431,6 +520,113 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         for (json in themesJson) {
             runCatching { core.importThemeJson(json) }
+        }
+        val customList = readUserCustomThemes()
+        _userCustomThemes.value = customList
+        for (spec in customList) {
+            runCatching { core.importThemeJson(buildCustomThemeManifestJson(spec)) }
+        }
+    }
+
+    private fun blendHexColors(hex1: String, hex2: String, ratio: Float): String {
+        return try {
+            val c1 = android.graphics.Color.parseColor(hex1)
+            val c2 = android.graphics.Color.parseColor(hex2)
+            val r = (android.graphics.Color.red(c1) * (1f - ratio) + android.graphics.Color.red(c2) * ratio).toInt().coerceIn(0, 255)
+            val g = (android.graphics.Color.green(c1) * (1f - ratio) + android.graphics.Color.green(c2) * ratio).toInt().coerceIn(0, 255)
+            val b = (android.graphics.Color.blue(c1) * (1f - ratio) + android.graphics.Color.blue(c2) * ratio).toInt().coerceIn(0, 255)
+            String.format("#%02X%02X%02X", r, g, b)
+        } catch (_: Exception) {
+            hex1
+        }
+    }
+
+    private fun buildCustomThemeManifestJson(spec: CustomThemeSpec): String {
+        val bg = spec.backgroundHex
+        val card = spec.cardHex
+        val accent = spec.accentHex
+        val text = spec.textHex
+        val surface = blendHexColors(bg, card, 0.5f)
+        val surfaceVariant = blendHexColors(bg, card, 0.85f)
+        val cardPressed = blendHexColors(card, accent, 0.22f)
+        val accentMuted = blendHexColors(bg, accent, 0.35f)
+        val textSecondary = blendHexColors(text, bg, 0.32f)
+        val textDisabled = blendHexColors(text, bg, 0.55f)
+        val border = blendHexColors(card, accent, 0.28f)
+        val divider = blendHexColors(bg, card, 0.75f)
+
+        val colorsObj = JSONObject()
+            .put("background", bg)
+            .put("surface", surface)
+            .put("surfaceVariant", surfaceVariant)
+            .put("card", card)
+            .put("cardPressed", cardPressed)
+            .put("accent", accent)
+            .put("accentMuted", accentMuted)
+            .put("onAccent", "#FCFCFC")
+            .put("text", text)
+            .put("textSecondary", textSecondary)
+            .put("textDisabled", textDisabled)
+            .put("border", border)
+            .put("divider", divider)
+            .put("positive", "#27AE60")
+            .put("warning", "#F67400")
+            .put("negative", "#DA4453")
+            .put("scrim", "#B3000000")
+
+        return JSONObject()
+            .put("schemaVersion", 1)
+            .put("id", spec.id)
+            .put("name", spec.name)
+            .put("author", "Custom")
+            .put("description", "${spec.name} özel kullanıcı teması")
+            .put("dark", true)
+            .put("colors", colorsObj)
+            .put("shapes", JSONObject().put("smallRadius", 6).put("mediumRadius", 10).put("largeRadius", 18))
+            .put("spacing", JSONObject().put("xs", 4).put("sm", 8).put("md", 12).put("lg", 16).put("xl", 24))
+            .put("typography", JSONObject().put("fontFamily", "system").put("scale", 1.0))
+            .put("elevation", JSONObject().put("low", 1).put("medium", 4).put("high", 12))
+            .put("motion", JSONObject().put("shortMs", 120).put("mediumMs", 220).put("longMs", 360))
+            .toString()
+    }
+
+    fun saveUserCustomTheme(spec: CustomThemeSpec) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val current = readUserCustomThemes().toMutableList()
+                val idx = current.indexOfFirst { it.id == spec.id }
+                if (idx >= 0) current[idx] = spec else current.add(spec)
+                persistUserCustomThemes(current)
+                val manifestJson = buildCustomThemeManifestJson(spec)
+                core.importThemeJson(manifestJson)
+                try { core.setCustomAccentColor(null) } catch (_: Exception) { }
+                val applied = core.setTheme(spec.id)
+                _activeTheme.value = applied
+                _settings.value = core.getSettings()
+                _availableThemes.value = core.listThemes()
+                _statusMessage.value = "'${spec.name}' teması kaydedildi ve uygulandı!"
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to save custom theme", e)
+                _statusMessage.value = "Tema kaydedilemedi: ${e.message}"
+            }
+        }
+    }
+
+    fun deleteUserCustomTheme(themeId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val current = readUserCustomThemes().filterNot { it.id == themeId }
+                persistUserCustomThemes(current)
+                if (_activeTheme.value.id == themeId) {
+                    try { core.setCustomAccentColor(null) } catch (_: Exception) { }
+                    val fallback = core.setTheme("mlp.twilight-sparkle")
+                    _activeTheme.value = fallback
+                    _settings.value = core.getSettings()
+                }
+                _statusMessage.value = "Özel tema silindi"
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to delete custom theme", e)
+            }
         }
     }
 
@@ -545,6 +741,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _downloads.value = core.listDownloads()
         } catch (e: Exception) {
             Log.e("MainViewModel", "Error loading downloads", e)
+        }
+        refreshDownloadedTracks()
+    }
+
+    fun refreshDownloadedTracks() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val hints = buildMap<String, FfiTrack> {
+                    _recentTracks.value.forEach { put(DownloadStorage.normalizeTrackId(it.id), it) }
+                    _favorites.value.forEach { put(DownloadStorage.normalizeTrackId(it.id), it) }
+                    _deezerFavorites.value.forEach { put(DownloadStorage.normalizeTrackId(it.id), it) }
+                    fullDownloadManager.items.value.forEach { put(DownloadStorage.normalizeTrackId(it.track.id), it.track) }
+                }
+                val loaded = DownloadStorage.loadAllDownloadedTracks(
+                    getApplication(),
+                    fullDownloadManager.items.value,
+                    hints
+                )
+                _downloadedTracks.value = loaded
+                invalidatePlaylist(LOCAL_DOWNLOADS_ID)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error refreshing downloaded tracks", e)
+            }
         }
     }
 
@@ -782,6 +1001,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getPlaylistTrackEntries(playlistId: String): List<PlaylistTrackEntry> = withContext(Dispatchers.IO) {
         if (playlistId == DEEZER_FAVORITES_ID) {
             if (deezerFavoriteEntries.isNotEmpty()) deezerFavoriteEntries else deezerSession.favoriteTrackEntries()
+        } else if (playlistId == LOCAL_DOWNLOADS_ID) {
+            val current = _downloadedTracks.value.ifEmpty {
+                val hints = buildMap<String, FfiTrack> {
+                    _recentTracks.value.forEach { put(DownloadStorage.normalizeTrackId(it.id), it) }
+                    _favorites.value.forEach { put(DownloadStorage.normalizeTrackId(it.id), it) }
+                    _deezerFavorites.value.forEach { put(DownloadStorage.normalizeTrackId(it.id), it) }
+                    fullDownloadManager.items.value.forEach { put(DownloadStorage.normalizeTrackId(it.track.id), it.track) }
+                }
+                DownloadStorage.loadAllDownloadedTracks(
+                    getApplication(),
+                    fullDownloadManager.items.value,
+                    hints
+                ).also { _downloadedTracks.value = it }
+            }
+            current.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
         } else if (playlistId.startsWith("deezer:") && deezerSession.hasSavedSession) {
             deezerSession.playlistTrackEntries(playlistId)
         } else {

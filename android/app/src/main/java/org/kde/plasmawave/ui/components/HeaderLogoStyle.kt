@@ -1,31 +1,20 @@
 package org.kde.plasmawave.ui.components
 
 import androidx.annotation.DrawableRes
-import org.kde.plasmawave.R
 
 enum class HeaderLogoStyle(
     val title: String,
     val subtitle: String,
     @DrawableRes val drawableRes: Int?
 ) {
-    TWILIGHT(
-        title = "Twilight Sparkle",
-        subtitle = "My Little Pony karakter logosu",
-        drawableRes = R.drawable.ic_header_twilight
-    ),
-    PINKIE(
-        title = "Pinkie Pie",
-        subtitle = "My Little Pony neşeli pembe logo",
-        drawableRes = R.drawable.ic_header_pinkie
+    ORIGINAL(
+        title = "Klasik (Orijinal)",
+        subtitle = "Klasik müzik dalgası ikonu ve başlık",
+        drawableRes = null
     ),
     CUSTOM(
         title = "Özel PNG Logosu",
         subtitle = "Kendi yükleyip kırptığınız PNG logosu",
-        drawableRes = null
-    ),
-    ORIGINAL(
-        title = "Orijinal Başlık",
-        subtitle = "Klasik müzik dalgası ikonu ve başlık",
         drawableRes = null
     )
 }

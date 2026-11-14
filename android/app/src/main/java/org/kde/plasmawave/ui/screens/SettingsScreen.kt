@@ -39,6 +39,8 @@ fun SettingsScreen(
     val mobileQuality by viewModel.mobileQuality.collectAsState()
     val downloadQuality by viewModel.downloadQuality.collectAsState()
     val mobileDownloads by viewModel.mobileDownloadsAllowed.collectAsState()
+    val downloadsQuickAccessPinned by viewModel.downloadsQuickAccessPinned.collectAsState()
+    val downloadsLibraryPinned by viewModel.downloadsLibraryPinned.collectAsState()
     val highRefresh by viewModel.highRefreshRate.collectAsState()
     val dynamicColor by viewModel.dynamicColorEnabled.collectAsState()
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
@@ -109,18 +111,22 @@ fun SettingsScreen(
             QualityRow(Icons.Default.HighQuality, "İndirme kalitesi", "Varsayılan seçim • Deezer hesabına bağlı", downloadQuality.label,
                 DownloadQuality.entries.map { it.label }, { viewModel.setDownloadQuality(DownloadQuality.entries[it]) })
         }
-        if (matches("indir", "çevrimdışı", "mobil", "veri", "wifi", "wi-fi", "depolama", "dosya")) {
+        if (matches("indir", "çevrimdışı", "mobil", "veri", "wifi", "wi-fi", "depolama", "dosya", "sabitle", "ana sayfa", "kitaplık")) {
             SettingsSection("Veri ve indirmeler")
             SettingsToggle(Icons.Default.DataUsage, "Mobil veriyle indirmeye izin ver",
                 "Kapalıyken ölçülmeyen Wi-Fi veya Ethernet beklenir", mobileDownloads, viewModel::setMobileDownloadsAllowed)
+            SettingsToggle(Icons.Default.PushPin, "İndirilenleri ana sayfaya sabitle",
+                "Ana sayfadaki Hızlı Erişim alanında İndirilen Müzikler kartını göster", downloadsQuickAccessPinned, viewModel::setDownloadsQuickAccessPinned)
+            SettingsToggle(Icons.Default.LibraryMusic, "İndirilenleri kitaplığa sabitle",
+                "Kitaplık sekmesinde İndirilen Müzikler koleksiyonunu sabitle", downloadsLibraryPinned, viewModel::setDownloadsLibraryPinned)
             val active = downloads.count { it.state == "queued" || it.state == "running" }
             SettingsLink(Icons.Default.Download, "İndirme sırası ve dosyalar",
                 if (active > 0) "$active şarkı sırada veya indiriliyor" else "İlerleme, iptal ve çevrimdışı dinleme", onNavigateDownloads)
             SettingsInfo(Icons.Default.Folder, "Kayıt konumu", "Müzik / PlasmaWave")
         }
-        if (matches("özelleştirme", "görüntü", "ekran", "yenileme", "akıcı", "120", "tema", "görünüm", "renk", "desen", "çubuk", "albüm")) {
+        if (matches("özelleştirme", "görüntü", "ekran", "yenileme", "akıcı", "120", "tema", "görünüm", "renk", "desen", "çubuk", "albüm", "logo", "simge", "ikon")) {
             SettingsSection("Özelleştirme ve görünüm")
-            SettingsLink(Icons.Default.Tune, "Özelleştirme", "Dinamik albüm renkleri, ${seekbarStyle.title}", onNavigateCustomization)
+            SettingsLink(Icons.Default.Tune, "Özelleştirme", "Uygulama simgesi, ana sayfa logosu, ${seekbarStyle.title}", onNavigateCustomization)
             SettingsToggle(Icons.Default.ColorLens, "Dinamik albüm renkleri",
                 "Tam ekran oynatıcıyı çalan şarkının albüm kapağına göre renklendir", dynamicColor, viewModel::setDynamicColorEnabled)
             SettingsLink(Icons.Default.Palette, "Tema ve renkler", "Etkin tema: ${theme.name}", onNavigateThemes)

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -53,6 +54,7 @@ import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.LOCAL_FAVORITES_ID
 import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
+import org.kde.plasmawave.ui.LOCAL_DOWNLOADS_ID
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PlaylistTrackEntry
 import org.kde.plasmawave.ui.PlaylistTrackSort
@@ -126,7 +128,7 @@ fun PlaylistDetailScreen(
                 title = { Text(playlist.name, maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri") } },
                 actions = {
-                    if (playlist.id != LOCAL_FAVORITES_ID && playlist.id != DEEZER_FAVORITES_ID) {
+                    if (playlist.id != LOCAL_FAVORITES_ID && playlist.id != DEEZER_FAVORITES_ID && playlist.id != LOCAL_DOWNLOADS_ID) {
                         IconButton(onClick = { showDelete = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Listeyi sil", tint = colors.negative)
                         }
@@ -142,6 +144,11 @@ fun PlaylistDetailScreen(
         LazyColumn(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             item {
                 val count = if (state is PlaylistLoadState.Loaded) entries.size else playlist.trackCount.toInt()
+                val fallbackIcon = when (playlist.id) {
+                    LOCAL_FAVORITES_ID -> Icons.Default.Favorite
+                    LOCAL_DOWNLOADS_ID -> Icons.Default.DownloadDone
+                    else -> Icons.AutoMirrored.Filled.PlaylistPlay
+                }
                 if (isLandscape) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -149,7 +156,7 @@ fun PlaylistDetailScreen(
                             ArtworkImage(
                                 url = playlist.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
                                 modifier = Modifier.size(96.dp),
-                                fallback = if (playlist.id == LOCAL_FAVORITES_ID) Icons.Default.Favorite else Icons.AutoMirrored.Filled.PlaylistPlay,
+                                fallback = fallbackIcon,
                                 shape = RoundedCornerShape(10.dp),
                                 background = colors.card
                             )
@@ -199,7 +206,7 @@ fun PlaylistDetailScreen(
                         ArtworkImage(
                             url = playlist.artworkUrl ?: tracks.firstOrNull()?.artworkUrl,
                             modifier = Modifier.size(200.dp),
-                            fallback = if (playlist.id == LOCAL_FAVORITES_ID) Icons.Default.Favorite else Icons.AutoMirrored.Filled.PlaylistPlay,
+                            fallback = fallbackIcon,
                             shape = RoundedCornerShape(10.dp),
                             background = colors.card
                         )

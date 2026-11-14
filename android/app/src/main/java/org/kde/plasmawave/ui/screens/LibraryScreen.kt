@@ -6,9 +6,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,7 +36,9 @@ import org.kde.plasmawave.deezer.DeezerLoginDialog
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.*
 import org.kde.plasmawave.ui.components.ArtworkImage
+import org.kde.plasmawave.ui.components.TrackListItem
 import uniffi.plasmawave_core.FfiPlaylist
+import uniffi.plasmawave_core.FfiTrack
 
 private enum class PlaylistFilter(val label: String) { ALL("Tümü"), DEEZER("Deezer"), LOCAL("Bu cihaz"), PINNED("Sabitlenenler") }
 
@@ -43,6 +48,10 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
     val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
+    val downloadedTracks by viewModel.downloadedTracks.collectAsState()
+    val downloadsLibraryPinned by viewModel.downloadsLibraryPinned.collectAsState()
+    val downloadsQuickAccessPinned by viewModel.downloadsQuickAccessPinned.collectAsState()
+    val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
     val pins by viewModel.pins.collectAsState()
     val deezerUser by viewModel.deezerUser.collectAsState()
     val flowLibraryPinned by viewModel.flowLibraryPinned.collectAsState()
@@ -71,6 +80,17 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
         favorites.size.toUInt(), null, "real") else null
     val deezerLiked = if (deezerFavorites.isNotEmpty()) FfiPlaylist(DEEZER_FAVORITES_ID, "Deezer • Sevdiğim Şarkılar", null, false,
         deezerFavorites.size.toUInt(), null, "real") else null
+    val downloadedPlaylist = remember(downloadedTracks) {
+        FfiPlaylist(
+            id = LOCAL_DOWNLOADS_ID,
+            name = "İndirilen Müzikler",
+            description = "Cihaza indirilen çevrimdışı şarkılar",
+            isLocal = true,
+            trackCount = downloadedTracks.size.toUInt(),
+            artworkUrl = downloadedTracks.firstOrNull()?.artworkUrl,
+            origin = "real"
+        )
+    }
     val entries = remember(localPlaylists, deezerPlaylists, liked, deezerLiked) {
         listOfNotNull(deezerLiked, liked).map { LibraryPlaylistEntry(it, addedAt = null) } + deezerPlaylists +
             localPlaylists.filter { it.origin != "development_fixture" }.map { LibraryPlaylistEntry(it, it.id.removePrefix("local:").toLongOrNull()) }
@@ -91,6 +111,26 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
         flowLibraryPinned && deezerUser != null &&
             (filter == PlaylistFilter.ALL || filter == PlaylistFilter.DEEZER || filter == PlaylistFilter.PINNED) &&
             (query.isBlank() || "deezer flow".contains(query.trim(), ignoreCase = true) || "flow".contains(query.trim(), ignoreCase = true))
+    }
+
+    val showDownloadsCard = remember(downloadsLibraryPinned, filter, query, downloadedTracks) {
+        val matchesQuery = query.isBlank() ||
+            "indirilen müzikler".contains(query.trim(), ignoreCase = true) ||
+            "indirilenler".contains(query.trim(), ignoreCase = true)
+        matchesQuery && when (filter) {
+            PlaylistFilter.LOCAL -> true
+            PlaylistFilter.ALL, PlaylistFilter.PINNED -> downloadsLibraryPinned
+            PlaylistFilter.DEEZER -> false
+        }
+    }
+
+    val filteredDownloadedTracks = remember(downloadedTracks, query) {
+        val q = query.trim()
+        if (q.isBlank()) downloadedTracks else downloadedTracks.filter {
+            it.title.contains(q, ignoreCase = true) ||
+                it.artist.contains(q, ignoreCase = true) ||
+                it.album.contains(q, ignoreCase = true)
+        }
     }
 
     Column(modifier.fillMaxSize().padding(horizontal = 14.dp)) {
@@ -128,7 +168,7 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
                 Icon(if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView, contentDescription = if (grid) "Liste görünümü" else "Izgara görünümü")
             }
         }
-        if (visible.isEmpty() && !showFlow) {
+        if (visible.isEmpty() && !showFlow && !showDownloadsCard && (filter != PlaylistFilter.LOCAL || filteredDownloadedTracks.isEmpty())) {
             Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (loading && entries.isEmpty()) { CircularProgressIndicator(modifier = Modifier.size(28.dp)); Spacer(Modifier.height(12.dp)); Text("Kitaplığın yükleniyor…", color = colors.textSecondary) }
                 else {
@@ -149,8 +189,41 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
                         )
                     }
                 }
+                if (showDownloadsCard) {
+                    item(key = "downloads:local") {
+                        DownloadsGridCell(
+                            playlist = downloadedPlaylist,
+                            downloadedTracks = downloadedTracks,
+                            isLibraryPinned = downloadsLibraryPinned,
+                            isQuickAccessPinned = downloadsQuickAccessPinned,
+                            viewModel = viewModel,
+                            onClick = { onPlaylistClick(downloadedPlaylist) }
+                        )
+                    }
+                }
                 items(visible, key = { it.playlist.id }) { entry ->
                     PlaylistCell(entry.playlist, "playlist:${entry.playlist.id}" in pinnedIds, viewModel, onPlaylistClick, true)
+                }
+                if (filter == PlaylistFilter.LOCAL && filteredDownloadedTracks.isNotEmpty()) {
+                    item(key = "local_downloaded_tracks_header", span = { GridItemSpan(maxLineSpan) }) {
+                        DownloadedTracksSectionHeader(
+                            count = filteredDownloadedTracks.size,
+                            onPlayAll = { viewModel.playbackManager.playTrackList(filteredDownloadedTracks, 0) },
+                            onShuffleAll = { viewModel.playbackManager.playTrackList(filteredDownloadedTracks.shuffled(), 0) }
+                        )
+                    }
+                    itemsIndexed(
+                        filteredDownloadedTracks,
+                        key = { _, track -> "local_dl_grid:${track.id}" },
+                        span = { _, _ -> GridItemSpan(maxLineSpan) }
+                    ) { index, track ->
+                        TrackListItem(
+                            track = track,
+                            isPlaying = currentTrackId == track.id,
+                            onClick = { viewModel.playbackManager.playTrackList(filteredDownloadedTracks, index) },
+                            onLongClick = { viewModel.openTrackMenu(track, downloadedPlaylist, index) }
+                        )
+                    }
                 }
             }
         } else {
@@ -164,8 +237,40 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
                         )
                     }
                 }
+                if (showDownloadsCard) {
+                    item(key = "downloads:local") {
+                        DownloadsListCell(
+                            playlist = downloadedPlaylist,
+                            downloadedTracks = downloadedTracks,
+                            isLibraryPinned = downloadsLibraryPinned,
+                            isQuickAccessPinned = downloadsQuickAccessPinned,
+                            viewModel = viewModel,
+                            onClick = { onPlaylistClick(downloadedPlaylist) }
+                        )
+                    }
+                }
                 items(visible, key = { it.playlist.id }) { entry ->
                     PlaylistCell(entry.playlist, "playlist:${entry.playlist.id}" in pinnedIds, viewModel, onPlaylistClick, false)
+                }
+                if (filter == PlaylistFilter.LOCAL && filteredDownloadedTracks.isNotEmpty()) {
+                    item(key = "local_downloaded_tracks_header") {
+                        DownloadedTracksSectionHeader(
+                            count = filteredDownloadedTracks.size,
+                            onPlayAll = { viewModel.playbackManager.playTrackList(filteredDownloadedTracks, 0) },
+                            onShuffleAll = { viewModel.playbackManager.playTrackList(filteredDownloadedTracks.shuffled(), 0) }
+                        )
+                    }
+                    itemsIndexed(
+                        filteredDownloadedTracks,
+                        key = { _, track -> "local_dl_list:${track.id}" }
+                    ) { index, track ->
+                        TrackListItem(
+                            track = track,
+                            isPlaying = currentTrackId == track.id,
+                            onClick = { viewModel.playbackManager.playTrackList(filteredDownloadedTracks, index) },
+                            onLongClick = { viewModel.openTrackMenu(track, downloadedPlaylist, index) }
+                        )
+                    }
                 }
             }
         }
@@ -452,6 +557,285 @@ private fun FlowListCell(
                         leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
                         onClick = {
                             viewModel.setFlowQuickAccessPinned(!isQuickAccessPinned)
+                            showMenu = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadedTracksSectionHeader(
+    count: Int,
+    onPlayAll: () -> Unit,
+    onShuffleAll: () -> Unit
+) {
+    val colors = LocalPlasmaColors.current
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp)) {
+        HorizontalDivider(color = colors.divider)
+        Spacer(Modifier.height(14.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "İndirilen Şarkılar ($count)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Bu cihazdaki çevrimdışı müziklerin",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary
+                )
+            }
+            OutlinedButton(
+                onClick = onShuffleAll,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Karıştır", style = MaterialTheme.typography.labelMedium)
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = onPlayAll,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Çal", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadsGridCell(
+    playlist: FfiPlaylist,
+    downloadedTracks: List<FfiTrack>,
+    isLibraryPinned: Boolean,
+    isQuickAccessPinned: Boolean,
+    viewModel: MainViewModel,
+    onClick: () -> Unit
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    var showMenu by remember { mutableStateOf(false) }
+    val downloadsGradient = remember(primary) {
+        Brush.linearGradient(listOf(Color(0xFF0EA5E9), Color(0xFF10B981), primary))
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { onClick() }
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(6.dp))
+                .background(downloadsGradient),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.DownloadDone,
+                contentDescription = "İndirilen Müzikler",
+                modifier = Modifier.fillMaxSize(0.44f),
+                tint = Color.White
+            )
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(
+            playlist.name,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (isLibraryPinned) {
+                Icon(
+                    Icons.Default.PushPin,
+                    contentDescription = "Sabitlendi",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(2.dp))
+            }
+            Text(
+                "${downloadedTracks.size} şarkı • Bu cihaz",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "İndirilenler seçenekleri",
+                        modifier = Modifier.size(20.dp),
+                        tint = colors.textSecondary
+                    )
+                }
+                if (showMenu) {
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        if (downloadedTracks.isNotEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("Tümünü çal") },
+                                leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
+                                onClick = {
+                                    viewModel.playbackManager.playTrackList(downloadedTracks, 0)
+                                    showMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Karıştır") },
+                                leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null) },
+                                onClick = {
+                                    viewModel.playbackManager.playTrackList(downloadedTracks.shuffled(), 0)
+                                    showMenu = false
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text(if (isLibraryPinned) "Kitaplıktan kaldır" else "Kitaplığa sabitle") },
+                            leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                            onClick = {
+                                viewModel.setDownloadsLibraryPinned(!isLibraryPinned)
+                                showMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isQuickAccessPinned) "Ana sayfadan kaldır" else "Ana sayfaya sabitle") },
+                            leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                            onClick = {
+                                viewModel.setDownloadsQuickAccessPinned(!isQuickAccessPinned)
+                                showMenu = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadsListCell(
+    playlist: FfiPlaylist,
+    downloadedTracks: List<FfiTrack>,
+    isLibraryPinned: Boolean,
+    isQuickAccessPinned: Boolean,
+    viewModel: MainViewModel,
+    onClick: () -> Unit
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    var showMenu by remember { mutableStateOf(false) }
+    val downloadsGradient = remember(primary) {
+        Brush.linearGradient(listOf(Color(0xFF0EA5E9), Color(0xFF10B981), primary))
+    }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { onClick() }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(60.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(downloadsGradient),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.DownloadDone,
+                contentDescription = "İndirilen Müzikler",
+                modifier = Modifier.size(32.dp),
+                tint = Color.White
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                playlist.name,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isLibraryPinned) {
+                    Icon(
+                        Icons.Default.PushPin,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    "${downloadedTracks.size} şarkı • Bu cihaz (Çevrimdışı)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (downloadedTracks.isNotEmpty()) {
+            IconButton(
+                onClick = { viewModel.playbackManager.playTrackList(downloadedTracks, 0) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = "İndirilenleri Çal",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+        Box {
+            IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "İndirilenler seçenekleri",
+                    modifier = Modifier.size(20.dp),
+                    tint = colors.textSecondary
+                )
+            }
+            if (showMenu) {
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (isLibraryPinned) "Kitaplıktan kaldır" else "Kitaplığa sabitle") },
+                        leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                        onClick = {
+                            viewModel.setDownloadsLibraryPinned(!isLibraryPinned)
+                            showMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (isQuickAccessPinned) "Ana sayfadan kaldır" else "Ana sayfaya sabitle") },
+                        leadingIcon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                        onClick = {
+                            viewModel.setDownloadsQuickAccessPinned(!isQuickAccessPinned)
                             showMenu = false
                         }
                     )
