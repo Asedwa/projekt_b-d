@@ -1,11 +1,14 @@
 package org.kde.plasmawave.ui.screens
 
 import android.graphics.BitmapFactory
+import android.graphics.Color as AndroidColor
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,17 +44,42 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import java.io.File
 import kotlin.math.roundToInt
+import kotlin.random.Random
 import org.kde.plasmawave.R
+import org.kde.plasmawave.player.SleepTimerState
 import org.kde.plasmawave.theme.LocalPlasmaColors
+import org.kde.plasmawave.ui.CustomThemeSpec
 import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.LOCAL_DOWNLOADS_ID
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PinnedItem
+import org.kde.plasmawave.ui.ResumePlaybackState
+import org.kde.plasmawave.ui.SearchCategory
+import org.kde.plasmawave.ui.TrackListeningStat
 import org.kde.plasmawave.ui.components.ArtworkImage
 import org.kde.plasmawave.ui.components.HeaderLogoStyle
 import org.kde.plasmawave.ui.components.HomeFeedType
+import org.kde.plasmawave.ui.components.HomeWidgetType
+import org.kde.plasmawave.ui.components.ListeningStatsDialog
 import org.kde.plasmawave.ui.components.TrackListItem
 import uniffi.plasmawave_core.FfiPlaylist
+import uniffi.plasmawave_core.FfiTrack
+
+private fun formatClockMs(ms: Long): String {
+    val totalSec = (ms / 1000L).coerceAtLeast(0L)
+    val min = totalSec / 60L
+    val sec = totalSec % 60L
+    return "%02d:%02d".format(min, sec)
+}
+
+private fun parseHexColorSafe(hex: String, fallback: Color): Color {
+    return try {
+        val clean = if (hex.startsWith("#")) hex else "#$hex"
+        Color(AndroidColor.parseColor(clean))
+    } catch (_: Exception) {
+        fallback
+    }
+}
 
 @Composable
 fun HomeScreen(
@@ -71,6 +99,14 @@ fun HomeScreen(
     val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
     val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
     val homeFeedType by viewModel.homeFeedType.collectAsState()
+    val resumePlaybackEnabled by viewModel.resumePlaybackEnabled.collectAsState()
+    val resumeState by viewModel.resumePlaybackState.collectAsState()
+    val enabledWidgets by viewModel.enabledHomeWidgets.collectAsState()
+    val trackStats by viewModel.trackListeningStats.collectAsState()
+    val totalListeningMs by viewModel.totalListeningTimeMs.collectAsState()
+    val activeTheme by viewModel.activeTheme.collectAsState()
+    val userCustomThemes by viewModel.userCustomThemes.collectAsState()
+    val sleepTimerState by viewModel.playbackManager.sleepTimerState.collectAsState()
     val recentTracks by viewModel.recentTracks.collectAsState()
     val mostPlayedTracks by viewModel.mostPlayedTracks.collectAsState()
     val pins by viewModel.pins.collectAsState()
@@ -80,6 +116,94 @@ fun HomeScreen(
     val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
     val colors = LocalPlasmaColors.current
     val context = LocalContext.current
+
+    var showStatsDialog by remember { mutableStateOf(false) }
+    var selectedQuickArtist by remember { mutableStateOf<String?>(null) }
+
+    if (showStatsDialog) {
+        ListeningStatsDialog(
+            viewModel = viewModel,
+            onDismiss = { showStatsDialog = false }
+        )
+    }
+
+    val allKnownTracks = remember(deezerFavorites, favorites, downloadedTracks, recentTracks) {
+        (recentTracks + deezerFavorites + favorites + downloadedTracks).distinctBy { it.id }
+    }
+
+    if (selectedQuickArtist != null) {
+        val artistName = selectedQuickArtist!!
+        val artistTracks = remember(artistName, allKnownTracks) {
+            allKnownTracks.filter { it.artist.contains(artistName, ignoreCase = true) }
+        }
+        AlertDialog(
+            onDismissRequest = { selectedQuickArtist = null },
+            title = { Text(artistName, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Kitaplığınızda bu sanatçıya ait ${artistTracks.size} şarkı bulundu.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary
+                    )
+                    artistTracks.take(5).forEachIndexed { idx, t ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.card)
+                                .clickable {
+                                    viewModel.playbackManager.playTrackList(artistTracks, idx)
+                                    selectedQuickArtist = null
+                                }
+                                .padding(8.dp)
+                        ) {
+                            ArtworkImage(t.artworkUrl, modifier = Modifier.size(36.dp), shape = RoundedCornerShape(6.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                Text(t.album, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
+                            }
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val name = artistName
+                            selectedQuickArtist = null
+                            viewModel.navigateToSearch(name, SearchCategory.ARTISTS)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Deezer'da Ara")
+                    }
+                }
+            },
+            confirmButton = {
+                if (artistTracks.isNotEmpty()) {
+                    Button(
+                        onClick = {
+                            viewModel.playbackManager.playTrackList(artistTracks, 0)
+                            selectedQuickArtist = null
+                        }
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Tümünü Çal")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedQuickArtist = null }) {
+                    Text("Kapat")
+                }
+            }
+        )
+    }
 
     val customLogoBitmap = remember(customLogoTimestamp, headerLogoStyle) {
         if (headerLogoStyle == HeaderLogoStyle.CUSTOM) {
@@ -181,6 +305,19 @@ fun HomeScreen(
                     Spacer(Modifier.height(10.dp))
                 }
             }
+
+            if (resumePlaybackEnabled && resumeState != null) {
+                item(key = "resume_playback_card") {
+                    ResumePlaybackCard(
+                        state = resumeState!!,
+                        onResume = { viewModel.resumeSavedPlayback() },
+                        onHideCard = { viewModel.setResumePlaybackEnabled(false) },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
+
             item(key = "quick_access_header") {
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -224,6 +361,89 @@ fun HomeScreen(
                     color = colors.textSecondary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)
                 )
+            }
+
+            if (enabledWidgets.isNotEmpty()) {
+                item(key = "home_widgets_spacer") {
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
+
+            if (HomeWidgetType.STATS in enabledWidgets) {
+                item(key = "widget_stats") {
+                    StatsHomeWidgetCard(
+                        stats = trackStats,
+                        totalListeningFormatted = viewModel.formatDurationTr(totalListeningMs),
+                        onOpenFullStats = { showStatsDialog = true },
+                        onPlayTrack = { idx ->
+                            val tracks = trackStats.map { it.track }
+                            if (tracks.isNotEmpty()) {
+                                viewModel.playbackManager.playTrackList(tracks, idx)
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            if (HomeWidgetType.QUICK_ARTIST in enabledWidgets && allKnownTracks.isNotEmpty()) {
+                item(key = "widget_quick_artist") {
+                    QuickArtistWidgetCard(
+                        allTracks = allKnownTracks,
+                        stats = trackStats,
+                        onArtistClick = { artistName -> selectedQuickArtist = artistName },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            if (HomeWidgetType.QUICK_THEME in enabledWidgets) {
+                item(key = "widget_quick_theme") {
+                    QuickThemeWidgetCard(
+                        activeThemeId = activeTheme.id,
+                        customThemes = userCustomThemes,
+                        onSelectTheme = { viewModel.setTheme(it) },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            if (HomeWidgetType.LUCKY_PICK in enabledWidgets && allKnownTracks.isNotEmpty()) {
+                item(key = "widget_lucky_pick") {
+                    LuckyPickWidgetCard(
+                        tracks = allKnownTracks,
+                        onPlayTrack = { track ->
+                            viewModel.playbackManager.playTrackList(listOf(track) + allKnownTracks.shuffled().take(19), 0)
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            if (HomeWidgetType.SLEEP_TIMER in enabledWidgets) {
+                item(key = "widget_sleep_timer") {
+                    SleepTimerWidgetCard(
+                        sleepTimerState = sleepTimerState,
+                        onSetMinutes = { viewModel.playbackManager.startSleepTimerMinutes(it) },
+                        onSetEndOfTrack = { viewModel.playbackManager.startSleepTimerEndOfTrack() },
+                        onCancel = { viewModel.playbackManager.cancelSleepTimer() },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
+            if (HomeWidgetType.MOOD_MIX in enabledWidgets && allKnownTracks.isNotEmpty()) {
+                item(key = "widget_mood_mix") {
+                    MoodMixWidgetCard(
+                        tracks = allKnownTracks,
+                        onStartMix = { moodTracks ->
+                            if (moodTracks.isNotEmpty()) {
+                                viewModel.playbackManager.playTrackList(moodTracks, 0)
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
             }
 
             // Customizable Feed (Senin İçin / Son Çalınanlar / En Çok Dinlenenler)
@@ -661,6 +881,682 @@ private fun DeezerFlowHeroCard(
                         )
                     } else {
                         Icon(Icons.Default.PlayArrow, contentDescription = "Flow Başlat", modifier = Modifier.size(26.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResumePlaybackCard(
+    state: ResumePlaybackState,
+    onResume: () -> Unit,
+    onHideCard: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    val safeDur = state.durationMs.coerceAtLeast(1L)
+    val fraction = (state.positionMs.toFloat() / safeDur.toFloat()).coerceIn(0f, 1f)
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onResume() },
+        colors = CardDefaults.cardColors(containerColor = colors.card),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, primary.copy(alpha = 0.4f))
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    Icons.Default.Restore,
+                    contentDescription = null,
+                    tint = primary,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "KALDIĞIN YERDEN DEVAM ET",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = primary,
+                        letterSpacing = 0.5.sp
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = onHideCard,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Kartı Gizle",
+                        tint = colors.textSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ArtworkImage(
+                    url = state.track.artworkUrl,
+                    modifier = Modifier.size(54.dp),
+                    fallback = Icons.Default.MusicNote,
+                    shape = RoundedCornerShape(10.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        state.track.title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        state.track.artist,
+                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LinearProgressIndicator(
+                            progress = { fraction },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(5.dp)
+                                .clip(RoundedCornerShape(50)),
+                            color = primary,
+                            trackColor = colors.border
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "${formatClockMs(state.positionMs)} / ${formatClockMs(safeDur)}",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = colors.textSecondary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Button(
+                    onClick = onResume,
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Devam Et", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatsHomeWidgetCard(
+    stats: List<TrackListeningStat>,
+    totalListeningFormatted: String,
+    onOpenFullStats: () -> Unit,
+    onPlayTrack: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    val totalPlays = remember(stats) { stats.sumOf { it.playCount } }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colors.card),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(primary.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.BarChart, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Şarkı ve Dinleme İstatistikleri",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        "Toplam: $totalListeningFormatted • $totalPlays dinlenme (${stats.size} şarkı)",
+                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                    )
+                }
+                TextButton(onClick = onOpenFullStats) {
+                    Text("Tümünü Gör")
+                }
+            }
+
+            if (stats.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                stats.take(3).forEachIndexed { idx, s ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onPlayTrack(idx) }
+                            .padding(vertical = 5.dp, horizontal = 4.dp)
+                    ) {
+                        Text(
+                            "#${idx + 1}",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = primary
+                            ),
+                            modifier = Modifier.width(24.dp)
+                        )
+                        ArtworkImage(
+                            url = s.track.artworkUrl,
+                            modifier = Modifier.size(36.dp),
+                            fallback = Icons.Default.MusicNote,
+                            shape = RoundedCornerShape(6.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                s.track.title,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                s.track.artist,
+                                style = MaterialTheme.typography.labelSmall.copy(color = colors.textSecondary),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(primary.copy(alpha = 0.16f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                "${s.playCount} kez",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickArtistWidgetCard(
+    allTracks: List<FfiTrack>,
+    stats: List<TrackListeningStat>,
+    onArtistClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+
+    val artists = remember(allTracks, stats) {
+        val playCountsByArtist = stats.groupBy { it.track.artist.trim() }
+            .mapValues { (_, list) -> list.sumOf { it.playCount } }
+        allTracks
+            .filter { it.artist.isNotBlank() }
+            .groupBy { it.artist.split(",").first().trim() }
+            .map { (artist, tracks) ->
+                Triple(
+                    artist,
+                    tracks.firstNotNullOfOrNull { it.artworkUrl },
+                    playCountsByArtist[artist] ?: tracks.size
+                )
+            }
+            .sortedByDescending { it.third }
+            .take(12)
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colors.card),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(primary.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.PersonSearch, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        "Hızlıca Sanatçıya Git",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        "Sanatçıya dokunarak şarkılarını anında çalın veya arayın",
+                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(artists, key = { it.first }) { (artistName, artUrl, _) ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(76.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onArtistClick(artistName) }
+                            .padding(4.dp)
+                    ) {
+                        ArtworkImage(
+                            url = artUrl,
+                            modifier = Modifier
+                                .size(58.dp)
+                                .clip(CircleShape)
+                                .border(1.5.dp, primary.copy(alpha = 0.6f), CircleShape),
+                            fallback = Icons.Default.Person,
+                            shape = CircleShape
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            artistName,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickThemeWidgetCard(
+    activeThemeId: String,
+    customThemes: List<CustomThemeSpec>,
+    onSelectTheme: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colors.card),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(primary.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Palette, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        "Hızlıca Tema Değiştir",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        "Tek dokunuşla temalarınız arasında geçiş yapın",
+                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item(key = "theme_twilight") {
+                    val selected = activeThemeId == "mlp.twilight-sparkle"
+                    Button(
+                        onClick = { onSelectTheme("mlp.twilight-sparkle") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF282348),
+                            contentColor = Color(0xFFF5EEF8)
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        border = if (selected) BorderStroke(2.dp, Color(0xFFED438D)) else null
+                    ) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFED438D)))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Twilight", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    }
+                }
+                item(key = "theme_pinkie") {
+                    val selected = activeThemeId == "mlp.pinkie-pie"
+                    Button(
+                        onClick = { onSelectTheme("mlp.pinkie-pie") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3E1C32),
+                            contentColor = Color(0xFFFFF0F5)
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        border = if (selected) BorderStroke(2.dp, Color(0xFFFF2E93)) else null
+                    ) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFF2E93)))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Pinkie", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    }
+                }
+                items(customThemes, key = { it.id }) { spec ->
+                    val selected = activeThemeId == spec.id
+                    val cardCol = parseHexColorSafe(spec.cardHex, Color(0xFF232629))
+                    val accentCol = parseHexColorSafe(spec.accentHex, primary)
+                    val textCol = parseHexColorSafe(spec.textHex, Color.White)
+                    Button(
+                        onClick = { onSelectTheme(spec.id) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = cardCol,
+                            contentColor = textCol
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        border = if (selected) BorderStroke(2.dp, accentCol) else BorderStroke(1.dp, accentCol.copy(alpha = 0.4f))
+                    ) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(accentCol))
+                        Spacer(Modifier.width(6.dp))
+                        Text(spec.name, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LuckyPickWidgetCard(
+    tracks: List<FfiTrack>,
+    onPlayTrack: (FfiTrack) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    var currentIndex by remember(tracks.size) {
+        mutableIntStateOf(if (tracks.isNotEmpty()) Random.nextInt(tracks.size) else 0)
+    }
+    val chosenTrack = tracks.getOrNull(currentIndex) ?: tracks.firstOrNull() ?: return
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colors.card),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFF59E0B).copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Casino, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Şanslı Şarkı Seçici",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        "Kitaplığından senin için rastgele seçilen parça",
+                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                    )
+                }
+                TextButton(
+                    onClick = {
+                        if (tracks.size > 1) {
+                            var next = Random.nextInt(tracks.size)
+                            if (next == currentIndex) next = (next + 1) % tracks.size
+                            currentIndex = next
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Başka Seç")
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.45f))
+                    .clickable { onPlayTrack(chosenTrack) }
+                    .padding(10.dp)
+            ) {
+                ArtworkImage(
+                    url = chosenTrack.artworkUrl,
+                    modifier = Modifier.size(46.dp),
+                    fallback = Icons.Default.MusicNote,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        chosenTrack.title,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        chosenTrack.artist,
+                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                FilledIconButton(
+                    onClick = { onPlayTrack(chosenTrack) },
+                    modifier = Modifier.size(38.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = primary)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Çal", tint = Color.White)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SleepTimerWidgetCard(
+    sleepTimerState: SleepTimerState,
+    onSetMinutes: (Int) -> Unit,
+    onSetEndOfTrack: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+
+    val statusText = when (sleepTimerState) {
+        is SleepTimerState.Off -> "Kapalı • Süre seçerek otomatik duraklatmayı başlatın"
+        is SleepTimerState.EndOfTrack -> "Aktif • Çalan şarkı bittiğinde duracak"
+        is SleepTimerState.Countdown -> "Aktif • Kalan süre: ${formatClockMs(sleepTimerState.remainingMs)}"
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colors.card),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF38BDF8).copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Bedtime, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Hızlı Uyku Zamanlayıcısı",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        statusText,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = if (sleepTimerState is SleepTimerState.Off) colors.textSecondary else primary
+                        )
+                    )
+                }
+                if (sleepTimerState !is SleepTimerState.Off) {
+                    TextButton(onClick = onCancel) {
+                        Text("Kapat", color = Color(0xFFEF4444))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                listOf(15, 30, 45).forEach { mins ->
+                    OutlinedButton(
+                        onClick = { onSetMinutes(mins) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(vertical = 6.dp)
+                    ) {
+                        Text("$mins dk", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                OutlinedButton(
+                    onClick = onSetEndOfTrack,
+                    modifier = Modifier.weight(1.2f),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(vertical = 6.dp)
+                ) {
+                    Text("Şarkı Sonu", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoodMixWidgetCard(
+    tracks: List<FfiTrack>,
+    onStartMix: (List<FfiTrack>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+
+    val moods = listOf(
+        Triple("Enerjik ⚡", Color(0xFFF59E0B), 101L),
+        Triple("Gece Modu 🌙", Color(0xFF8B5CF6), 202L),
+        Triple("Odaklanma 🎯", Color(0xFF10B981), 303L),
+        Triple("Karışık Keyif 🎧", Color(0xFFEC4899), 404L)
+    )
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colors.card),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(primary.copy(alpha = 0.16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        "Ruh Haline Göre Anında Miks",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        "Modunu seç, şarkıların hemen çalmaya başlasın",
+                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                moods.forEach { (title, color, seed) ->
+                    Button(
+                        onClick = {
+                            val mix = tracks.shuffled(Random(seed + System.currentTimeMillis() / 60000L)).take(25)
+                            onStartMix(mix)
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = color.copy(alpha = 0.2f),
+                            contentColor = color
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            title,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }

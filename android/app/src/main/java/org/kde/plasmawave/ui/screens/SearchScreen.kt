@@ -74,7 +74,9 @@ fun SearchScreen(
     onPlaylistClick: (FfiPlaylist) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var query by remember { mutableStateOf("") }
+    val externalTrigger by viewModel.externalSearchTrigger.collectAsState()
+    val savedQuery by viewModel.searchQuery.collectAsState()
+    var query by remember { mutableStateOf(externalTrigger?.first ?: savedQuery) }
     val category by viewModel.searchCategory.collectAsState()
     val trackResults by viewModel.searchResults.collectAsState()
     val albumResults by viewModel.searchAlbums.collectAsState()
@@ -88,15 +90,33 @@ fun SearchScreen(
     var albumTracks by remember { mutableStateOf<List<FfiTrack>>(emptyList()) }
     var selectedArtist by remember { mutableStateOf<FfiArtist?>(null) }
     var artistTopTracks by remember { mutableStateOf<List<FfiTrack>>(emptyList()) }
+    var autoOpenArtistForQuery by remember { mutableStateOf<String?>(null) }
 
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    val externalTrigger by viewModel.externalSearchTrigger.collectAsState()
     LaunchedEffect(externalTrigger) {
-        externalTrigger?.let { (newQuery, newCat) ->
+        externalTrigger?.let { (newQuery, newCat, _) ->
             query = newQuery
+            if (newCat == SearchCategory.ARTISTS) {
+                autoOpenArtistForQuery = newQuery
+            }
             viewModel.search(newQuery, newCat, immediate = true)
             viewModel.clearExternalSearchTrigger()
+        }
+    }
+
+    LaunchedEffect(artistResults, autoOpenArtistForQuery) {
+        val targetQuery = autoOpenArtistForQuery ?: return@LaunchedEffect
+        if (artistResults.isNotEmpty()) {
+            val match = artistResults.firstOrNull { it.name.equals(targetQuery, ignoreCase = true) }
+                ?: artistResults.firstOrNull { it.name.contains(targetQuery, ignoreCase = true) }
+                ?: artistResults.first()
+            autoOpenArtistForQuery = null
+            selectedArtist = match
+            artistTopTracks = emptyList()
+            scope.launch {
+                artistTopTracks = viewModel.getArtistTopTracks(match.id)
+            }
         }
     }
 

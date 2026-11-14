@@ -213,7 +213,7 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
-    fun playTrackList(tracks: List<FfiTrack>, startIndex: Int = 0) {
+    fun playTrackList(tracks: List<FfiTrack>, startIndex: Int = 0, startPositionMs: Long = 0L) {
         scope.launch {
             try {
                 val (entry, snapshot) = withContext(queueDispatcher) {
@@ -221,7 +221,7 @@ class PlaybackManager private constructor(private val context: Context) {
                     replaced to readSnapshot()
                 }
                 applySnapshot(snapshot)
-                entry?.let { prepareAndPlay(it) }
+                entry?.let { prepareAndPlay(it, startPositionMs) }
             } catch (e: Exception) {
                 Log.e(TAG, "Error replacing queue", e)
             }
@@ -481,7 +481,7 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
-    private suspend fun prepareAndPlay(entry: FfiQueueEntry) {
+    private suspend fun prepareAndPlay(entry: FfiQueueEntry, startPositionMs: Long = 0L) {
         val player = mediaController ?: run {
             pendingEntry = entry
             return
@@ -518,13 +518,18 @@ class PlaybackManager private constructor(private val context: Context) {
                 .setMediaMetadata(metadata)
                 .build()
 
-            player.setMediaItem(mediaItem)
+            val safeStartPos = startPositionMs.coerceAtLeast(0L)
+            if (safeStartPos > 0L) {
+                player.setMediaItem(mediaItem, safeStartPos)
+            } else {
+                player.setMediaItem(mediaItem)
+            }
             player.prepare()
             player.play()
             currentAudioFormat = null
             val initialQualityLabel = computeInitialQualityLabel(entry, offlinePath)
             _uiState.value = _uiState.value.copy(currentEntry = entry, audioQualityLabel = initialQualityLabel)
-            _progress.value = PlaybackProgress(0L, entry.track.durationMs.toLong())
+            _progress.value = PlaybackProgress(safeStartPos, entry.track.durationMs.toLong())
         } catch (e: Exception) {
             Log.e(TAG, "Error loading media item", e)
         }

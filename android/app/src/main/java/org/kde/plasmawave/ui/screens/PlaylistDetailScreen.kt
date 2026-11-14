@@ -79,7 +79,12 @@ fun PlaylistDetailScreen(
     onDownloadPlaylist: (List<FfiTrack>) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var state by remember(playlist.id) { mutableStateOf<PlaylistLoadState>(PlaylistLoadState.Loading) }
+    var state by remember(playlist.id) {
+        val cached = viewModel.getCachedPlaylistTrackEntries(playlist.id)
+        mutableStateOf<PlaylistLoadState>(
+            if (cached != null) PlaylistLoadState.Loaded(cached) else PlaylistLoadState.Loading
+        )
+    }
     var retry by remember(playlist.id) { mutableIntStateOf(0) }
     val sortPrefs = LocalContext.current.getSharedPreferences("playlist_sort", Context.MODE_PRIVATE)
     val sortKey = "tracks:${playlist.id}"

@@ -32,13 +32,21 @@ import org.kde.plasmawave.ui.components.SeekbarStyle
 import org.kde.plasmawave.ui.components.AlbumCoverFrame
 import org.kde.plasmawave.ui.components.HeaderLogoStyle
 import org.kde.plasmawave.ui.components.HomeFeedType
+import org.kde.plasmawave.ui.components.HomeWidgetType
 import org.kde.plasmawave.ui.components.AppLauncherIcon
 import org.kde.plasmawave.ui.components.LauncherIconManager
 import org.json.JSONArray
 import org.json.JSONObject
+import android.os.Environment
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import java.time.Instant
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.isActive
 import uniffi.plasmawave_core.FfiAlbum
 import uniffi.plasmawave_core.FfiArtist
 import uniffi.plasmawave_core.FfiDeezerUser
@@ -67,6 +75,22 @@ data class CustomThemeSpec(
     val cardHex: String,
     val accentHex: String,
     val textHex: String
+)
+
+data class ResumePlaybackState(
+    val track: FfiTrack,
+    val positionMs: Long,
+    val durationMs: Long,
+    val updatedAtMs: Long,
+    val queueTracks: List<FfiTrack> = emptyList(),
+    val queueIndex: Int = 0
+)
+
+data class TrackListeningStat(
+    val track: FfiTrack,
+    val playCount: Int,
+    val totalListenedMs: Long,
+    val lastPlayedAtMs: Long
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -243,11 +267,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val historyPrefs = application.getSharedPreferences("playback_history_v2", android.content.Context.MODE_PRIVATE)
+    private val privacyPrefs = application.getSharedPreferences("privacy_and_stats_v1", android.content.Context.MODE_PRIVATE)
+    private val resumePrefs = application.getSharedPreferences("resume_playback_v1", android.content.Context.MODE_PRIVATE)
+    private val playlistCachePrefs = application.getSharedPreferences("fast_playlist_cache_v1", android.content.Context.MODE_PRIVATE)
+    private val playlistTracksMemCache = ConcurrentHashMap<String, List<PlaylistTrackEntry>>()
+
+    // 1. Kaldığın Yerden Devam Et (UI görünürlüğü & kayıt)
+    private val _resumePlaybackEnabled = MutableStateFlow(displayPrefs.getBoolean("resume_playback_enabled", true))
+    val resumePlaybackEnabled: StateFlow<Boolean> = _resumePlaybackEnabled.asStateFlow()
+    fun setResumePlaybackEnabled(enabled: Boolean) {
+        displayPrefs.edit().putBoolean("resume_playback_enabled", enabled).apply()
+        _resumePlaybackEnabled.value = enabled
+    }
+
+    // 2. Veri ve Gizlilik Ayarları (İsteyen istediği zaman açıp kapatabilir)
+    private val _collectListeningStatsEnabled = MutableStateFlow(privacyPrefs.getBoolean("collect_listening_stats", true))
+    val collectListeningStatsEnabled: StateFlow<Boolean> = _collectListeningStatsEnabled.asStateFlow()
+    fun setCollectListeningStatsEnabled(enabled: Boolean) {
+        privacyPrefs.edit().putBoolean("collect_listening_stats", enabled).apply()
+        _collectListeningStatsEnabled.value = enabled
+    }
+
+    private val _collectListeningHistoryEnabled = MutableStateFlow(privacyPrefs.getBoolean("collect_listening_history", true))
+    val collectListeningHistoryEnabled: StateFlow<Boolean> = _collectListeningHistoryEnabled.asStateFlow()
+    fun setCollectListeningHistoryEnabled(enabled: Boolean) {
+        privacyPrefs.edit().putBoolean("collect_listening_history", enabled).apply()
+        _collectListeningHistoryEnabled.value = enabled
+    }
+
+    private val _saveResumePositionEnabled = MutableStateFlow(privacyPrefs.getBoolean("save_resume_position", true))
+    val saveResumePositionEnabled: StateFlow<Boolean> = _saveResumePositionEnabled.asStateFlow()
+    fun setSaveResumePositionEnabled(enabled: Boolean) {
+        privacyPrefs.edit().putBoolean("save_resume_position", enabled).apply()
+        _saveResumePositionEnabled.value = enabled
+    }
+
+    // 3. Ana Sayfa Widget'ları
+    private val _enabledHomeWidgets = MutableStateFlow<Set<HomeWidgetType>>(readEnabledHomeWidgets())
+    val enabledHomeWidgets: StateFlow<Set<HomeWidgetType>> = _enabledHomeWidgets.asStateFlow()
+
+    private fun readEnabledHomeWidgets(): Set<HomeWidgetType> {
+        val saved = displayPrefs.getStringSet("enabled_home_widgets", null)
+        if (saved == null) {
+            return HomeWidgetType.entries.filter { it.defaultEnabled }.toSet()
+        }
+        return HomeWidgetType.entries.filter { it.id in saved }.toSet()
+    }
+
+    fun setHomeWidgetEnabled(widget: HomeWidgetType, enabled: Boolean) {
+        val next = _enabledHomeWidgets.value.toMutableSet().apply {
+            if (enabled) add(widget) else remove(widget)
+        }
+        displayPrefs.edit().putStringSet("enabled_home_widgets", next.map { it.id }.toSet()).apply()
+        _enabledHomeWidgets.value = next
+    }
+
+    // 4. Dinleme İstatistikleri (Hangi şarkı kaç kere dinlendi, toplam dinleme süresi)
     private val _recentTracks = MutableStateFlow<List<FfiTrack>>(readRecentTracks())
     val recentTracks: StateFlow<List<FfiTrack>> = _recentTracks.asStateFlow()
 
     private val _mostPlayedTracks = MutableStateFlow<List<FfiTrack>>(readMostPlayedTracks())
     val mostPlayedTracks: StateFlow<List<FfiTrack>> = _mostPlayedTracks.asStateFlow()
+
+    private val _trackListeningStats = MutableStateFlow<List<TrackListeningStat>>(readTrackListeningStats())
+    val trackListeningStats: StateFlow<List<TrackListeningStat>> = _trackListeningStats.asStateFlow()
+
+    private val _totalListeningTimeMs = MutableStateFlow<Long>(readTotalListeningTimeMs())
+    val totalListeningTimeMs: StateFlow<Long> = _totalListeningTimeMs.asStateFlow()
+
+    private val _resumePlaybackState = MutableStateFlow<ResumePlaybackState?>(readResumePlaybackState())
+    val resumePlaybackState: StateFlow<ResumePlaybackState?> = _resumePlaybackState.asStateFlow()
 
     private fun readHistoryEntries(): List<Pair<FfiTrack, Int>> = try {
         val raw = historyPrefs.getString("entries", "[]") ?: "[]"
@@ -265,29 +354,348 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun readRecentTracks(): List<FfiTrack> = readHistoryEntries().map { it.first }
     private fun readMostPlayedTracks(): List<FfiTrack> = readHistoryEntries().sortedByDescending { it.second }.map { it.first }
 
-    fun recordTrackPlay(track: FfiTrack) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val list = readHistoryEntries().toMutableList()
-            val existingIdx = list.indexOfFirst { it.first.id == track.id }
-            val count = if (existingIdx >= 0) list[existingIdx].second + 1 else 1
-            if (existingIdx >= 0) list.removeAt(existingIdx)
-            list.add(0, Pair(track, count))
-            val trimmed = list.take(100)
-            val jsonArray = JSONArray()
-            trimmed.forEach { (t, c) ->
-                jsonArray.put(JSONObject().put("count", c).put("track", trackJson(t)))
+    private fun readTrackListeningStats(): List<TrackListeningStat> {
+        return try {
+            val raw = privacyPrefs.getString("track_stats", null)
+            if (raw != null) {
+                val arr = JSONArray(raw)
+                val parsed = (0 until arr.length()).mapNotNull { i ->
+                    runCatching {
+                        val obj = arr.getJSONObject(i)
+                        TrackListeningStat(
+                            track = jsonTrack(obj.getJSONObject("track")),
+                            playCount = obj.optInt("playCount", 1),
+                            totalListenedMs = obj.optLong("totalListenedMs", 0L),
+                            lastPlayedAtMs = obj.optLong("lastPlayedAtMs", System.currentTimeMillis())
+                        )
+                    }.getOrNull()
+                }
+                if (parsed.isNotEmpty()) {
+                    return parsed.sortedWith(compareByDescending<TrackListeningStat> { it.playCount }.thenByDescending { it.totalListenedMs })
+                }
             }
-            historyPrefs.edit().putString("entries", jsonArray.toString()).apply()
-            _recentTracks.value = trimmed.map { it.first }
-            _mostPlayedTracks.value = trimmed.sortedByDescending { it.second }.map { it.first }
+            // Seed from existing history entries if track_stats wasn't populated yet
+            val history = readHistoryEntries()
+            val now = System.currentTimeMillis()
+            val seeded = history.mapIndexed { idx, (t, count) ->
+                val estDuration = (t.durationMs.toLong().takeIf { it > 0L } ?: 180_000L) * count
+                TrackListeningStat(
+                    track = t,
+                    playCount = count,
+                    totalListenedMs = estDuration,
+                    lastPlayedAtMs = now - idx * 60_000L
+                )
+            }.sortedWith(compareByDescending<TrackListeningStat> { it.playCount }.thenByDescending { it.totalListenedMs })
+            if (seeded.isNotEmpty()) {
+                persistTrackListeningStats(seeded)
+            }
+            seeded
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
-    private val _externalSearchTrigger = MutableStateFlow<Pair<String, SearchCategory>?>(null)
+    private fun readTotalListeningTimeMs(): Long {
+        val saved = privacyPrefs.getLong("total_listening_time_ms", -1L)
+        if (saved >= 0L) return saved
+        val sum = readTrackListeningStats().sumOf { it.totalListenedMs }
+        privacyPrefs.edit().putLong("total_listening_time_ms", sum).apply()
+        return sum
+    }
+
+    private fun persistTrackListeningStats(stats: List<TrackListeningStat>) {
+        val sorted = stats.sortedWith(compareByDescending<TrackListeningStat> { it.playCount }.thenByDescending { it.totalListenedMs }).take(300)
+        val arr = JSONArray()
+        sorted.forEach { s ->
+            arr.put(
+                JSONObject()
+                    .put("track", trackJson(s.track))
+                    .put("playCount", s.playCount)
+                    .put("totalListenedMs", s.totalListenedMs)
+                    .put("lastPlayedAtMs", s.lastPlayedAtMs)
+            )
+        }
+        privacyPrefs.edit().putString("track_stats", arr.toString()).apply()
+        _trackListeningStats.value = sorted
+    }
+
+    private fun readResumePlaybackState(): ResumePlaybackState? {
+        return try {
+            val raw = resumePrefs.getString("state", null)
+            if (raw != null) {
+                val obj = JSONObject(raw)
+                val track = jsonTrack(obj.getJSONObject("track"))
+                val qArr = obj.optJSONArray("queue") ?: JSONArray()
+                val queue = (0 until qArr.length()).mapNotNull { i ->
+                    runCatching { jsonTrack(qArr.getJSONObject(i)) }.getOrNull()
+                }
+                return ResumePlaybackState(
+                    track = track,
+                    positionMs = obj.optLong("positionMs", 0L),
+                    durationMs = obj.optLong("durationMs", track.durationMs.toLong()),
+                    updatedAtMs = obj.optLong("updatedAtMs", System.currentTimeMillis()),
+                    queueTracks = queue.ifEmpty { listOf(track) },
+                    queueIndex = obj.optInt("queueIndex", 0)
+                )
+            }
+            // Seed from most recent track if available so "Kaldığın yerden devam et" is immediately usable
+            val recent = readRecentTracks()
+            val first = recent.firstOrNull() ?: return null
+            val dur = first.durationMs.toLong().takeIf { it > 0L } ?: 210_000L
+            ResumePlaybackState(
+                track = first,
+                positionMs = (dur * 0.35).toLong(),
+                durationMs = dur,
+                updatedAtMs = System.currentTimeMillis(),
+                queueTracks = recent.take(20),
+                queueIndex = 0
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun saveResumePlaybackSnapshot(
+        track: FfiTrack,
+        positionMs: Long,
+        durationMs: Long,
+        queueTracks: List<FfiTrack>,
+        queueIndex: Int
+    ) {
+        if (!_saveResumePositionEnabled.value) return
+        val safeDur = durationMs.takeIf { it > 0L } ?: track.durationMs.toLong().takeIf { it > 0L } ?: 210_000L
+        val safePos = positionMs.coerceIn(0L, safeDur)
+        val trimmedQueue = queueTracks.take(30).ifEmpty { listOf(track) }
+        val safeIdx = queueIndex.coerceIn(0, (trimmedQueue.size - 1).coerceAtLeast(0))
+        val state = ResumePlaybackState(
+            track = track,
+            positionMs = safePos,
+            durationMs = safeDur,
+            updatedAtMs = System.currentTimeMillis(),
+            queueTracks = trimmedQueue,
+            queueIndex = safeIdx
+        )
+        _resumePlaybackState.value = state
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val qArr = JSONArray()
+                trimmedQueue.forEach { qArr.put(trackJson(it)) }
+                val json = JSONObject()
+                    .put("track", trackJson(track))
+                    .put("positionMs", safePos)
+                    .put("durationMs", safeDur)
+                    .put("updatedAtMs", state.updatedAtMs)
+                    .put("queue", qArr)
+                    .put("queueIndex", safeIdx)
+                resumePrefs.edit().putString("state", json.toString()).apply()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun resumeSavedPlayback() {
+        val state = _resumePlaybackState.value ?: return
+        val curId = playbackManager.uiState.value.currentEntry?.track?.id
+        if (curId == state.track.id) {
+            playbackManager.seekTo(state.positionMs)
+            if (!playbackManager.uiState.value.isPlaying) {
+                playbackManager.togglePlayPause()
+            }
+        } else {
+            val queue = state.queueTracks.ifEmpty { listOf(state.track) }
+            val idx = queue.indexOfFirst { it.id == state.track.id }.takeIf { it >= 0 } ?: 0
+            playbackManager.playTrackList(queue, idx, state.positionMs)
+        }
+        _statusMessage.value = "'${state.track.title}' kaldığı yerden devam ediyor"
+    }
+
+    fun recordTrackPlay(track: FfiTrack) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (_collectListeningHistoryEnabled.value) {
+                val list = readHistoryEntries().toMutableList()
+                val existingIdx = list.indexOfFirst { it.first.id == track.id }
+                val count = if (existingIdx >= 0) list[existingIdx].second + 1 else 1
+                if (existingIdx >= 0) list.removeAt(existingIdx)
+                list.add(0, Pair(track, count))
+                val trimmed = list.take(100)
+                val jsonArray = JSONArray()
+                trimmed.forEach { (t, c) ->
+                    jsonArray.put(JSONObject().put("count", c).put("track", trackJson(t)))
+                }
+                historyPrefs.edit().putString("entries", jsonArray.toString()).apply()
+                _recentTracks.value = trimmed.map { it.first }
+                _mostPlayedTracks.value = trimmed.sortedByDescending { it.second }.map { it.first }
+            }
+            if (_collectListeningStatsEnabled.value) {
+                val currentStats = _trackListeningStats.value.toMutableList()
+                val idx = currentStats.indexOfFirst { it.track.id == track.id }
+                val now = System.currentTimeMillis()
+                if (idx >= 0) {
+                    val existing = currentStats[idx]
+                    currentStats[idx] = existing.copy(
+                        track = track,
+                        playCount = existing.playCount + 1,
+                        lastPlayedAtMs = now
+                    )
+                } else {
+                    currentStats.add(
+                        TrackListeningStat(
+                            track = track,
+                            playCount = 1,
+                            totalListenedMs = 0L,
+                            lastPlayedAtMs = now
+                        )
+                    )
+                }
+                persistTrackListeningStats(currentStats)
+            }
+        }
+    }
+
+    private fun recordActiveListeningTick(track: FfiTrack, deltaMs: Long) {
+        if (!_collectListeningStatsEnabled.value || deltaMs <= 0L) return
+        val newTotal = _totalListeningTimeMs.value + deltaMs
+        _totalListeningTimeMs.value = newTotal
+        privacyPrefs.edit().putLong("total_listening_time_ms", newTotal).apply()
+
+        val currentStats = _trackListeningStats.value.toMutableList()
+        val idx = currentStats.indexOfFirst { it.track.id == track.id }
+        val now = System.currentTimeMillis()
+        if (idx >= 0) {
+            val existing = currentStats[idx]
+            currentStats[idx] = existing.copy(
+                totalListenedMs = existing.totalListenedMs + deltaMs,
+                lastPlayedAtMs = now
+            )
+        } else {
+            currentStats.add(
+                TrackListeningStat(
+                    track = track,
+                    playCount = 1,
+                    totalListenedMs = deltaMs,
+                    lastPlayedAtMs = now
+                )
+            )
+        }
+        persistTrackListeningStats(currentStats)
+    }
+
+    fun formatDurationTr(ms: Long): String {
+        val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+        val hours = totalSeconds / 3600L
+        val minutes = (totalSeconds % 3600L) / 60L
+        val seconds = totalSeconds % 60L
+        return when {
+            hours > 0L -> "${hours} sa ${minutes} dk"
+            minutes > 0L -> "${minutes} dk ${seconds} sn"
+            else -> "${seconds} sn"
+        }
+    }
+
+    fun buildUserDataExportJson(): String {
+        val stats = _trackListeningStats.value
+        val totalMs = _totalListeningTimeMs.value
+        val totalPlays = stats.sumOf { it.playCount }
+        val topArtist = stats
+            .groupBy { it.track.artist }
+            .maxByOrNull { (_, list) -> list.sumOf { it.playCount } }
+            ?.key ?: "-"
+
+        val statsArr = JSONArray()
+        stats.forEach { s ->
+            statsArr.put(
+                JSONObject()
+                    .put("id", s.track.id)
+                    .put("title", s.track.title)
+                    .put("artist", s.track.artist)
+                    .put("album", s.track.album)
+                    .put("playCount", s.playCount)
+                    .put("totalListenedMs", s.totalListenedMs)
+                    .put("totalListenedFormatted", formatDurationTr(s.totalListenedMs))
+                    .put("lastPlayedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(s.lastPlayedAtMs)))
+            )
+        }
+
+        val resumeObj = _resumePlaybackState.value?.let { r ->
+            JSONObject()
+                .put("trackTitle", r.track.title)
+                .put("artist", r.track.artist)
+                .put("positionMs", r.positionMs)
+                .put("durationMs", r.durationMs)
+        } ?: JSONObject.NULL
+
+        return JSONObject()
+            .put("app", "projekt_b-d")
+            .put("exportedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
+            .put(
+                "privacySettings",
+                JSONObject()
+                    .put("collectListeningStatsEnabled", _collectListeningStatsEnabled.value)
+                    .put("collectListeningHistoryEnabled", _collectListeningHistoryEnabled.value)
+                    .put("saveResumePositionEnabled", _saveResumePositionEnabled.value)
+                    .put("resumePlaybackCardEnabled", _resumePlaybackEnabled.value)
+            )
+            .put(
+                "summary",
+                JSONObject()
+                    .put("totalListeningTimeMs", totalMs)
+                    .put("totalListeningFormatted", formatDurationTr(totalMs))
+                    .put("totalTrackPlays", totalPlays)
+                    .put("uniqueTracksCount", stats.size)
+                    .put("topArtist", topArtist)
+            )
+            .put("trackStatistics", statsArr)
+            .put("resumePlaybackState", resumeObj)
+            .toString(2)
+    }
+
+    fun exportUserDataToDownloads(): String? {
+        return try {
+            val json = buildUserDataExportJson()
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            val fileName = "projekt_b-d_verilerim_$stamp.json"
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val targetDir = if (downloadsDir != null && (downloadsDir.exists() || downloadsDir.mkdirs())) {
+                downloadsDir
+            } else {
+                getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                    ?: getApplication<Application>().filesDir
+            }
+            val file = File(targetDir, fileName)
+            file.writeText(json)
+            _statusMessage.value = "Verileriniz indirildi: ${file.name}"
+            file.absolutePath
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Failed to export user data", e)
+            _statusMessage.value = "Veriler dışa aktarılamadı: ${e.message}"
+            null
+        }
+    }
+
+    fun clearAllCollectedUserData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            historyPrefs.edit().clear().apply()
+            privacyPrefs.edit()
+                .remove("track_stats")
+                .putLong("total_listening_time_ms", 0L)
+                .apply()
+            resumePrefs.edit().clear().apply()
+            _recentTracks.value = emptyList()
+            _mostPlayedTracks.value = emptyList()
+            _trackListeningStats.value = emptyList()
+            _totalListeningTimeMs.value = 0L
+            _resumePlaybackState.value = null
+            _statusMessage.value = "Toplanan tüm dinleme istatistikleri ve geçmiş verileri silindi"
+        }
+    }
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+    private val _externalSearchTrigger = MutableStateFlow<Triple<String, SearchCategory, Long>?>(null)
     val externalSearchTrigger = _externalSearchTrigger.asStateFlow()
     fun navigateToSearch(query: String, category: SearchCategory) {
+        _searchQuery.value = query
         _searchCategory.value = category
-        _externalSearchTrigger.value = Pair(query, category)
+        _externalSearchTrigger.value = Triple(query, category, System.currentTimeMillis())
         search(query, category, immediate = true)
     }
     fun clearExternalSearchTrigger() {
@@ -392,6 +800,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val playlistRevisions = _playlistRevisions.asStateFlow()
     private fun invalidatePlaylist(id: String) {
         localCoverCache.remove(id)
+        playlistTracksMemCache.remove(id)
+        playlistCachePrefs.edit().remove("pl:$id").apply()
         _playlistRevisions.update { it + (id to ((it[id] ?: 0L) + 1L)) }
     }
     private val favoriteMutex = Mutex()
@@ -405,6 +815,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
+            warmupPlaylistCacheFromDisk()
             try { core.clearDeezerUser() } catch (_: Exception) { }
             try { fullDownloadManager.recover() } catch (_: Exception) { }
             if (!deezerSession.hasSavedSession) {
@@ -416,7 +827,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             playbackManager.currentTrackId.collect { id ->
                 if (id != null) {
-                    playbackManager.uiState.value.currentEntry?.track?.let { recordTrackPlay(it) }
+                    playbackManager.uiState.value.currentEntry?.track?.let { track ->
+                        recordTrackPlay(track)
+                        val snap = playbackManager.uiState.value.queueSnapshot
+                        val qTracks = snap?.entries?.map { it.track }.orEmpty().ifEmpty { listOf(track) }
+                        val qIdx = snap?.currentIndex?.toInt() ?: 0
+                        saveResumePlaybackSnapshot(
+                            track = track,
+                            positionMs = playbackManager.progress.value.positionMs,
+                            durationMs = playbackManager.progress.value.durationMs,
+                            queueTracks = qTracks,
+                            queueIndex = qIdx
+                        )
+                    }
+                }
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            var tickCounter = 0
+            while (isActive) {
+                delay(1000L)
+                val ui = playbackManager.uiState.value
+                val curTrack = ui.currentEntry?.track
+                if (ui.isPlaying && curTrack != null) {
+                    recordActiveListeningTick(curTrack, 1000L)
+                    tickCounter++
+                    if (tickCounter % 2 == 0) {
+                        val snap = ui.queueSnapshot
+                        val qTracks = snap?.entries?.map { it.track }.orEmpty().ifEmpty { listOf(curTrack) }
+                        val qIdx = snap?.currentIndex?.toInt() ?: 0
+                        val prog = playbackManager.progress.value
+                        saveResumePlaybackSnapshot(
+                            track = curTrack,
+                            positionMs = prog.positionMs,
+                            durationMs = prog.durationMs,
+                            queueTracks = qTracks,
+                            queueIndex = qIdx
+                        )
+                    }
                 }
             }
         }
@@ -428,6 +876,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             _deezerFavorites.collect {
                 refreshDownloadedTracks()
+                if (_resumePlaybackState.value == null && it.isNotEmpty()) {
+                    val first = it.first()
+                    val dur = first.durationMs.toLong().takeIf { d -> d > 0L } ?: 210_000L
+                    saveResumePlaybackSnapshot(first, (dur * 0.25).toLong(), dur, it.take(20), 0)
+                }
             }
         }
         loadData()
@@ -842,9 +1295,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun loadDeezerLibrary(generation: Long) {
+        var loadedPlaylists: List<LibraryPlaylistEntry> = emptyList()
         try {
             val playlists = deezerSession.playlists()
-            if (generation == deezerGeneration.get()) _deezerPlaylists.value = playlists
+            if (generation == deezerGeneration.get()) {
+                _deezerPlaylists.value = playlists
+                loadedPlaylists = playlists
+            }
         } catch (_: Exception) {
             if (generation == deezerGeneration.get()) _statusMessage.value = "Deezer çalma listeleri yüklenemedi"
         }
@@ -853,10 +1310,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val entries = deezerSession.favoriteTrackEntries()
             if (generation == deezerGeneration.get()) {
                 deezerFavoriteEntries = entries
+                playlistTracksMemCache[DEEZER_FAVORITES_ID] = entries
+                persistCachedPlaylistEntries(DEEZER_FAVORITES_ID, entries)
                 _deezerFavorites.value = entries.map { it.track }
             }
         } catch (_: Exception) {
             if (generation == deezerGeneration.get()) _statusMessage.value = "Deezer favorileri yüklenemedi"
+        }
+        // Background parallel prefetch of playlists so opening any playlist is instant (0 ms)
+        if (loadedPlaylists.isNotEmpty() && generation == deezerGeneration.get()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    coroutineScope {
+                        loadedPlaylists.take(16).map { entry ->
+                            async {
+                                val pid = entry.playlist.id
+                                if (!playlistTracksMemCache.containsKey(pid)) {
+                                    runCatching {
+                                        val fetched = deezerSession.playlistTrackEntries(pid)
+                                        if (fetched.isNotEmpty()) {
+                                            playlistTracksMemCache[pid] = fetched
+                                            persistCachedPlaylistEntries(pid, fetched)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -865,6 +1347,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun search(query: String, category: SearchCategory = _searchCategory.value, immediate: Boolean = false) {
+        _searchQuery.value = query
         _searchCategory.value = category
         searchJob?.cancel()
         val q = query.trim()
@@ -995,12 +1478,66 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try { core.getDeezerArtistAlbums(artistId) } catch (e: Exception) { emptyList() }
     }
 
+    private fun warmupPlaylistCacheFromDisk() {
+        try {
+            for ((key, raw) in playlistCachePrefs.all) {
+                if (!key.startsWith("pl:") || raw !is String) continue
+                val playlistId = key.removePrefix("pl:")
+                val arr = JSONArray(raw)
+                val entries = (0 until arr.length()).mapNotNull { i ->
+                    runCatching {
+                        val obj = arr.getJSONObject(i)
+                        PlaylistTrackEntry(
+                            track = jsonTrack(obj.getJSONObject("track")),
+                            addedAt = if (obj.has("addedAt") && !obj.isNull("addedAt")) obj.getLong("addedAt") else null,
+                            originalIndex = obj.optInt("originalIndex", i)
+                        )
+                    }.getOrNull()
+                }
+                if (entries.isNotEmpty()) {
+                    playlistTracksMemCache[playlistId] = entries
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun persistCachedPlaylistEntries(playlistId: String, entries: List<PlaylistTrackEntry>) {
+        try {
+            val arr = JSONArray()
+            entries.take(300).forEach { entry ->
+                val obj = JSONObject()
+                    .put("track", trackJson(entry.track))
+                    .put("originalIndex", entry.originalIndex)
+                if (entry.addedAt != null) obj.put("addedAt", entry.addedAt)
+                arr.put(obj)
+            }
+            playlistCachePrefs.edit().putString("pl:$playlistId", arr.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    fun getCachedPlaylistTrackEntries(playlistId: String): List<PlaylistTrackEntry>? {
+        return when (playlistId) {
+            DEEZER_FAVORITES_ID -> deezerFavoriteEntries.takeIf { it.isNotEmpty() } ?: playlistTracksMemCache[playlistId]
+            LOCAL_DOWNLOADS_ID -> _downloadedTracks.value.takeIf { it.isNotEmpty() }
+                ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
+            LOCAL_FAVORITES_ID -> _favorites.value.takeIf { it.isNotEmpty() }
+                ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
+            else -> playlistTracksMemCache[playlistId]
+        }
+    }
+
     suspend fun getPlaylistTracks(playlistId: String): List<FfiTrack> =
         getPlaylistTrackEntries(playlistId).map { it.track }
 
     suspend fun getPlaylistTrackEntries(playlistId: String): List<PlaylistTrackEntry> = withContext(Dispatchers.IO) {
         if (playlistId == DEEZER_FAVORITES_ID) {
-            if (deezerFavoriteEntries.isNotEmpty()) deezerFavoriteEntries else deezerSession.favoriteTrackEntries()
+            val cached = deezerFavoriteEntries.takeIf { it.isNotEmpty() } ?: playlistTracksMemCache[playlistId]
+            if (cached != null) return@withContext cached
+            deezerSession.favoriteTrackEntries().also { fetched ->
+                deezerFavoriteEntries = fetched
+                playlistTracksMemCache[playlistId] = fetched
+                persistCachedPlaylistEntries(playlistId, fetched)
+            }
         } else if (playlistId == LOCAL_DOWNLOADS_ID) {
             val current = _downloadedTracks.value.ifEmpty {
                 val hints = buildMap<String, FfiTrack> {
@@ -1017,10 +1554,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             current.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
         } else if (playlistId.startsWith("deezer:") && deezerSession.hasSavedSession) {
-            deezerSession.playlistTrackEntries(playlistId)
+            val cached = playlistTracksMemCache[playlistId]
+            if (cached != null) {
+                // Refresh quietly in the background without blocking UI
+                viewModelScope.launch(Dispatchers.IO) {
+                    runCatching {
+                        val fresh = deezerSession.playlistTrackEntries(playlistId)
+                        if (fresh.isNotEmpty() && fresh.map { it.track.id } != cached.map { it.track.id }) {
+                            playlistTracksMemCache[playlistId] = fresh
+                            persistCachedPlaylistEntries(playlistId, fresh)
+                            _playlistRevisions.update { it + (playlistId to ((it[playlistId] ?: 0L) + 1L)) }
+                        }
+                    }
+                }
+                return@withContext cached
+            }
+            deezerSession.playlistTrackEntries(playlistId).also { fetched ->
+                playlistTracksMemCache[playlistId] = fetched
+                persistCachedPlaylistEntries(playlistId, fetched)
+            }
         } else {
             val tracks = if (playlistId == LOCAL_FAVORITES_ID) core.getFavorites() else core.getPlaylistTracks(playlistId)
-            tracks.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
+            val entries = tracks.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
+            playlistTracksMemCache[playlistId] = entries
+            entries
         }
     }
 

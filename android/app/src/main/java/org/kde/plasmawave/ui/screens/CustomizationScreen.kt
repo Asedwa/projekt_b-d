@@ -78,6 +78,8 @@ fun CustomizationScreen(
     val customLauncherTimestamp by viewModel.customLauncherIconTimestamp.collectAsState()
     val launcherIcon by viewModel.launcherIcon.collectAsState()
     val homeFeedType by viewModel.homeFeedType.collectAsState()
+    val resumePlaybackEnabled by viewModel.resumePlaybackEnabled.collectAsState()
+    val enabledHomeWidgets by viewModel.enabledHomeWidgets.collectAsState()
     val activeTheme by viewModel.activeTheme.collectAsState()
     val userCustomThemes by viewModel.userCustomThemes.collectAsState()
     val colors = LocalPlasmaColors.current
@@ -647,6 +649,143 @@ fun CustomizationScreen(
                                     tint = MaterialTheme.colorScheme.onPrimary,
                                     modifier = Modifier.size(16.dp)
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // KALDIĞIN YERDEN DEVAM ET & ANA SAYFA WİDGET'LARI
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "KALDIĞIN YERDEN DEVAM ET",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = colors.card),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.setResumePlaybackEnabled(!resumePlaybackEnabled) }
+                            .padding(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(primary.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Restore,
+                                contentDescription = null,
+                                tint = primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Kaldığın Yerden Devam Et Kartı",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                text = "Ana sayfada son dinlediğiniz şarkıyı kaldığınız saniyeden tek tuşla devam ettirin",
+                                style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                            )
+                        }
+                        Switch(
+                            checked = resumePlaybackEnabled,
+                            onCheckedChange = viewModel::setResumePlaybackEnabled,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = primary
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = "ANA SAYFA WİDGET'LARI",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Ana sayfaya eklemek veya kaldırmak istediğiniz widget'ları seçin:",
+                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = colors.card),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        HomeWidgetType.entries.forEachIndexed { idx, widget ->
+                            val isEnabled = widget in enabledHomeWidgets
+                            val wIcon = when (widget) {
+                                HomeWidgetType.STATS -> Icons.Default.BarChart
+                                HomeWidgetType.QUICK_ARTIST -> Icons.Default.PersonSearch
+                                HomeWidgetType.QUICK_THEME -> Icons.Default.Palette
+                                HomeWidgetType.LUCKY_PICK -> Icons.Default.Casino
+                                HomeWidgetType.SLEEP_TIMER -> Icons.Default.Bedtime
+                                HomeWidgetType.MOOD_MIX -> Icons.Default.AutoAwesome
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.setHomeWidgetEnabled(widget, !isEnabled) }
+                                    .padding(vertical = 6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(primary.copy(alpha = 0.14f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(wIcon, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = widget.title,
+                                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                    Text(
+                                        text = widget.subtitle,
+                                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                    )
+                                }
+                                Switch(
+                                    checked = isEnabled,
+                                    onCheckedChange = { viewModel.setHomeWidgetEnabled(widget, it) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = primary
+                                    )
+                                )
+                            }
+                            if (idx < HomeWidgetType.entries.lastIndex) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                HorizontalDivider(color = colors.border.copy(alpha = 0.35f))
+                                Spacer(modifier = Modifier.height(6.dp))
                             }
                         }
                     }

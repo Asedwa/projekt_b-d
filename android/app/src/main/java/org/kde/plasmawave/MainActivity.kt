@@ -102,12 +102,20 @@ class MainActivity : ComponentActivity() {
 
             var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
             var currentSubScreen by remember { mutableStateOf<SubScreen>(SubScreen.None) }
+            val externalSearchTrigger by viewModel.externalSearchTrigger.collectAsState()
             val tabStateHolder = rememberSaveableStateHolder()
             var isFullPlayerVisible by remember { mutableStateOf(false) }
             val fullPlayerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             val menuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             val scope = rememberCoroutineScope()
 
+            LaunchedEffect(externalSearchTrigger) {
+                if (externalSearchTrigger != null) {
+                    isFullPlayerVisible = false
+                    currentSubScreen = SubScreen.None
+                    currentScreen = Screen.Search
+                }
+            }
             LaunchedEffect(highRefresh) { applyRefreshRate(highRefresh) }
             BackHandler(enabled = currentSubScreen != SubScreen.None && !isFullPlayerVisible) {
                 currentSubScreen = SubScreen.None
