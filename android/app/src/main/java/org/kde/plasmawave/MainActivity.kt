@@ -28,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
@@ -94,6 +95,7 @@ class MainActivity : ComponentActivity() {
         handleJamIntent(intent)
         setContent {
             val activeTheme by viewModel.activeTheme.collectAsState()
+            val legacyUiMode by viewModel.legacyUiMode.collectAsState()
             val hasCurrentEntry by remember {
                 viewModel.playbackManager.overview
                     .map { it.currentEntry != null }
@@ -144,7 +146,7 @@ class MainActivity : ComponentActivity() {
                 statusMessage?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show(); viewModel.clearStatusMessage() }
             }
 
-            PlasmaTheme(activeTheme = activeTheme) {
+            PlasmaTheme(activeTheme = activeTheme, legacyUiMode = legacyUiMode) {
                 CompositionLocalProvider(LocalDeezerConnected provides (deezerUser != null)) {
                     val colors = LocalPlasmaColors.current
                     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -185,7 +187,7 @@ class MainActivity : ComponentActivity() {
                     if (isLandscape) {
                         Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                             NavigationRail(
-                                containerColor = colors.card,
+                                containerColor = if (colors.legacyUiMode) colors.card else MaterialTheme.colorScheme.surface,
                                 modifier = Modifier.fillMaxHeight()
                             ) {
                                 Spacer(Modifier.height(8.dp))
@@ -200,7 +202,7 @@ class MainActivity : ComponentActivity() {
                                             selectedTextColor = MaterialTheme.colorScheme.primary,
                                             unselectedIconColor = colors.textSecondary,
                                             unselectedTextColor = colors.textSecondary,
-                                            indicatorColor = colors.border
+                                            indicatorColor = if (colors.legacyUiMode) colors.border else Color.Transparent
                                         )
                                     )
                                 }
@@ -231,7 +233,10 @@ class MainActivity : ComponentActivity() {
                                     ) {
                                         LiveMiniPlayer(viewModel, onClick = { isFullPlayerVisible = true })
                                     }
-                                    NavigationBar(containerColor = colors.card, tonalElevation = 0.dp) {
+                                    NavigationBar(
+                                        containerColor = if (colors.legacyUiMode) colors.card else MaterialTheme.colorScheme.surface,
+                                        tonalElevation = 0.dp
+                                    ) {
                                         listOf(Screen.Home, Screen.Library, Screen.Search, Screen.Queue, Screen.Settings).forEach { screen ->
                                             NavigationBarItem(
                                                 selected = currentScreen == screen && currentSubScreen == SubScreen.None,
@@ -243,7 +248,7 @@ class MainActivity : ComponentActivity() {
                                                     selectedTextColor = MaterialTheme.colorScheme.primary,
                                                     unselectedIconColor = colors.textSecondary,
                                                     unselectedTextColor = colors.textSecondary,
-                                                    indicatorColor = colors.border
+                                                    indicatorColor = if (colors.legacyUiMode) colors.border else Color.Transparent
                                                 )
                                             )
                                         }
@@ -366,6 +371,7 @@ private fun JamControlBlockedDialog(
 private fun LiveMiniPlayer(viewModel: MainViewModel, onClick: () -> Unit) {
     val state by viewModel.playbackManager.overview.collectAsState()
     val jamState by viewModel.jamState.collectAsState()
+    val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
     var showBlockedDialog by remember { mutableStateOf(false) }
 
     if (showBlockedDialog) {
@@ -398,7 +404,8 @@ private fun LiveMiniPlayer(viewModel: MainViewModel, onClick: () -> Unit) {
             }
         },
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        dynamicColorEnabled = dynamicColorEnabled
     )
 }
 

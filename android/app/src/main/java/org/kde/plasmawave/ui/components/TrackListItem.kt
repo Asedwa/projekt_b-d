@@ -67,7 +67,7 @@ fun TrackListItem(
         ArtworkImage(
             url = track.artworkUrl,
             modifier = Modifier.size(48.dp),
-            tint = if (isPlaying) MaterialTheme.colorScheme.primary else customColors.textSecondary
+            tint = if (isPlaying && customColors.legacyUiMode) MaterialTheme.colorScheme.primary else customColors.textSecondary
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -80,7 +80,7 @@ fun TrackListItem(
                 text = track.title,
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
+                    color = if (isPlaying && customColors.legacyUiMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
                 ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -97,10 +97,10 @@ fun TrackListItem(
                     )
                 } else if (track.isPreview && !(track.provider == "deezer" && deezerConnected)) {
                     Text(
-                        text = "[PREVIEW] ",
+                        text = if (customColors.legacyUiMode) "[PREVIEW] " else "Önizleme • ",
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 10.sp
+                            color = if (customColors.legacyUiMode) MaterialTheme.colorScheme.primary else customColors.textSecondary,
+                            fontSize = if (customColors.legacyUiMode) 10.sp else 11.sp
                         )
                     )
                 }

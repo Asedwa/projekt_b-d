@@ -86,11 +86,22 @@ fun SongLongPressBottomSheet(
 
 @Composable
 private fun QuickAction(icon: ImageVector, label: String, active: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
-    val tint = if (!enabled) LocalPlasmaColors.current.textDisabled else if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    val colors = LocalPlasmaColors.current
+    val tint = if (!enabled) {
+        colors.textDisabled
+    } else if (active && colors.legacyUiMode) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(76.dp).clip(RoundedCornerShape(12.dp))
         .clickable(enabled = enabled, onClick = onClick).padding(vertical = 6.dp)) {
-        Box(modifier = Modifier.size(42.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
+        if (colors.legacyUiMode) {
+            Box(modifier = Modifier.size(42.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
+            }
+        } else {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
         }
         Spacer(Modifier.height(6.dp))
         Text(label, style = MaterialTheme.typography.labelSmall, color = tint, maxLines = 1)
@@ -106,7 +117,7 @@ private fun MenuAction(
     onClick: () -> Unit
 ) {
     val colors = LocalPlasmaColors.current
-    val tint = if (highlight) MaterialTheme.colorScheme.primary else colors.textSecondary
+    val tint = if (highlight && colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.textSecondary
     Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 22.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp), tint = tint)
@@ -116,7 +127,7 @@ private fun MenuAction(
             Text(
                 text = trailingText,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
+                color = if (colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.textSecondary,
                 fontWeight = FontWeight.SemiBold
             )
         }

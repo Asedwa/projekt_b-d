@@ -1,5 +1,7 @@
 package org.kde.plasmawave.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -23,17 +25,27 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import kotlinx.coroutines.flow.StateFlow
 import org.kde.plasmawave.player.PlaybackProgress
 import org.kde.plasmawave.player.PlayerUiState
+import org.kde.plasmawave.theme.DynamicThemeHelper
+import org.kde.plasmawave.theme.ExtractedArtworkColors
 import org.kde.plasmawave.theme.LocalPlasmaColors
 
 @Composable
@@ -43,19 +55,46 @@ fun MiniPlayer(
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    dynamicColorEnabled: Boolean = true
 ) {
     val entry = playerState.currentEntry ?: return
     val customColors = LocalPlasmaColors.current
+    val context = LocalContext.current
+    val usePalette = !customColors.legacyUiMode && dynamicColorEnabled
+
+    var extractedColors by remember(entry.track.artworkUrl) { mutableStateOf<ExtractedArtworkColors?>(null) }
+    LaunchedEffect(entry.track.artworkUrl, usePalette) {
+        if (usePalette && !entry.track.artworkUrl.isNullOrBlank()) {
+            extractedColors = DynamicThemeHelper.extractColors(context, entry.track.artworkUrl, calmMode = true)
+        } else {
+            extractedColors = null
+        }
+    }
+
+    val targetContainer = if (usePalette && extractedColors != null) {
+        Color(ColorUtils.blendARGB(customColors.card.toArgb(), extractedColors!!.backgroundTop.toArgb(), 0.42f))
+    } else {
+        customColors.card
+    }
+    val targetAccent = if (usePalette && extractedColors != null) {
+        extractedColors!!.accent
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
+    val containerColor by animateColorAsState(targetValue = targetContainer, animationSpec = tween(420), label = "miniBg")
+    val accentColor by animateColorAsState(targetValue = targetAccent, animationSpec = tween(420), label = "miniAccent")
+    val trackColor = if (customColors.legacyUiMode) customColors.border else Color.White.copy(alpha = 0.14f)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-            .background(customColors.card)
+            .background(containerColor)
             .clickable(onClick = onClick)
     ) {
-        MiniProgressBar(progressFlow = progressFlow, trackColor = customColors.border)
+        MiniProgressBar(progressFlow = progressFlow, accentColor = accentColor, trackColor = trackColor)
 
         Row(
             modifier = Modifier
@@ -76,7 +115,7 @@ fun MiniPlayer(
                 Text(
                     text = entry.track.title,
                     style = MaterialTheme.typography.bodyLarge.copy(
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     ),
                     maxLines = 1,
@@ -97,7 +136,7 @@ fun MiniPlayer(
                 Icon(
                     imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (playerState.isPlaying) "Pause" else "Play",
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = accentColor,
                     modifier = Modifier.size(30.dp)
                 )
             }
@@ -115,7 +154,7 @@ fun MiniPlayer(
 }
 
 @Composable
-private fun MiniProgressBar(progressFlow: StateFlow<PlaybackProgress>, trackColor: androidx.compose.ui.graphics.Color) {
+private fun MiniProgressBar(progressFlow: StateFlow<PlaybackProgress>, accentColor: Color, trackColor: Color) {
     val progressState by progressFlow.collectAsState()
     val fraction = if (progressState.durationMs > 0) {
         (progressState.positionMs.toFloat() / progressState.durationMs.toFloat()).coerceIn(0f, 1f)
@@ -125,7 +164,7 @@ private fun MiniProgressBar(progressFlow: StateFlow<PlaybackProgress>, trackColo
         modifier = Modifier
             .fillMaxWidth()
             .height(3.dp),
-        color = MaterialTheme.colorScheme.primary,
+        color = accentColor,
         trackColor = trackColor
     )
 }

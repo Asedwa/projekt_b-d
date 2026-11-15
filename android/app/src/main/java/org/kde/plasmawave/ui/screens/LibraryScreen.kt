@@ -157,8 +157,18 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
     Column(modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
-                Text(deezerUser?.name?.take(1)?.uppercase() ?: "P", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+            Box(
+                Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(if (colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.cardPressed),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    deezerUser?.name?.take(1)?.uppercase() ?: "P",
+                    color = if (colors.legacyUiMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
+                )
             }
             Spacer(Modifier.width(12.dp))
             Text("Kitaplığın", modifier = Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -382,6 +392,7 @@ private fun LibrarySpecialCover(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val legacyUi = colors.legacyUiMode
     val shape = cardShape.toComposeShape()
     val useThemeAdaptive = cardStyle == QuickCardStyle.THEME_ADAPTIVE
     val iconFraction = (0.44f * iconScale).coerceIn(0.28f, 0.70f)
@@ -389,7 +400,9 @@ private fun LibrarySpecialCover(
         modifier = modifier
             .clip(shape)
             .then(
-                if (useThemeAdaptive) {
+                if (!legacyUi) {
+                    Modifier.background(colors.card)
+                } else if (useThemeAdaptive) {
                     Modifier
                         .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card)))
                         .border(1.dp, colors.border.copy(alpha = 0.65f), shape)
@@ -401,9 +414,16 @@ private fun LibrarySpecialCover(
     ) {
         if (isLoading) {
             CircularProgressIndicator(
-                modifier = Modifier.size(28.dp),
-                color = if (useThemeAdaptive) primary else Color.White,
+                modifier = Modifier.size(26.dp),
+                color = if (!legacyUi) MaterialTheme.colorScheme.onSurface else if (useThemeAdaptive) primary else Color.White,
                 strokeWidth = 2.5.dp
+            )
+        } else if (!legacyUi) {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize((0.38f * iconScale).coerceIn(0.24f, 0.58f)),
+                tint = MaterialTheme.colorScheme.onSurface
             )
         } else if (useThemeAdaptive) {
             Box(
@@ -484,6 +504,7 @@ private fun PlaylistCell(
             }
         }
     }
+    val legacyUi = colors.legacyUiMode
     if (grid) {
         if (compactHorizontal) {
             val cardHeight = (58.dp * cardScale).coerceIn(44.dp, 76.dp)
@@ -493,7 +514,7 @@ private fun PlaylistCell(
                     .height(cardHeight)
                     .clip(shape)
                     .background(colors.card)
-                    .border(1.dp, colors.border.copy(alpha = 0.6f), shape)
+                    .then(if (legacyUi) Modifier.border(1.dp, colors.border.copy(alpha = 0.6f), shape) else Modifier)
                     .clickable { onClick(playlist) },
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -518,8 +539,15 @@ private fun PlaylistCell(
                             .fillMaxWidth()
                             .aspectRatio(1f)
                             .clip(shape)
-                            .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card)))
-                            .border(1.dp, colors.border.copy(alpha = 0.65f), shape)
+                            .then(
+                                if (legacyUi) {
+                                    Modifier
+                                        .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card)))
+                                        .border(1.dp, colors.border.copy(alpha = 0.65f), shape)
+                                } else {
+                                    Modifier.background(colors.card)
+                                }
+                            )
                             .padding(8.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -537,11 +565,23 @@ private fun PlaylistCell(
                 }
                 if (contentMode == QuickCardContentMode.BOTH) {
                     Spacer(Modifier.height(7.dp))
-                    Text(playlist.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (pinned) Icon(Icons.Default.PushPin, contentDescription = "Sabitlendi", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
-                        Text(if (playlist.isLocal) "Liste • Bu cihaz" else "Liste • Deezer", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Menu()
+                        Text(
+                            playlist.name,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = if (legacyUi) 2 else 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (!legacyUi) Menu()
+                    }
+                    if (legacyUi) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (pinned) Icon(Icons.Default.PushPin, contentDescription = "Sabitlendi", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+                            Text(if (playlist.isLocal) "Liste • Bu cihaz" else "Liste • Deezer", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Menu()
+                        }
                     }
                 }
             }
@@ -631,6 +671,7 @@ private fun FlowGridCell(
         }
     }
 
+    val legacyUi = colors.legacyUiMode
     if (compactHorizontal) {
         val cardHeight = (58.dp * cardScale).coerceIn(44.dp, 76.dp)
         Row(
@@ -639,7 +680,7 @@ private fun FlowGridCell(
                 .height(cardHeight)
                 .clip(shape)
                 .background(colors.card)
-                .border(1.dp, colors.border.copy(alpha = 0.6f), shape)
+                .then(if (legacyUi) Modifier.border(1.dp, colors.border.copy(alpha = 0.6f), shape) else Modifier)
                 .clickable { viewModel.startFlow() },
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -678,8 +719,15 @@ private fun FlowGridCell(
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .clip(shape)
-                        .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card)))
-                        .border(1.dp, colors.border.copy(alpha = 0.65f), shape)
+                        .then(
+                            if (legacyUi) {
+                                Modifier
+                                    .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card)))
+                                    .border(1.dp, colors.border.copy(alpha = 0.65f), shape)
+                            } else {
+                                Modifier.background(colors.card)
+                            }
+                        )
                         .padding(8.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -699,30 +747,36 @@ private fun FlowGridCell(
             }
             if (contentMode == QuickCardContentMode.BOTH) {
                 Spacer(Modifier.height(7.dp))
-                Text(
-                    "Deezer Flow",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.PushPin,
-                        contentDescription = "Sabitlendi",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(Modifier.width(2.dp))
                     Text(
-                        "Flow • Deezer",
+                        "Deezer Flow",
                         modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.textSecondary,
-                        maxLines = 1,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = if (legacyUi) 2 else 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    FlowMenu(iconSize = 20.dp, btnSize = 32.dp)
+                    if (!legacyUi) FlowMenu(iconSize = 20.dp, btnSize = 32.dp)
+                }
+                if (legacyUi) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.PushPin,
+                            contentDescription = "Sabitlendi",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Text(
+                            "Flow • Deezer",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        FlowMenu(iconSize = 20.dp, btnSize = 32.dp)
+                    }
                 }
             }
         }
@@ -778,16 +832,26 @@ private fun FlowListCell(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Default.PushPin,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
+                if (colors.legacyUiMode) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.PushPin,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "Flow • Deezer (Kişisel Akış)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else {
                     Text(
-                        "Flow • Deezer (Kişisel Akış)",
+                        "Kişisel akış",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textSecondary,
                         maxLines = 1,
@@ -805,7 +869,7 @@ private fun FlowListCell(
             Icon(
                 Icons.Default.PlayArrow,
                 contentDescription = "Flow Başlat",
-                tint = MaterialTheme.colorScheme.primary
+                tint = if (colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.textSecondary
             )
         }
         Box {
@@ -969,6 +1033,7 @@ private fun DownloadsGridCell(
         }
     }
 
+    val legacyUi = colors.legacyUiMode
     if (compactHorizontal) {
         val cardHeight = (58.dp * cardScale).coerceIn(44.dp, 76.dp)
         Row(
@@ -977,7 +1042,7 @@ private fun DownloadsGridCell(
                 .height(cardHeight)
                 .clip(shape)
                 .background(colors.card)
-                .border(1.dp, colors.border.copy(alpha = 0.6f), shape)
+                .then(if (legacyUi) Modifier.border(1.dp, colors.border.copy(alpha = 0.6f), shape) else Modifier)
                 .clickable { onClick() },
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1015,8 +1080,15 @@ private fun DownloadsGridCell(
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .clip(shape)
-                        .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card)))
-                        .border(1.dp, colors.border.copy(alpha = 0.65f), shape)
+                        .then(
+                            if (legacyUi) {
+                                Modifier
+                                    .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card)))
+                                    .border(1.dp, colors.border.copy(alpha = 0.65f), shape)
+                            } else {
+                                Modifier.background(colors.card)
+                            }
+                        )
                         .padding(8.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1035,32 +1107,38 @@ private fun DownloadsGridCell(
             }
             if (contentMode == QuickCardContentMode.BOTH) {
                 Spacer(Modifier.height(7.dp))
-                Text(
-                    playlist.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isLibraryPinned) {
-                        Icon(
-                            Icons.Default.PushPin,
-                            contentDescription = "Sabitlendi",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(Modifier.width(2.dp))
-                    }
                     Text(
-                        "${downloadedTracks.size} şarkı • Bu cihaz",
+                        playlist.name,
                         modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.textSecondary,
-                        maxLines = 1,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = if (legacyUi) 2 else 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    DownloadsMenu(iconSize = 20.dp, btnSize = 32.dp)
+                    if (!legacyUi) DownloadsMenu(iconSize = 20.dp, btnSize = 32.dp)
+                }
+                if (legacyUi) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isLibraryPinned) {
+                            Icon(
+                                Icons.Default.PushPin,
+                                contentDescription = "Sabitlendi",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(2.dp))
+                        }
+                        Text(
+                            "${downloadedTracks.size} şarkı • Bu cihaz",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        DownloadsMenu(iconSize = 20.dp, btnSize = 32.dp)
+                    }
                 }
             }
         }
@@ -1120,7 +1198,7 @@ private fun DownloadsListCell(
                     overflow = TextOverflow.Ellipsis
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isLibraryPinned) {
+                    if (colors.legacyUiMode && isLibraryPinned) {
                         Icon(
                             Icons.Default.PushPin,
                             contentDescription = null,
@@ -1130,7 +1208,7 @@ private fun DownloadsListCell(
                         Spacer(Modifier.width(4.dp))
                     }
                     Text(
-                        "${downloadedTracks.size} şarkı • Bu cihaz (Çevrimdışı)",
+                        "${downloadedTracks.size} şarkı",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textSecondary,
                         maxLines = 1,
@@ -1149,7 +1227,7 @@ private fun DownloadsListCell(
                 Icon(
                     Icons.Default.PlayArrow,
                     contentDescription = "İndirilenleri Çal",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = if (colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.textSecondary
                 )
             }
         }

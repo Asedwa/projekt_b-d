@@ -149,9 +149,9 @@ fun ThemesScreen(
             item {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "VURGU RENGİ (ACCENT COLOR)",
+                    text = if (customColors.legacyUiMode) "VURGU RENGİ (ACCENT COLOR)" else "Vurgu rengi",
                     style = MaterialTheme.typography.bodySmall.copy(
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = customColors.textSecondary
                     )
                 )
@@ -167,9 +167,9 @@ fun ThemesScreen(
             item {
                 Spacer(modifier = Modifier.height(20.dp))
                 Text(
-                    text = "SELECT THEME",
+                    text = if (customColors.legacyUiMode) "SELECT THEME" else "Tema seçimi",
                     style = MaterialTheme.typography.bodySmall.copy(
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = customColors.textSecondary
                     )
                 )
@@ -182,30 +182,41 @@ fun ThemesScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFED438D).copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
+                            if (customColors.legacyUiMode) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFED438D).copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Palette,
+                                        contentDescription = null,
+                                        tint = Color(0xFFED438D),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            } else {
                                 Icon(
                                     Icons.Default.Palette,
                                     contentDescription = null,
-                                    tint = Color(0xFFED438D),
-                                    modifier = Modifier.size(24.dp)
+                                    tint = customColors.textSecondary,
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(14.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    "Select Theme",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                    "Tema Seç",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                                 )
-                                Text(
-                                    "Breeze, Nothing, Twilight, Pinkie ve kendi oluşturduğunuz özel temalar",
-                                    style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
-                                )
+                                if (customColors.legacyUiMode) {
+                                    Text(
+                                        "Breeze, Nothing, Twilight, Pinkie ve kendi oluşturduğunuz özel temalar",
+                                        style = MaterialTheme.typography.bodySmall.copy(color = customColors.textSecondary)
+                                    )
+                                }
                             }
                         }
 
@@ -222,9 +233,10 @@ fun ThemesScreen(
                             ) {
                                 builtInMenuThemes.forEach { presetTheme ->
                                     val isPresetSelected = activeTheme.id == presetTheme.id
-                                    val presetCard = parseHexColor(presetTheme.cardColor, Color(0xFF232629))
-                                    val presetText = parseHexColor(presetTheme.textColor, Color.White)
-                                    val presetAccent = parseHexColor(presetTheme.accentColor, primary)
+                                    val presetCard = if (customColors.legacyUiMode) parseHexColor(presetTheme.cardColor, Color(0xFF232629)) else customColors.cardPressed
+                                    val presetText = if (customColors.legacyUiMode) parseHexColor(presetTheme.textColor, Color.White) else MaterialTheme.colorScheme.onSurface
+                                    val rawPresetAccent = parseHexColor(presetTheme.accentColor, primary)
+                                    val presetAccent = if (customColors.legacyUiMode) rawPresetAccent else org.kde.plasmawave.theme.desaturateForCalmUi(rawPresetAccent)
 
                                     Button(
                                         onClick = { viewModel.setTheme(presetTheme.id) },
@@ -233,7 +245,9 @@ fun ThemesScreen(
                                             contentColor = presetText
                                         ),
                                         shape = RoundedCornerShape(10.dp),
-                                        border = if (isPresetSelected) {
+                                        border = if (!customColors.legacyUiMode) {
+                                            if (isPresetSelected) BorderStroke(1.5.dp, presetAccent) else null
+                                        } else if (isPresetSelected) {
                                             BorderStroke(2.dp, presetAccent)
                                         } else {
                                             BorderStroke(1.dp, presetAccent.copy(alpha = 0.35f))

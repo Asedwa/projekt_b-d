@@ -109,6 +109,7 @@ fun SettingsScreen(
     val totalListeningMs by viewModel.totalListeningTimeMs.collectAsState()
     val highRefresh by viewModel.highRefreshRate.collectAsState()
     val dynamicColor by viewModel.dynamicColorEnabled.collectAsState()
+    val legacyUiMode by viewModel.legacyUiMode.collectAsState()
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val downloads by viewModel.fullDownloads.collectAsState()
     val theme by viewModel.activeTheme.collectAsState()
@@ -239,18 +240,27 @@ fun SettingsScreen(
                 ) {
                     Column(Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
-                                contentAlignment = Alignment.Center
-                            ) {
+                            if (colors.legacyUiMode) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.AccountCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
+                            } else {
                                 Icon(
                                     Icons.Default.AccountCircle,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(30.dp)
+                                    tint = colors.textSecondary,
+                                    modifier = Modifier.size(34.dp)
                                 )
                             }
                             Spacer(Modifier.width(14.dp))
@@ -332,7 +342,17 @@ fun SettingsScreen(
                 }
 
                 // Kategori Grup 1: Görünüm ve Ana Sayfa
-                if (matchesSearch("widget", "ana sayfa", "kaldığın", "devam", "özelleştirme", "tema", "ikon", "logo", "renk", "120", "ekran")) {
+                if (matchesSearch("eski mod", "klasik", "görünüm", "breeze", "widget", "ana sayfa", "kaldığın", "devam", "özelleştirme", "tema", "ikon", "logo", "renk", "120", "ekran")) {
+                    Spacer(Modifier.height(14.dp))
+                    PhoneSettingsCard {
+                        SettingsToggle(
+                            icon = Icons.Default.Palette,
+                            title = "Eski Mod",
+                            subtitle = "Klasik renkli gradyanlar, kart kenarlıkları ve daire ikonlar",
+                            checked = legacyUiMode,
+                            onChange = viewModel::setLegacyUiMode
+                        )
+                    }
                     PhoneSettingsGroupLabel("GÖRÜNÜM VE ANA SAYFA")
                     PhoneSettingsCard {
                         if (matchesSearch("widget", "ana sayfa", "kaldığın", "devam", "istatistik", "sanatçı", "şanslı", "uyku", "miks")) {
@@ -596,9 +616,17 @@ fun SettingsScreen(
                         PhoneSettingsGroupLabel("EKRAN VE OYNATICI GÖRÜNÜMÜ")
                         PhoneSettingsCard {
                             SettingsToggle(
+                                icon = Icons.Default.Palette,
+                                title = "Eski Mod (Klasik Görünüm)",
+                                subtitle = "Eski renkli gradyanlar, çerçeveli kartlar, daire ikonlar ve pin rozetlerini geri getir",
+                                checked = legacyUiMode,
+                                onChange = viewModel::setLegacyUiMode
+                            )
+                            PhoneSettingsDivider()
+                            SettingsToggle(
                                 icon = Icons.Default.ColorLens,
                                 title = "Dinamik albüm renkleri",
-                                subtitle = "Tam ekran oynatıcıyı çalan şarkının albüm kapağına göre renklendir",
+                                subtitle = "Mini oynatıcı ve oynatıcı ekranını çalan kapağa göre renklendir",
                                 checked = dynamicColor,
                                 onChange = viewModel::setDynamicColorEnabled
                             )
@@ -724,17 +752,26 @@ fun SettingsScreen(
                         ) {
                             Column(Modifier.padding(16.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
+                                    if (colors.legacyUiMode) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.BarChart,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    } else {
                                         Icon(
                                             Icons.Default.BarChart,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
+                                            tint = colors.textSecondary,
                                             modifier = Modifier.size(24.dp)
                                         )
                                     }
@@ -753,7 +790,7 @@ fun SettingsScreen(
                                         if (topSong != null) {
                                             Text(
                                                 "En çok: ${topSong.track.title} (${topSong.playCount} kez)",
-                                                color = MaterialTheme.colorScheme.primary,
+                                                color = if (colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.textSecondary,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.SemiBold
                                             )
@@ -890,11 +927,18 @@ fun SettingsScreen(
 
 @Composable
 private fun PhoneSettingsGroupLabel(title: String) {
+    val legacyUi = LocalPlasmaColors.current.legacyUiMode
+    val formattedTitle = if (legacyUi) {
+        title
+    } else {
+        title.lowercase(java.util.Locale("tr", "TR"))
+            .replaceFirstChar { it.titlecase(java.util.Locale("tr", "TR")) }
+    }
     Spacer(Modifier.height(20.dp))
     Text(
-        text = title,
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.Bold,
+        text = formattedTitle,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
         color = LocalPlasmaColors.current.textSecondary,
         modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp)
     )
@@ -928,6 +972,7 @@ private fun PhoneCategoryRow(
     subtitle: String,
     onClick: () -> Unit
 ) {
+    val colors = LocalPlasmaColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -935,17 +980,26 @@ private fun PhoneCategoryRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(badgeColor.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center
-        ) {
+        if (colors.legacyUiMode) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(badgeColor.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = badgeColor,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        } else {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = badgeColor,
+                tint = colors.textSecondary,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -1049,24 +1103,34 @@ private fun SettingRow(
     modifier: Modifier = Modifier,
     trailing: @Composable () -> Unit
 ) {
+    val colors = LocalPlasmaColors.current
     Row(
         modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center
-        ) {
+        if (colors.legacyUiMode) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        } else {
             Icon(
                 icon,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.primary
+                modifier = Modifier.size(22.dp),
+                tint = colors.textSecondary
             )
         }
         Spacer(Modifier.width(14.dp))

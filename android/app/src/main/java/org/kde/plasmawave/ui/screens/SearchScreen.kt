@@ -145,7 +145,11 @@ fun SearchScreen(
                 )
             },
             leadingIcon = {
-                Icon(imageVector = Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Search",
+                    tint = if (customColors.legacyUiMode) MaterialTheme.colorScheme.primary else customColors.textSecondary
+                )
             },
             trailingIcon = {
                 if (query.isNotEmpty()) {

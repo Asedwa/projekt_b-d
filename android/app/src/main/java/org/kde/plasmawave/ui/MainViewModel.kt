@@ -372,6 +372,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         displayPrefs.getBoolean("library_sync_with_quick", true)
     )
     val librarySyncWithQuick = _librarySyncWithQuick.asStateFlow()
+
+    private val _legacyUiMode = MutableStateFlow(
+        displayPrefs.getBoolean("legacy_ui_mode", false)
+    )
+    val legacyUiMode = _legacyUiMode.asStateFlow()
+    fun setLegacyUiMode(enabled: Boolean) {
+        _legacyUiMode.value = enabled
+        displayPrefs.edit().putBoolean("legacy_ui_mode", enabled).apply()
+    }
     fun setLibrarySyncWithQuick(sync: Boolean) {
         if (!sync && _librarySyncWithQuick.value && !displayPrefs.contains("lib_card_style")) {
             // Copy current Quick Access settings as initial baseline when splitting for the first time

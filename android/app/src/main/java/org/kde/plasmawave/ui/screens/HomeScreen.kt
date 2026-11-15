@@ -169,7 +169,11 @@ fun HomeScreen(
                                 Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
                                 Text(t.album, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
                             }
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = if (colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.textSecondary
+                            )
                         }
                     }
                     OutlinedButton(
@@ -255,8 +259,12 @@ fun HomeScreen(
 
     val primary = MaterialTheme.colorScheme.primary
     val bg = MaterialTheme.colorScheme.background
-    val bgBrush = remember(primary, bg) {
-        Brush.verticalGradient(listOf(primary.copy(alpha = 0.16f), bg, bg))
+    val bgBrush = remember(primary, bg, colors.legacyUiMode) {
+        if (colors.legacyUiMode) {
+            Brush.verticalGradient(listOf(primary.copy(alpha = 0.16f), bg, bg))
+        } else {
+            Brush.verticalGradient(listOf(bg, bg))
+        }
     }
 
     val expandedHeaderHeight = 156.dp
@@ -330,12 +338,14 @@ fun HomeScreen(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
-                Text(
-                    "Sevdiğin şarkılar ve sabitlediklerin",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary
-                )
+                if (colors.legacyUiMode) {
+                    Text(
+                        "Sevdiğin şarkılar ve sabitlediklerin",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
             }
             if (quick.isNotEmpty()) item(key = "quick_access_grid") {
@@ -545,14 +555,21 @@ fun HomeScreen(
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Text(
-                                    feedType.subtitle,
-                                    color = colors.textSecondary,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                if (colors.legacyUiMode) {
+                                    Text(
+                                        feedType.subtitle,
+                                        color = colors.textSecondary,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                             }
                             if (likedPlaylist != null && feedType == HomeFeedType.FOR_YOU) {
-                                TextButton(onClick = { onPlaylistClick(likedPlaylist) }) { Text("Tümünü gör") }
+                                TextButton(onClick = { onPlaylistClick(likedPlaylist) }) {
+                                    Text(
+                                        "Tümünü gör",
+                                        color = if (colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.textSecondary
+                                    )
+                                }
                             }
                         }
                     }
@@ -720,6 +737,11 @@ private fun HeaderLogoView(
     customBitmap: android.graphics.Bitmap?,
     size: Dp
 ) {
+    val headerTint = if (LocalPlasmaColors.current.legacyUiMode) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)
+    }
     when (style) {
         HeaderLogoStyle.CUSTOM -> {
             if (customBitmap != null) {
@@ -735,7 +757,7 @@ private fun HeaderLogoView(
                 Icon(
                     Icons.Default.AddPhotoAlternate,
                     contentDescription = "Özel Logo Ekle",
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = headerTint,
                     modifier = Modifier.size(size * 0.75f)
                 )
             }
@@ -744,7 +766,7 @@ private fun HeaderLogoView(
             Icon(
                 Icons.Default.GraphicEq,
                 contentDescription = "projekt_b-d",
-                tint = MaterialTheme.colorScheme.primary,
+                tint = headerTint,
                 modifier = Modifier.size(size * 0.75f)
             )
         }
@@ -795,7 +817,8 @@ private fun QuickCard(
     }
     val isSpecialCard = pin is PinnedItem.Flow ||
         (pin is PinnedItem.Playlist && (pin.playlist.id == DEEZER_FAVORITES_ID || pin.playlist.id == LOCAL_DOWNLOADS_ID))
-    val useThemeAdaptive = isSpecialCard && cardStyle == QuickCardStyle.THEME_ADAPTIVE
+    val legacyUi = colors.legacyUiMode
+    val useThemeAdaptive = legacyUi && isSpecialCard && cardStyle == QuickCardStyle.THEME_ADAPTIVE
     val downloadedTracks by viewModel.downloadedTracks.collectAsState()
     val composeShape = cardShape.toComposeShape()
     val isHorizontal = cardLayout == QuickCardLayout.COMPACT_HORIZONTAL
@@ -816,7 +839,7 @@ private fun QuickCard(
             .then(if (isHorizontal) Modifier.fillMaxWidth().height(size) else Modifier.size(size))
             .clip(composeShape)
             .then(
-                if (isHorizontal || useThemeAdaptive) Modifier.border(1.dp, colors.border.copy(alpha = 0.6f), composeShape)
+                if (legacyUi && (isHorizontal || useThemeAdaptive)) Modifier.border(1.dp, colors.border.copy(alpha = 0.6f), composeShape)
                 else Modifier
             )
             .clickable {
@@ -843,7 +866,17 @@ private fun QuickCard(
                     ) {
                         if (isSpecialCard) {
                             val thumbIconSize = (24.dp * (size / 58.dp) * iconScale).coerceIn(14.dp, 38.dp)
-                            if (useThemeAdaptive) {
+                            if (!legacyUi) {
+                                // Calm flat cover tile: no gradients, no circular well, neutral icon
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(colors.cardPressed),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(centerIcon, contentDescription = title, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(thumbIconSize))
+                                }
+                            } else if (useThemeAdaptive) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -897,7 +930,7 @@ private fun QuickCard(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(themeCardBrush),
+                        .then(if (legacyUi) Modifier.background(themeCardBrush) else Modifier.background(colors.card)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -913,7 +946,28 @@ private fun QuickCard(
                 }
             } else {
                 if (isSpecialCard) {
-                    if (useThemeAdaptive) {
+                    if (!legacyUi) {
+                        val baseIconDp = when {
+                            pin is PinnedItem.Flow -> 30.dp
+                            pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID -> 34.dp
+                            else -> 32.dp
+                        }
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(colors.card),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                centerIcon,
+                                contentDescription = title,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier
+                                    .size((baseIconDp * cardRatio * iconScale).coerceIn(14.dp, 46.dp))
+                                    .offset(y = iconVerticalOffset)
+                            )
+                        }
+                    } else if (useThemeAdaptive) {
                         Box(
                             Modifier
                                 .fillMaxSize()
@@ -968,7 +1022,7 @@ private fun QuickCard(
                     }
                 }
                 if (!isImageOnly) {
-                    val labelColor = if (useThemeAdaptive) MaterialTheme.colorScheme.onSurface else Color.White
+                    val labelColor = if (!legacyUi || useThemeAdaptive) MaterialTheme.colorScheme.onSurface else Color.White
                     Text(
                         title,
                         modifier = if (isCircle) {
@@ -978,7 +1032,7 @@ private fun QuickCard(
                         },
                         color = labelColor,
                         style = if (size < 84.dp) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         textAlign = if (isCircle) TextAlign.Center else TextAlign.Start,
                         maxLines = if (isCircle || size < 84.dp) 1 else 2,
                         overflow = TextOverflow.Ellipsis
@@ -1006,9 +1060,9 @@ private fun QuickCard(
                 modifier = Modifier.size(if (isHorizontal || size < 84.dp) 26.dp else 34.dp)
             ) {
                 Icon(
-                    if (pinned) Icons.Default.PushPin else Icons.Default.MoreVert,
+                    if (legacyUi && pinned) Icons.Default.PushPin else Icons.Default.MoreVert,
                     contentDescription = "Hızlı erişim seçenekleri",
-                    tint = if (isHorizontal || useThemeAdaptive) colors.textSecondary else Color.White,
+                    tint = if (!legacyUi || isHorizontal || useThemeAdaptive) colors.textSecondary else Color.White,
                     modifier = Modifier.size(if (isHorizontal || size < 84.dp) 14.dp else 18.dp)
                 )
             }
@@ -1067,6 +1121,8 @@ private fun DeezerFlowHeroCard(
     onStartFlow: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalPlasmaColors.current
+    val legacyUi = colors.legacyUiMode
     val flowGradient = remember {
         Brush.horizontalGradient(
             colors = listOf(
@@ -1079,23 +1135,29 @@ private fun DeezerFlowHeroCard(
     Surface(
         onClick = onStartFlow,
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = Color(0xFF1E1B2E),
-        tonalElevation = 2.dp
+        shape = RoundedCornerShape(16.dp),
+        color = if (legacyUi) Color(0xFF1E1B2E) else colors.card,
+        tonalElevation = 0.dp
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color(0xFF8B5CF6).copy(alpha = 0.28f),
-                            Color(0xFFEC4899).copy(alpha = 0.16f),
-                            Color.Transparent
+                .then(
+                    if (legacyUi) {
+                        Modifier.background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFF8B5CF6).copy(alpha = 0.28f),
+                                    Color(0xFFEC4899).copy(alpha = 0.16f),
+                                    Color.Transparent
+                                )
+                            )
                         )
-                    )
+                    } else {
+                        Modifier
+                    }
                 )
-                .padding(horizontal = 18.dp, vertical = 14.dp)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1106,65 +1168,86 @@ private fun DeezerFlowHeroCard(
                     modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(flowGradient, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.AllInclusive,
-                            contentDescription = "Flow",
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
+                    if (legacyUi) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(flowGradient, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.AllInclusive,
+                                contentDescription = "Flow",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.cardPressed),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.AllInclusive,
+                                contentDescription = "Flow",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                     Spacer(Modifier.width(14.dp))
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 "Deezer Flow",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.White
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = if (legacyUi) Color.White else MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFFEC4899).copy(alpha = 0.25f)
-                            ) {
-                                Text(
-                                    "AI AKIŞ",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
-                                    color = Color(0xFFF472B6),
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
+                            if (legacyUi) {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFFEC4899).copy(alpha = 0.25f)
+                                ) {
+                                    Text(
+                                        "AI AKIŞ",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
+                                        color = Color(0xFFF472B6),
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
                         }
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            "Zevkine göre sonsuz müzik akışı",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.70f)
-                        )
+                        if (legacyUi) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "Zevkine göre sonsuz müzik akışı",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.70f)
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.width(12.dp))
                 FilledIconButton(
                     onClick = onStartFlow,
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(40.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = Color.White,
-                        contentColor = Color(0xFF1E1B2E)
+                        containerColor = if (legacyUi) Color.White else colors.cardPressed,
+                        contentColor = if (legacyUi) Color(0xFF1E1B2E) else MaterialTheme.colorScheme.onSurface
                     )
                 ) {
                     if (isLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = Color(0xFF8B5CF6),
+                            color = if (legacyUi) Color(0xFF8B5CF6) else MaterialTheme.colorScheme.onSurface,
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Flow Başlat", modifier = Modifier.size(26.dp))
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Flow Başlat", modifier = Modifier.size(24.dp))
                     }
                 }
             }
@@ -1181,6 +1264,7 @@ private fun ResumePlaybackCard(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val legacyUi = colors.legacyUiMode
     val safeDur = state.durationMs.coerceAtLeast(1L)
     val fraction = (state.positionMs.toFloat() / safeDur.toFloat()).coerceIn(0f, 1f)
 
@@ -1190,7 +1274,7 @@ private fun ResumePlaybackCard(
             .clickable { onResume() },
         colors = CardDefaults.cardColors(containerColor = colors.card),
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, primary.copy(alpha = 0.4f))
+        border = if (legacyUi) BorderStroke(1.dp, primary.copy(alpha = 0.4f)) else null
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(
@@ -1200,17 +1284,24 @@ private fun ResumePlaybackCard(
                 Icon(
                     Icons.Default.Restore,
                     contentDescription = null,
-                    tint = primary,
+                    tint = if (legacyUi) primary else colors.textSecondary,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "KALDIĞIN YERDEN DEVAM ET",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = primary,
-                        letterSpacing = 0.5.sp
-                    ),
+                    if (legacyUi) "KALDIĞIN YERDEN DEVAM ET" else "Kaldığın yerden devam et",
+                    style = if (legacyUi) {
+                        MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = primary,
+                            letterSpacing = 0.5.sp
+                        )
+                    } else {
+                        MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Medium,
+                            color = colors.textSecondary
+                        )
+                    },
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(
@@ -1298,6 +1389,7 @@ private fun StatsHomeWidgetCard(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val legacyUi = colors.legacyUiMode
     val totalPlays = remember(stats) { stats.sumOf { it.playCount } }
 
     Card(
@@ -1310,28 +1402,42 @@ private fun StatsHomeWidgetCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(primary.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.BarChart, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
+                if (legacyUi) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(primary.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.BarChart, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
+                    }
+                } else {
+                    Icon(Icons.Default.BarChart, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         "Şarkı ve Dinleme İstatistikleri",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    Text(
-                        "Toplam: $totalListeningFormatted • $totalPlays dinlenme (${stats.size} şarkı)",
-                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
-                    )
+                    if (legacyUi) {
+                        Text(
+                            "Toplam: $totalListeningFormatted • $totalPlays dinlenme (${stats.size} şarkı)",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                        )
+                    } else if (totalPlays > 0) {
+                        Text(
+                            "$totalListeningFormatted • $totalPlays dinlenme",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                        )
+                    }
                 }
                 TextButton(onClick = onOpenFullStats) {
-                    Text("Tümünü Gör")
+                    Text(
+                        "Tümünü gör",
+                        color = if (legacyUi) primary else colors.textSecondary
+                    )
                 }
             }
 
@@ -1350,7 +1456,7 @@ private fun StatsHomeWidgetCard(
                             "#${idx + 1}",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = primary
+                                color = if (legacyUi) primary else colors.textSecondary
                             ),
                             modifier = Modifier.width(24.dp)
                         )
@@ -1378,14 +1484,14 @@ private fun StatsHomeWidgetCard(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(primary.copy(alpha = 0.16f))
+                                .background(if (legacyUi) primary.copy(alpha = 0.16f) else colors.cardPressed)
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 "${s.playCount} kez",
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    color = primary,
-                                    fontWeight = FontWeight.Bold
+                                    color = if (legacyUi) primary else colors.textSecondary,
+                                    fontWeight = if (legacyUi) FontWeight.Bold else FontWeight.Medium
                                 )
                             )
                         }
@@ -1406,6 +1512,7 @@ private fun QuickArtistWidgetCard(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val legacyUi = colors.legacyUiMode
 
     val artists = remember(allTracks, stats) {
         viewModel.getQuickArtists(limit = 12, fallbackTracks = allTracks).map { item ->
@@ -1421,25 +1528,31 @@ private fun QuickArtistWidgetCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(primary.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.PersonSearch, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                if (legacyUi) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(primary.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.PersonSearch, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                    }
+                } else {
+                    Icon(Icons.Default.PersonSearch, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
                         "Hızlıca Sanatçıya Git",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    Text(
-                        "Sanatçıya dokunarak şarkılarını anında çalın veya arayın",
-                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
-                    )
+                    if (legacyUi) {
+                        Text(
+                            "Sanatçıya dokunarak şarkılarını anında çalın veya arayın",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                        )
+                    }
                 }
             }
 
@@ -1460,7 +1573,7 @@ private fun QuickArtistWidgetCard(
                             modifier = Modifier
                                 .size(58.dp)
                                 .clip(CircleShape)
-                                .border(1.5.dp, primary.copy(alpha = 0.6f), CircleShape),
+                                .then(if (legacyUi) Modifier.border(1.5.dp, primary.copy(alpha = 0.6f), CircleShape) else Modifier),
                             fallback = Icons.Default.Person,
                             shape = CircleShape
                         )
@@ -1488,6 +1601,7 @@ private fun QuickThemeWidgetCard(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val legacyUi = colors.legacyUiMode
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -1496,68 +1610,93 @@ private fun QuickThemeWidgetCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(primary.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Palette, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                if (legacyUi) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(primary.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Palette, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                    }
+                } else {
+                    Icon(Icons.Default.Palette, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
                         "Hızlıca Tema Değiştir",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    Text(
-                        "Tek dokunuşla temalarınız arasında geçiş yapın",
-                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
-                    )
+                    if (legacyUi) {
+                        Text(
+                            "Tek dokunuşla temalarınız arasında geçiş yapın",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                        )
+                    }
                 }
             }
 
             Spacer(Modifier.height(10.dp))
 
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item(key = "theme_breeze") {
+                    val selected = activeThemeId == "org.kde.breeze-dark"
+                    Button(
+                        onClick = { onSelectTheme("org.kde.breeze-dark") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.cardPressed,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        border = if (selected && legacyUi) BorderStroke(2.dp, Color(0xFF3DAEE9)) else null
+                    ) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFF4A9FD4)))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Breeze", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
+                    }
+                }
                 item(key = "theme_twilight") {
                     val selected = activeThemeId == "mlp.twilight-sparkle"
+                    val dotCol = if (legacyUi) Color(0xFFED438D) else org.kde.plasmawave.theme.desaturateForCalmUi(Color(0xFFED438D))
                     Button(
                         onClick = { onSelectTheme("mlp.twilight-sparkle") },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF282348),
-                            contentColor = Color(0xFFF5EEF8)
+                            containerColor = if (legacyUi) Color(0xFF282348) else colors.cardPressed,
+                            contentColor = if (legacyUi) Color(0xFFF5EEF8) else MaterialTheme.colorScheme.onSurface
                         ),
                         shape = RoundedCornerShape(10.dp),
-                        border = if (selected) BorderStroke(2.dp, Color(0xFFED438D)) else null
+                        border = if (selected && legacyUi) BorderStroke(2.dp, Color(0xFFED438D)) else null
                     ) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFED438D)))
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(dotCol))
                         Spacer(Modifier.width(6.dp))
-                        Text("Twilight", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        Text("Twilight", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
                     }
                 }
                 item(key = "theme_pinkie") {
                     val selected = activeThemeId == "mlp.pinkie-pie"
+                    val dotCol = if (legacyUi) Color(0xFFFF2E93) else org.kde.plasmawave.theme.desaturateForCalmUi(Color(0xFFFF2E93))
                     Button(
                         onClick = { onSelectTheme("mlp.pinkie-pie") },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF3E1C32),
-                            contentColor = Color(0xFFFFF0F5)
+                            containerColor = if (legacyUi) Color(0xFF3E1C32) else colors.cardPressed,
+                            contentColor = if (legacyUi) Color(0xFFFFF0F5) else MaterialTheme.colorScheme.onSurface
                         ),
                         shape = RoundedCornerShape(10.dp),
-                        border = if (selected) BorderStroke(2.dp, Color(0xFFFF2E93)) else null
+                        border = if (selected && legacyUi) BorderStroke(2.dp, Color(0xFFFF2E93)) else null
                     ) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFF2E93)))
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(dotCol))
                         Spacer(Modifier.width(6.dp))
-                        Text("Pinkie", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        Text("Pinkie", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
                     }
                 }
                 items(customThemes, key = { it.id }) { spec ->
                     val selected = activeThemeId == spec.id
-                    val cardCol = parseHexColorSafe(spec.cardHex, Color(0xFF232629))
-                    val accentCol = parseHexColorSafe(spec.accentHex, primary)
-                    val textCol = parseHexColorSafe(spec.textHex, Color.White)
+                    val cardCol = if (legacyUi) parseHexColorSafe(spec.cardHex, Color(0xFF232629)) else colors.cardPressed
+                    val rawAccent = parseHexColorSafe(spec.accentHex, primary)
+                    val accentCol = if (legacyUi) rawAccent else org.kde.plasmawave.theme.desaturateForCalmUi(rawAccent)
+                    val textCol = if (legacyUi) parseHexColorSafe(spec.textHex, Color.White) else MaterialTheme.colorScheme.onSurface
                     Button(
                         onClick = { onSelectTheme(spec.id) },
                         colors = ButtonDefaults.buttonColors(
@@ -1565,11 +1704,11 @@ private fun QuickThemeWidgetCard(
                             contentColor = textCol
                         ),
                         shape = RoundedCornerShape(10.dp),
-                        border = if (selected) BorderStroke(2.dp, accentCol) else BorderStroke(1.dp, accentCol.copy(alpha = 0.4f))
+                        border = if (!legacyUi) null else if (selected) BorderStroke(2.dp, accentCol) else BorderStroke(1.dp, accentCol.copy(alpha = 0.4f))
                     ) {
                         Box(Modifier.size(10.dp).clip(CircleShape).background(accentCol))
                         Spacer(Modifier.width(6.dp))
-                        Text(spec.name, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(spec.name, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
                     }
                 }
             }
@@ -1585,6 +1724,7 @@ private fun LuckyPickWidgetCard(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val legacyUi = colors.legacyUiMode
     var currentIndex by remember(tracks.size) {
         mutableIntStateOf(if (tracks.isNotEmpty()) Random.nextInt(tracks.size) else 0)
     }
@@ -1600,25 +1740,31 @@ private fun LuckyPickWidgetCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFF59E0B).copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Casino, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp))
+                if (legacyUi) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFF59E0B).copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Casino, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp))
+                    }
+                } else {
+                    Icon(Icons.Default.Casino, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         "Şanslı Şarkı Seçici",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    Text(
-                        "Kitaplığından senin için rastgele seçilen parça",
-                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
-                    )
+                    if (legacyUi) {
+                        Text(
+                            "Kitaplığından senin için rastgele seçilen parça",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                        )
+                    }
                 }
                 TextButton(
                     onClick = {
@@ -1629,9 +1775,17 @@ private fun LuckyPickWidgetCard(
                         }
                     }
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = if (legacyUi) primary else colors.textSecondary
+                    )
                     Spacer(Modifier.width(4.dp))
-                    Text("Başka Seç")
+                    Text(
+                        "Başka seç",
+                        color = if (legacyUi) primary else colors.textSecondary
+                    )
                 }
             }
 
@@ -1656,7 +1810,7 @@ private fun LuckyPickWidgetCard(
                 Column(Modifier.weight(1f)) {
                     Text(
                         chosenTrack.title,
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1670,9 +1824,12 @@ private fun LuckyPickWidgetCard(
                 FilledIconButton(
                     onClick = { onPlayTrack(chosenTrack) },
                     modifier = Modifier.size(38.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = primary)
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = if (legacyUi) primary else colors.cardPressed,
+                        contentColor = if (legacyUi) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Çal", tint = Color.White)
+                    Icon(Icons.Default.PlayArrow, contentDescription = "Çal")
                 }
             }
         }
@@ -1689,9 +1846,10 @@ private fun SleepTimerWidgetCard(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val legacyUi = colors.legacyUiMode
 
     val statusText = when (sleepTimerState) {
-        is SleepTimerState.Off -> "Kapalı • Süre seçerek otomatik duraklatmayı başlatın"
+        is SleepTimerState.Off -> if (legacyUi) "Kapalı • Süre seçerek otomatik duraklatmayı başlatın" else null
         is SleepTimerState.EndOfTrack -> "Aktif • Çalan şarkı bittiğinde duracak"
         is SleepTimerState.Countdown -> "Aktif • Kalan süre: ${formatClockMs(sleepTimerState.remainingMs)}"
     }
@@ -1703,31 +1861,37 @@ private fun SleepTimerWidgetCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF38BDF8).copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Bedtime, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                if (legacyUi) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF38BDF8).copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Bedtime, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                    }
+                } else {
+                    Icon(Icons.Default.Bedtime, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         "Hızlı Uyku Zamanlayıcısı",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    Text(
-                        statusText,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = if (sleepTimerState is SleepTimerState.Off) colors.textSecondary else primary
+                    if (statusText != null) {
+                        Text(
+                            statusText,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = if (sleepTimerState is SleepTimerState.Off || !legacyUi) colors.textSecondary else primary
+                            )
                         )
-                    )
+                    }
                 }
                 if (sleepTimerState !is SleepTimerState.Off) {
                     TextButton(onClick = onCancel) {
-                        Text("Kapat", color = Color(0xFFEF4444))
+                        Text("Kapat", color = if (legacyUi) Color(0xFFEF4444) else colors.textSecondary)
                     }
                 }
             }
@@ -1770,12 +1934,13 @@ private fun MoodMixWidgetCard(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val legacyUi = colors.legacyUiMode
 
     val moods = listOf(
-        Triple("Enerjik ⚡", Color(0xFFF59E0B), "enerjik"),
-        Triple("Gece Modu 🌙", Color(0xFF8B5CF6), "gece"),
-        Triple("Odaklanma 🎯", Color(0xFF10B981), "chill"),
-        Triple("Karışık Keyif 🎧", Color(0xFFEC4899), "kesif")
+        Triple(if (legacyUi) "Enerjik ⚡" else "Enerjik", Color(0xFFF59E0B), "enerjik"),
+        Triple(if (legacyUi) "Gece Modu 🌙" else "Gece Modu", Color(0xFF8B5CF6), "gece"),
+        Triple(if (legacyUi) "Odaklanma 🎯" else "Odaklanma", Color(0xFF10B981), "chill"),
+        Triple(if (legacyUi) "Karışık Keyif 🎧" else "Karışık", Color(0xFFEC4899), "kesif")
     )
 
     Card(
@@ -1785,25 +1950,31 @@ private fun MoodMixWidgetCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(primary.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                if (legacyUi) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(primary.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                    }
+                } else {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
                         "Ruh Haline Göre Anında Miks",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    Text(
-                        "Modunu seç, şarkıların hemen çalmaya başlasın",
-                        style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
-                    )
+                    if (legacyUi) {
+                        Text(
+                            "Modunu seç, şarkıların hemen çalmaya başlasın",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                        )
+                    }
                 }
             }
 
@@ -1821,15 +1992,15 @@ private fun MoodMixWidgetCard(
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = color.copy(alpha = 0.2f),
-                            contentColor = color
+                            containerColor = if (legacyUi) color.copy(alpha = 0.2f) else colors.cardPressed,
+                            contentColor = if (legacyUi) color else MaterialTheme.colorScheme.onSurface
                         ),
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                     ) {
                         Text(
                             title,
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )

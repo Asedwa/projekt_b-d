@@ -22,9 +22,10 @@ data class ExtractedArtworkColors(
 object DynamicThemeHelper {
     private val cache = ConcurrentHashMap<String, ExtractedArtworkColors>()
 
-    suspend fun extractColors(context: Context, url: String?): ExtractedArtworkColors? {
+    suspend fun extractColors(context: Context, url: String?, calmMode: Boolean = true): ExtractedArtworkColors? {
         if (url.isNullOrBlank()) return null
-        cache[url]?.let { return it }
+        val cacheKey = "${url}|${if (calmMode) "calm" else "legacy"}"
+        cache[cacheKey]?.let { return it }
 
         return withContext(Dispatchers.IO) {
             try {
@@ -99,7 +100,16 @@ object DynamicThemeHelper {
                         var light = rawLight
 
                         // Prevent olive drab / mustard mud: shift yellow range (35°..75°) to warm gold (44°)
-                        if (hue in 35f..75f) {
+                        if (calmMode) {
+                            if (hue in 35f..75f) {
+                                hue = 42f
+                                sat = sat.coerceIn(0.35f, 0.52f)
+                                light = 0.58f
+                            } else {
+                                sat = sat.coerceIn(0.28f, 0.54f)
+                                light = light.coerceIn(0.54f, 0.68f)
+                            }
+                        } else if (hue in 35f..75f) {
                             hue = 44f
                             sat = maxOf(sat, 0.92f)
                             light = 0.58f
@@ -121,13 +131,22 @@ object DynamicThemeHelper {
                     var bgHue = rawHue
                     var bgSat = rawSat
                     // Mud prevention for background: shift yellow/olive to warm amber
-                    if (bgHue in 35f..75f) {
+                    if (calmMode) {
+                        if (bgHue in 35f..75f) {
+                            bgHue = 38f
+                        }
+                        bgSat = bgSat.coerceIn(0.18f, 0.42f)
+                    } else if (bgHue in 35f..75f) {
                         bgHue = 38f
                         bgSat = bgSat.coerceIn(0.40f, 0.75f)
                     } else {
                         bgSat = bgSat.coerceIn(0.45f, 0.80f)
                     }
-                    val bgLight = if (isDarkArtwork) 0.16f else 0.22f
+                    val bgLight = if (calmMode) {
+                        if (isDarkArtwork) 0.13f else 0.17f
+                    } else {
+                        if (isDarkArtwork) 0.16f else 0.22f
+                    }
                     topBgInt = ColorUtils.HSLToColor(floatArrayOf(bgHue, bgSat, bgLight))
                 } else {
                     // Monochrome / B&W artwork -> deep neutral charcoal
@@ -137,7 +156,11 @@ object DynamicThemeHelper {
                 // 6. Bottom Background (Fade into deep rich tone, avoiding pitch black cutoff)
                 val bottomHsl = FloatArray(3)
                 ColorUtils.colorToHSL(topBgInt, bottomHsl)
-                bottomHsl[2] = (bottomHsl[2] * 0.50f).coerceIn(0.07f, 0.13f)
+                bottomHsl[2] = if (calmMode) {
+                    (bottomHsl[2] * 0.55f).coerceIn(0.07f, 0.10f)
+                } else {
+                    (bottomHsl[2] * 0.50f).coerceIn(0.07f, 0.13f)
+                }
                 val bottomBgInt = ColorUtils.HSLToColor(bottomHsl)
 
                 val extracted = ExtractedArtworkColors(
@@ -146,7 +169,7 @@ object DynamicThemeHelper {
                     backgroundBottom = Color(bottomBgInt),
                     accent = Color(accentInt)
                 )
-                cache[url] = extracted
+                cache[cacheKey] = extracted
                 extracted
             } catch (_: Exception) {
                 null

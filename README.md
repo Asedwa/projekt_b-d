@@ -8,6 +8,10 @@ Deezer kitaplığını ve çalma listelerini kişiselleştirilebilir bir oynatı
 
 Açılan sayfada **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını seç. Depo özel olduğu için GitHub hesabınla giriş yapman gerekir. APK, uygulamanın debug derlemesidir.
 
+## 0.8 sürüm notu
+
+Breeze tarzı sade ve nötr koyu arayüz varsayılan hale getirildi: renkli zemin gradyanları, kart kenarlıkları, daire içi ikon kapları ve kart üstü pin rozetleri kaldırıldı; vurgu rengi yalnızca ana aksiyon, oynatma/ilerleme ve aktif sekmeye indirildi. Çalan şarkı kapağından Palette ile çekilen dinamik renkler artık MiniPlayer ve tam ekran oynatıcıya özel olarak uygulanıyor. Önceki görünüm için Ayarlar'a **Eski Mod** seçeneği eklendi.
+
 ## 0.7 sürüm notu
 
 Kilit ekranındaki ileri/geri şarkı kontrolleri düzeltildi. Ekran kapalıyken otomatik şarkı geçişi ve eşzamanlı kuyruk işlemleri daha güvenilir hale getirildi.

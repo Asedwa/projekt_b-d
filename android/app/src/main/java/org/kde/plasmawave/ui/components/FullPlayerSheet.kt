@@ -116,9 +116,13 @@ fun FullPlayerSheet(
     }
 
     var extractedColors by remember(entry.track.artworkUrl) { mutableStateOf<ExtractedArtworkColors?>(null) }
-    LaunchedEffect(entry.track.artworkUrl, dynamicColorEnabled) {
+    LaunchedEffect(entry.track.artworkUrl, dynamicColorEnabled, colors.legacyUiMode) {
         if (dynamicColorEnabled && !entry.track.artworkUrl.isNullOrBlank()) {
-            extractedColors = DynamicThemeHelper.extractColors(context, entry.track.artworkUrl)
+            extractedColors = DynamicThemeHelper.extractColors(
+                context = context,
+                url = entry.track.artworkUrl,
+                calmMode = !colors.legacyUiMode
+            )
         } else {
             extractedColors = null
         }
@@ -126,8 +130,10 @@ fun FullPlayerSheet(
 
     val targetTopColor = if (dynamicColorEnabled && extractedColors != null) {
         extractedColors!!.backgroundTop
-    } else {
+    } else if (colors.legacyUiMode) {
         Color(androidx.core.graphics.ColorUtils.blendARGB(bg.toArgb(), primary.toArgb(), 0.25f))
+    } else {
+        bg
     }
 
     val targetBottomColor = if (dynamicColorEnabled && extractedColors != null) {
@@ -943,6 +949,14 @@ private fun PlayerActionBar(
     val iconSize = if (compact) 20.dp else 23.dp
     val favSize = if (compact) 21.dp else 24.dp
 
+    val colors = LocalPlasmaColors.current
+    val activeIconTint = if (colors.legacyUiMode) effectiveAccent else Color.White
+    val favIconTint = if (colors.legacyUiMode) {
+        if (isFavorite) effectiveAccent else Color.White.copy(alpha = 0.80f)
+    } else {
+        if (isFavorite) Color.White else Color.White.copy(alpha = 0.65f)
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -952,9 +966,9 @@ private fun PlayerActionBar(
     ) {
         IconButton(onClick = onToggleRepeat) {
             val (icon, tint) = when (repeatMode) {
-                FfiRepeatMode.OFF -> Icons.Default.Repeat to Color.White.copy(alpha = 0.65f)
-                FfiRepeatMode.ALL -> Icons.Default.Repeat to effectiveAccent
-                FfiRepeatMode.ONE -> Icons.Default.RepeatOne to effectiveAccent
+                FfiRepeatMode.OFF -> Icons.Default.Repeat to Color.White.copy(alpha = 0.55f)
+                FfiRepeatMode.ALL -> Icons.Default.Repeat to activeIconTint
+                FfiRepeatMode.ONE -> Icons.Default.RepeatOne to activeIconTint
             }
             Icon(icon, contentDescription = "Tekrarla", tint = tint, modifier = Modifier.size(iconSize))
         }
@@ -962,7 +976,7 @@ private fun PlayerActionBar(
             Icon(
                 Icons.Default.Shuffle,
                 contentDescription = "Karıştır",
-                tint = if (isShuffle) effectiveAccent else Color.White.copy(alpha = 0.65f),
+                tint = if (isShuffle) activeIconTint else Color.White.copy(alpha = 0.55f),
                 modifier = Modifier.size(iconSize)
             )
         }
@@ -986,7 +1000,7 @@ private fun PlayerActionBar(
             Icon(
                 if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 contentDescription = if (isFavorite) "Beğeniyi kaldır" else "Şarkıyı beğen",
-                tint = if (isFavorite) effectiveAccent else Color.White.copy(alpha = 0.80f),
+                tint = favIconTint,
                 modifier = Modifier.size(favSize)
             )
         }

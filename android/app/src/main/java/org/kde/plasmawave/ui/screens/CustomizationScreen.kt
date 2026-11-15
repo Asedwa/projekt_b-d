@@ -251,9 +251,9 @@ fun CustomizationScreen(
                     item {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "KATEGORİLER",
+                            text = if (colors.legacyUiMode) "KATEGORİLER" else "Kategoriler",
                             style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.SemiBold,
                                 color = colors.textSecondary
                             )
                         )
@@ -276,17 +276,26 @@ fun CustomizationScreen(
                                     .padding(horizontal = 16.dp, vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(primary.copy(alpha = 0.14f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
+                                if (colors.legacyUiMode) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(primary.copy(alpha = 0.14f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = itemCategory.icon,
+                                            contentDescription = null,
+                                            tint = primary,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                } else {
                                     Icon(
                                         imageVector = itemCategory.icon,
                                         contentDescription = null,
-                                        tint = primary,
+                                        tint = colors.textSecondary,
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
@@ -332,7 +341,7 @@ fun CustomizationScreen(
             item {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "TELEFON UYGULAMA İKONU (BAŞLATICI)",
+                    text = sectionHeading("TELEFON UYGULAMA İKONU (BAŞLATICI)", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -530,7 +539,7 @@ fun CustomizationScreen(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "ANA SAYFA LOGOSU (ÜST BAR)",
+                    text = sectionHeading("ANA SAYFA LOGOSU (ÜST BAR)", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -676,7 +685,7 @@ fun CustomizationScreen(
                         item {
                             Spacer(modifier = Modifier.height(10.dp))
                             Text(
-                                text = "HIZLI ERİŞİM & KİTAPLIK KART AYARLARI",
+                                text = sectionHeading("HIZLI ERİŞİM & KİTAPLIK KART AYARLARI", colors.legacyUiMode),
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = colors.textSecondary
@@ -831,17 +840,17 @@ fun CustomizationScreen(
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Text(
-                                                    text = "CANLI ÖNİZLEME",
+                                                    text = sectionHeading("CANLI ÖNİZLEME", colors.legacyUiMode),
                                                     style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontWeight = FontWeight.Bold,
+                                                        fontWeight = FontWeight.SemiBold,
                                                         color = colors.textSecondary
                                                     )
                                                 )
                                                 Text(
                                                     text = "$previewColumns sütun yan yana",
                                                     style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        color = primary
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = if (colors.legacyUiMode) primary else colors.textSecondary
                                                     )
                                                 )
                                             }
@@ -1335,7 +1344,7 @@ fun CustomizationScreen(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "ANA SAYFA ŞARKI ÖNERİLERİ",
+                    text = sectionHeading("ANA SAYFA ŞARKI ÖNERİLERİ", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -1433,7 +1442,7 @@ fun CustomizationScreen(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "KALDIĞIN YERDEN DEVAM ET",
+                    text = sectionHeading("KALDIĞIN YERDEN DEVAM ET", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -1491,7 +1500,7 @@ fun CustomizationScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "ANA SAYFA WİDGET'LARI",
+                    text = sectionHeading("ANA SAYFA WİDGET'LARI", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -1573,7 +1582,7 @@ fun CustomizationScreen(
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "DİNAMİK ALBÜM KAPAĞI RENKLERİ",
+                    text = sectionHeading("DİNAMİK ALBÜM KAPAĞI RENKLERİ", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -1641,7 +1650,7 @@ fun CustomizationScreen(
                 item {
                 // Deezer Flow Yerleşimi
                 Text(
-                    text = "DEEZER FLOW YERLEŞİMİ (AI MÜZİK AKIŞI)",
+                    text = sectionHeading("DEEZER FLOW YERLEŞİMİ (AI MÜZİK AKIŞI)", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -1793,7 +1802,7 @@ fun CustomizationScreen(
 
                 // İndirilenler Sabitleme
                 Text(
-                    text = "İNDİRİLENLER SABİTLEME",
+                    text = sectionHeading("İNDİRİLENLER SABİTLEME", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -1900,7 +1909,7 @@ fun CustomizationScreen(
                 item {
                 // Albüm Kapağı Hareketi
                 Text(
-                    text = "ALBÜM KAPAĞI HAREKETİ",
+                    text = sectionHeading("ALBÜM KAPAĞI HAREKETİ", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -1965,7 +1974,7 @@ fun CustomizationScreen(
 
                 // Albüm Kapağı Çerçevesi
                 Text(
-                    text = "ALBÜM KAPAĞI ÇERÇEVESİ (5 MODEL)",
+                    text = sectionHeading("ALBÜM KAPAĞI ÇERÇEVESİ (5 MODEL)", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -2046,7 +2055,7 @@ fun CustomizationScreen(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "OYNATICI İLERLEME ÇUBUĞU DESENİ",
+                    text = sectionHeading("OYNATICI İLERLEME ÇUBUĞU DESENİ", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
                         color = colors.textSecondary
@@ -2154,4 +2163,10 @@ fun CustomizationScreen(
             }
         }
     }
+}
+
+private fun sectionHeading(raw: String, legacyUi: Boolean): String {
+    if (legacyUi) return raw
+    val trLocale = java.util.Locale("tr", "TR")
+    return raw.lowercase(trLocale).replaceFirstChar { it.titlecase(trLocale) }
 }
