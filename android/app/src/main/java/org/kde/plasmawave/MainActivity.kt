@@ -339,9 +339,67 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+private fun JamControlBlockedDialog(
+    onLeaveJam: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Jam Kontrolü Kapalı") },
+        text = {
+            Text("Ev sahibi misafirlerin müziği kontrol etmesini kapattı. Müziği kendin değiştirmek için Jam'den çıkmak ister misin?")
+        },
+        confirmButton = {
+            TextButton(onClick = onLeaveJam) {
+                Text("Jam'den Çık", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Jam'de Kal")
+            }
+        }
+    )
+}
+
+@Composable
 private fun LiveMiniPlayer(viewModel: MainViewModel, onClick: () -> Unit) {
     val state by viewModel.playbackManager.overview.collectAsState()
-    MiniPlayer(state, viewModel.playbackManager.progress, onTogglePlayPause = { viewModel.playbackManager.togglePlayPause() }, onSkipNext = { viewModel.playbackManager.skipNext() }, onClick = onClick, modifier = Modifier.fillMaxWidth())
+    val jamState by viewModel.jamState.collectAsState()
+    var showBlockedDialog by remember { mutableStateOf(false) }
+
+    if (showBlockedDialog) {
+        JamControlBlockedDialog(
+            onLeaveJam = {
+                viewModel.jamManager.stopJam()
+                showBlockedDialog = false
+            },
+            onDismiss = { showBlockedDialog = false }
+        )
+    }
+
+    MiniPlayer(
+        state,
+        viewModel.playbackManager.progress,
+        onTogglePlayPause = {
+            if (jamState.mode == JamMode.GUEST) {
+                if (jamState.allowGuestControls) viewModel.jamManager.sendGuestControl("toggle")
+                else showBlockedDialog = true
+            } else {
+                viewModel.playbackManager.togglePlayPause()
+            }
+        },
+        onSkipNext = {
+            if (jamState.mode == JamMode.GUEST) {
+                if (jamState.allowGuestControls) viewModel.jamManager.sendGuestControl("next")
+                else showBlockedDialog = true
+            } else {
+                viewModel.playbackManager.skipNext()
+            }
+        },
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -366,6 +424,17 @@ private fun FullPlayerHost(
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
     val jamState by viewModel.jamState.collectAsState()
     var showJamSheet by remember { mutableStateOf(false) }
+    var showJamBlockedDialog by remember { mutableStateOf(false) }
+
+    if (showJamBlockedDialog) {
+        JamControlBlockedDialog(
+            onLeaveJam = {
+                viewModel.jamManager.stopJam()
+                showJamBlockedDialog = false
+            },
+            onDismiss = { showJamBlockedDialog = false }
+        )
+    }
 
     var lastTrack by remember { mutableStateOf<FfiTrack?>(null) }
     val nowPlaying = state.currentEntry?.track ?: lastTrack ?: return
@@ -389,35 +458,51 @@ private fun FullPlayerHost(
         swipeToSkipEnabled = swipeToSkipEnabled,
         onDismiss = onDismiss,
         onTogglePlayPause = {
-            if (jamState.mode == JamMode.GUEST && jamState.allowGuestControls) {
-                viewModel.jamManager.sendGuestControl("toggle")
+            if (jamState.mode == JamMode.GUEST) {
+                if (jamState.allowGuestControls) viewModel.jamManager.sendGuestControl("toggle")
+                else showJamBlockedDialog = true
             } else {
                 viewModel.playbackManager.togglePlayPause()
             }
         },
         onSkipNext = {
-            if (jamState.mode == JamMode.GUEST && jamState.allowGuestControls) {
-                viewModel.jamManager.sendGuestControl("next")
+            if (jamState.mode == JamMode.GUEST) {
+                if (jamState.allowGuestControls) viewModel.jamManager.sendGuestControl("next")
+                else showJamBlockedDialog = true
             } else {
                 viewModel.playbackManager.skipNext()
             }
         },
         onSkipPrevious = {
-            if (jamState.mode == JamMode.GUEST && jamState.allowGuestControls) {
-                viewModel.jamManager.sendGuestControl("prev")
+            if (jamState.mode == JamMode.GUEST) {
+                if (jamState.allowGuestControls) viewModel.jamManager.sendGuestControl("prev")
+                else showJamBlockedDialog = true
             } else {
                 viewModel.playbackManager.skipPrevious()
             }
         },
         onSeekTo = { pos ->
-            if (jamState.mode == JamMode.GUEST && jamState.allowGuestControls) {
-                viewModel.jamManager.sendGuestControl("seek", pos)
+            if (jamState.mode == JamMode.GUEST) {
+                if (jamState.allowGuestControls) viewModel.jamManager.sendGuestControl("seek", pos)
+                else showJamBlockedDialog = true
             } else {
                 viewModel.playbackManager.seekTo(pos)
             }
         },
-        onToggleShuffle = { viewModel.playbackManager.toggleShuffle() },
-        onToggleRepeat = { viewModel.playbackManager.toggleRepeat() },
+        onToggleShuffle = {
+            if (jamState.mode == JamMode.GUEST && !jamState.allowGuestControls) {
+                showJamBlockedDialog = true
+            } else {
+                viewModel.playbackManager.toggleShuffle()
+            }
+        },
+        onToggleRepeat = {
+            if (jamState.mode == JamMode.GUEST && !jamState.allowGuestControls) {
+                showJamBlockedDialog = true
+            } else {
+                viewModel.playbackManager.toggleRepeat()
+            }
+        },
         isFavorite = isFav,
         onToggleFavorite = { viewModel.toggleFavorite(nowPlaying) },
         onAddToPlaylist = { onAddToPlaylist(nowPlaying) },

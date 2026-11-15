@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ContentUris
 import android.provider.MediaStore
 import android.util.Log
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +82,36 @@ data class CustomThemeSpec(
     val accentHex: String,
     val textHex: String
 )
+
+enum class QuickCardStyle(val title: String, val subtitle: String) {
+    THEME_ADAPTIVE("Temaya Uyumlu", "Aktif temanın kart ve vurgu renklerini kullanır"),
+    VIBRANT_GRADIENT("Renkli Gradyan", "Canlı renk geçişli klasik ikon kartları")
+}
+
+enum class QuickCardLayout(val title: String, val subtitle: String) {
+    COMPACT_HORIZONTAL("Kompakt Yatay", "Sol tarafta ikon/kapak, yanında net başlık"),
+    SQUARE_GRID("Kare Izgara", "Büyük kare kapaklar ve alt başlık")
+}
+
+enum class QuickCardContentMode(val title: String) {
+    BOTH("İsim ve Görsel"),
+    TITLE_ONLY("Sadece İsim"),
+    IMAGE_ONLY("Sadece Fotoğraf")
+}
+
+enum class QuickCardShape(val title: String) {
+    ROUNDED("Yuvarlak Köşe"),
+    SQUIRCLE("Yumuşak Kare"),
+    CIRCLE("Kapsül / Daire"),
+    SHARP("Keskin Köşe");
+
+    fun toComposeShape(): androidx.compose.ui.graphics.Shape = when (this) {
+        ROUNDED -> androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+        SQUIRCLE -> androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+        CIRCLE -> androidx.compose.foundation.shape.CircleShape
+        SHARP -> androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+    }
+}
 
 internal fun CustomThemeSpec.toFfi(): FfiCustomThemeSpec = FfiCustomThemeSpec(
     id = id,
@@ -273,6 +304,152 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateCoreSettings { it.copy(flowLibraryPinned = enabled) }
     }
 
+    private val _quickCardStyle = MutableStateFlow(
+        runCatching {
+            QuickCardStyle.valueOf(displayPrefs.getString("quick_card_style", QuickCardStyle.THEME_ADAPTIVE.name) ?: QuickCardStyle.THEME_ADAPTIVE.name)
+        }.getOrDefault(QuickCardStyle.THEME_ADAPTIVE)
+    )
+    val quickCardStyle = _quickCardStyle.asStateFlow()
+    fun setQuickCardStyle(style: QuickCardStyle) {
+        _quickCardStyle.value = style
+        displayPrefs.edit().putString("quick_card_style", style.name).apply()
+    }
+
+    private val _quickCardScale = MutableStateFlow(
+        displayPrefs.getFloat("quick_card_scale", 1.0f).coerceIn(0.50f, 1.30f)
+    )
+    val quickCardScale = _quickCardScale.asStateFlow()
+    fun setQuickCardScale(scale: Float) {
+        val clamped = scale.coerceIn(0.50f, 1.30f)
+        _quickCardScale.value = clamped
+        displayPrefs.edit().putFloat("quick_card_scale", clamped).apply()
+    }
+
+    private val _quickIconScale = MutableStateFlow(
+        displayPrefs.getFloat("quick_icon_scale", 1.0f).coerceIn(0.70f, 1.40f)
+    )
+    val quickIconScale = _quickIconScale.asStateFlow()
+    fun setQuickIconScale(scale: Float) {
+        val clamped = scale.coerceIn(0.70f, 1.40f)
+        _quickIconScale.value = clamped
+        displayPrefs.edit().putFloat("quick_icon_scale", clamped).apply()
+    }
+
+    private val _quickCardShape = MutableStateFlow(
+        runCatching {
+            QuickCardShape.valueOf(displayPrefs.getString("quick_card_shape", QuickCardShape.ROUNDED.name) ?: QuickCardShape.ROUNDED.name)
+        }.getOrDefault(QuickCardShape.ROUNDED)
+    )
+    val quickCardShape = _quickCardShape.asStateFlow()
+    fun setQuickCardShape(shape: QuickCardShape) {
+        _quickCardShape.value = shape
+        displayPrefs.edit().putString("quick_card_shape", shape.name).apply()
+    }
+
+    private val _quickCardLayout = MutableStateFlow(
+        runCatching {
+            QuickCardLayout.valueOf(displayPrefs.getString("quick_card_layout", QuickCardLayout.COMPACT_HORIZONTAL.name) ?: QuickCardLayout.COMPACT_HORIZONTAL.name)
+        }.getOrDefault(QuickCardLayout.COMPACT_HORIZONTAL)
+    )
+    val quickCardLayout = _quickCardLayout.asStateFlow()
+    fun setQuickCardLayout(layout: QuickCardLayout) {
+        _quickCardLayout.value = layout
+        displayPrefs.edit().putString("quick_card_layout", layout.name).apply()
+    }
+
+    private val _quickCardContentMode = MutableStateFlow(
+        runCatching {
+            QuickCardContentMode.valueOf(displayPrefs.getString("quick_card_content_mode", QuickCardContentMode.BOTH.name) ?: QuickCardContentMode.BOTH.name)
+        }.getOrDefault(QuickCardContentMode.BOTH)
+    )
+    val quickCardContentMode = _quickCardContentMode.asStateFlow()
+    fun setQuickCardContentMode(mode: QuickCardContentMode) {
+        _quickCardContentMode.value = mode
+        displayPrefs.edit().putString("quick_card_content_mode", mode.name).apply()
+    }
+
+    private val _librarySyncWithQuick = MutableStateFlow(
+        displayPrefs.getBoolean("library_sync_with_quick", true)
+    )
+    val librarySyncWithQuick = _librarySyncWithQuick.asStateFlow()
+    fun setLibrarySyncWithQuick(sync: Boolean) {
+        if (!sync && _librarySyncWithQuick.value && !displayPrefs.contains("lib_card_style")) {
+            // Copy current Quick Access settings as initial baseline when splitting for the first time
+            setLibraryCardStyle(_quickCardStyle.value)
+            setLibraryCardScale(_quickCardScale.value)
+            setLibraryIconScale(_quickIconScale.value)
+            setLibraryCardShape(_quickCardShape.value)
+            setLibraryCardLayout(_quickCardLayout.value)
+            setLibraryCardContentMode(_quickCardContentMode.value)
+        }
+        _librarySyncWithQuick.value = sync
+        displayPrefs.edit().putBoolean("library_sync_with_quick", sync).apply()
+    }
+
+    private val _libraryCardStyle = MutableStateFlow(
+        runCatching {
+            QuickCardStyle.valueOf(displayPrefs.getString("lib_card_style", _quickCardStyle.value.name) ?: _quickCardStyle.value.name)
+        }.getOrDefault(_quickCardStyle.value)
+    )
+    val libraryCardStyle = _libraryCardStyle.asStateFlow()
+    fun setLibraryCardStyle(style: QuickCardStyle) {
+        _libraryCardStyle.value = style
+        displayPrefs.edit().putString("lib_card_style", style.name).apply()
+    }
+
+    private val _libraryCardScale = MutableStateFlow(
+        displayPrefs.getFloat("lib_card_scale", _quickCardScale.value).coerceIn(0.50f, 1.30f)
+    )
+    val libraryCardScale = _libraryCardScale.asStateFlow()
+    fun setLibraryCardScale(scale: Float) {
+        val clamped = scale.coerceIn(0.50f, 1.30f)
+        _libraryCardScale.value = clamped
+        displayPrefs.edit().putFloat("lib_card_scale", clamped).apply()
+    }
+
+    private val _libraryIconScale = MutableStateFlow(
+        displayPrefs.getFloat("lib_icon_scale", _quickIconScale.value).coerceIn(0.70f, 1.40f)
+    )
+    val libraryIconScale = _libraryIconScale.asStateFlow()
+    fun setLibraryIconScale(scale: Float) {
+        val clamped = scale.coerceIn(0.70f, 1.40f)
+        _libraryIconScale.value = clamped
+        displayPrefs.edit().putFloat("lib_icon_scale", clamped).apply()
+    }
+
+    private val _libraryCardShape = MutableStateFlow(
+        runCatching {
+            QuickCardShape.valueOf(displayPrefs.getString("lib_card_shape", _quickCardShape.value.name) ?: _quickCardShape.value.name)
+        }.getOrDefault(_quickCardShape.value)
+    )
+    val libraryCardShape = _libraryCardShape.asStateFlow()
+    fun setLibraryCardShape(shape: QuickCardShape) {
+        _libraryCardShape.value = shape
+        displayPrefs.edit().putString("lib_card_shape", shape.name).apply()
+    }
+
+    private val _libraryCardLayout = MutableStateFlow(
+        runCatching {
+            QuickCardLayout.valueOf(displayPrefs.getString("lib_card_layout", _quickCardLayout.value.name) ?: _quickCardLayout.value.name)
+        }.getOrDefault(_quickCardLayout.value)
+    )
+    val libraryCardLayout = _libraryCardLayout.asStateFlow()
+    fun setLibraryCardLayout(layout: QuickCardLayout) {
+        _libraryCardLayout.value = layout
+        displayPrefs.edit().putString("lib_card_layout", layout.name).apply()
+    }
+
+    private val _libraryCardContentMode = MutableStateFlow(
+        runCatching {
+            QuickCardContentMode.valueOf(displayPrefs.getString("lib_card_content_mode", _quickCardContentMode.value.name) ?: _quickCardContentMode.value.name)
+        }.getOrDefault(_quickCardContentMode.value)
+    )
+    val libraryCardContentMode = _libraryCardContentMode.asStateFlow()
+    fun setLibraryCardContentMode(mode: QuickCardContentMode) {
+        _libraryCardContentMode.value = mode
+        displayPrefs.edit().putString("lib_card_content_mode", mode.name).apply()
+    }
+
     private val _downloadsQuickAccessPinned = MutableStateFlow(initialCoreSettings.downloadsQuickAccessPinned)
     val downloadsQuickAccessPinned = _downloadsQuickAccessPinned.asStateFlow()
     fun setDownloadsQuickAccessPinned(enabled: Boolean) {
@@ -313,13 +490,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _launcherIcon.value = AppLauncherIcon.CUSTOM
     }
 
-    private val _homeFeedType = MutableStateFlow(
-        runCatching { HomeFeedType.valueOf(initialCoreSettings.homeFeedType) }.getOrDefault(HomeFeedType.FOR_YOU)
-    )
-    val homeFeedType = _homeFeedType.asStateFlow()
-    fun setHomeFeedType(feed: HomeFeedType) {
-        _homeFeedType.value = feed
-        updateCoreSettings { it.copy(homeFeedType = feed.name) }
+    private fun parseHomeFeedTypes(raw: String): Set<HomeFeedType> =
+        raw.split(',')
+            .mapNotNull { token -> runCatching { HomeFeedType.valueOf(token.trim()) }.getOrNull() }
+            .toSet()
+            .ifEmpty { setOf(HomeFeedType.FOR_YOU) }
+
+    private val _homeFeedTypes = MutableStateFlow(parseHomeFeedTypes(initialCoreSettings.homeFeedType))
+    val homeFeedTypes = _homeFeedTypes.asStateFlow()
+    fun toggleHomeFeedType(feed: HomeFeedType) {
+        val current = _homeFeedTypes.value
+        val next = if (feed in current) {
+            if (current.size > 1) current - feed else current
+        } else {
+            current + feed
+        }
+        _homeFeedTypes.value = next
+        val serialized = HomeFeedType.entries.filter { it in next }.joinToString(",") { it.name }
+        displayPrefs.edit().putString("home_feed_type", serialized).apply()
+        updateCoreSettings { it.copy(homeFeedType = serialized) }
     }
 
     private val _launcherIcon = MutableStateFlow(
@@ -600,7 +789,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val idx = queue.indexOfFirst { it.id == state.track.id }.takeIf { it >= 0 } ?: 0
             playbackManager.playTrackList(queue, idx, state.positionMs)
         }
-        _statusMessage.value = "'${state.track.title}' kaldığı yerden devam ediyor"
     }
 
     fun recordTrackPlay(track: FfiTrack) {

@@ -53,6 +53,10 @@ import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.LOCAL_DOWNLOADS_ID
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PinnedItem
+import org.kde.plasmawave.ui.QuickCardContentMode
+import org.kde.plasmawave.ui.QuickCardLayout
+import org.kde.plasmawave.ui.QuickCardShape
+import org.kde.plasmawave.ui.QuickCardStyle
 import org.kde.plasmawave.ui.ResumePlaybackState
 import org.kde.plasmawave.ui.SearchCategory
 import org.kde.plasmawave.ui.TrackListeningStat
@@ -98,7 +102,7 @@ fun HomeScreen(
     val downloadedTracks by viewModel.downloadedTracks.collectAsState()
     val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
     val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
-    val homeFeedType by viewModel.homeFeedType.collectAsState()
+    val homeFeedTypes by viewModel.homeFeedTypes.collectAsState()
     val resumePlaybackEnabled by viewModel.resumePlaybackEnabled.collectAsState()
     val resumeState by viewModel.resumePlaybackState.collectAsState()
     val enabledWidgets by viewModel.enabledHomeWidgets.collectAsState()
@@ -335,19 +339,89 @@ fun HomeScreen(
                 Spacer(Modifier.height(10.dp))
             }
             if (quick.isNotEmpty()) item(key = "quick_access_grid") {
+                val quickCardStyle by viewModel.quickCardStyle.collectAsState()
+                val quickCardScale by viewModel.quickCardScale.collectAsState()
+                val quickIconScale by viewModel.quickIconScale.collectAsState()
+                val quickCardShape by viewModel.quickCardShape.collectAsState()
+                val quickCardLayout by viewModel.quickCardLayout.collectAsState()
+                val quickCardContentMode by viewModel.quickCardContentMode.collectAsState()
+                val effectiveLayout = if (quickCardContentMode == QuickCardContentMode.IMAGE_ONLY) {
+                    QuickCardLayout.SQUARE_GRID
+                } else {
+                    quickCardLayout
+                }
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val isLandscape = maxWidth > 600.dp
-                    val cardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(quick.chunked(9), key = { page -> page.first().id }) { page ->
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                page.chunked(3).forEach { row ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        row.forEach { pin ->
-                                            QuickCard(pin, pin.id in pinnedIds, viewModel, onPlaylistClick, cardSize)
+                    val availableWidth = (maxWidth - 32.dp).coerceAtLeast(160.dp)
+                    if (effectiveLayout == QuickCardLayout.COMPACT_HORIZONTAL) {
+                        val columns = when {
+                            isLandscape -> if (quickCardScale <= 0.8f) 4 else 3
+                            quickCardScale <= 0.78f -> 3
+                            quickCardScale >= 1.18f -> 1
+                            else -> 2
+                        }
+                        val cardHeight = (58.dp * quickCardScale).coerceIn(44.dp, 76.dp)
+                        val rows = quick.chunked(columns)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rows.forEach { row ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    row.forEach { pin ->
+                                        QuickCard(
+                                            pin = pin,
+                                            pinned = pin.id in pinnedIds,
+                                            viewModel = viewModel,
+                                            onPlaylistClick = onPlaylistClick,
+                                            size = cardHeight,
+                                            cardStyle = quickCardStyle,
+                                            iconScale = quickIconScale,
+                                            cardShape = quickCardShape,
+                                            cardLayout = effectiveLayout,
+                                            contentMode = quickCardContentMode,
+                                            columnsCount = columns,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    repeat(columns - row.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        val baseCardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
+                        val cardSize = baseCardSize * quickCardScale
+                        val columns = ((availableWidth + 8.dp) / (cardSize + 8.dp)).toInt().coerceIn(2, 6)
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(quick.chunked(columns * 3), key = { page -> page.first().id }) { page ->
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    page.chunked(columns).forEach { row ->
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            row.forEach { pin ->
+                                                QuickCard(
+                                                    pin = pin,
+                                                    pinned = pin.id in pinnedIds,
+                                                    viewModel = viewModel,
+                                                    onPlaylistClick = onPlaylistClick,
+                                                    size = cardSize,
+                                                    cardStyle = quickCardStyle,
+                                                    iconScale = quickIconScale,
+                                                    cardShape = quickCardShape,
+                                                    cardLayout = effectiveLayout,
+                                                    contentMode = quickCardContentMode,
+                                                    columnsCount = columns
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -448,50 +522,52 @@ fun HomeScreen(
                 }
             }
 
-            // Customizable Feed (Senin İçin / Son Çalınanlar / En Çok Dinlenenler)
-            val feedTracks = when (homeFeedType) {
-                HomeFeedType.FOR_YOU -> if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites
-                HomeFeedType.RECENTLY_PLAYED -> if (recentTracks.isNotEmpty()) recentTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
-                HomeFeedType.MOST_PLAYED -> if (mostPlayedTracks.isNotEmpty()) mostPlayedTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
-            }
+            // Customizable Feeds (Senin İçin / Son Çalınanlar / En Çok Dinlenenler)
+            HomeFeedType.entries.filter { it in homeFeedTypes }.forEach { feedType ->
+                val feedTracks = when (feedType) {
+                    HomeFeedType.FOR_YOU -> if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites
+                    HomeFeedType.RECENTLY_PLAYED -> if (recentTracks.isNotEmpty()) recentTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
+                    HomeFeedType.MOST_PLAYED -> if (mostPlayedTracks.isNotEmpty()) mostPlayedTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
+                }
 
-            if (feedTracks.isNotEmpty()) {
-                item(key = "feed_header_${homeFeedType.name}") {
-                    Spacer(Modifier.height(28.dp))
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                homeFeedType.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                homeFeedType.subtitle,
-                                color = colors.textSecondary,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                        if (likedPlaylist != null && homeFeedType == HomeFeedType.FOR_YOU) {
-                            TextButton(onClick = { onPlaylistClick(likedPlaylist) }) { Text("Tümünü gör") }
+                if (feedTracks.isNotEmpty()) {
+                    item(key = "feed_header_${feedType.name}") {
+                        Spacer(Modifier.height(28.dp))
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    feedType.title,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    feedType.subtitle,
+                                    color = colors.textSecondary,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            if (likedPlaylist != null && feedType == HomeFeedType.FOR_YOU) {
+                                TextButton(onClick = { onPlaylistClick(likedPlaylist) }) { Text("Tümünü gör") }
+                            }
                         }
                     }
-                }
-                itemsIndexed(feedTracks.take(6), key = { _, it -> "feed:${homeFeedType.name}:${it.id}" }) { index, track ->
-                    TrackListItem(
-                        track,
-                        isPlaying = currentTrackId == track.id,
-                        onClick = { viewModel.playbackManager.playTrackList(feedTracks, index) },
-                        onLongClick = { viewModel.openTrackMenu(track) }
-                    )
+                    itemsIndexed(feedTracks.take(6), key = { _, it -> "feed:${feedType.name}:${it.id}" }) { index, track ->
+                        TrackListItem(
+                            track,
+                            isPlaying = currentTrackId == track.id,
+                            onClick = { viewModel.playbackManager.playTrackList(feedTracks, index) },
+                            onLongClick = { viewModel.openTrackMenu(track) }
+                        )
+                    }
                 }
             }
 
-            if (favorites.isNotEmpty() && homeFeedType == HomeFeedType.FOR_YOU && deezerFavorites.isNotEmpty()) {
+            if (favorites.isNotEmpty() && HomeFeedType.FOR_YOU in homeFeedTypes && deezerFavorites.isNotEmpty()) {
                 item(key = "local_fav_header") {
                     Spacer(Modifier.height(24.dp))
                     Text(
@@ -678,7 +754,20 @@ private fun HeaderLogoView(
 private val CardBottomScrim = Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .85f)))
 
 @Composable
-private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Unit, size: androidx.compose.ui.unit.Dp) {
+private fun QuickCard(
+    pin: PinnedItem,
+    pinned: Boolean,
+    viewModel: MainViewModel,
+    onPlaylistClick: (FfiPlaylist) -> Unit,
+    size: androidx.compose.ui.unit.Dp,
+    cardStyle: QuickCardStyle = QuickCardStyle.THEME_ADAPTIVE,
+    iconScale: Float = 1.0f,
+    cardShape: QuickCardShape = QuickCardShape.ROUNDED,
+    cardLayout: QuickCardLayout = QuickCardLayout.COMPACT_HORIZONTAL,
+    contentMode: QuickCardContentMode = QuickCardContentMode.BOTH,
+    columnsCount: Int = 2,
+    modifier: Modifier = Modifier
+) {
     var menu by remember(pin.id) { mutableStateOf(false) }
     val title = when (pin) {
         is PinnedItem.Track -> pin.track.title
@@ -690,7 +779,11 @@ private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel
         is PinnedItem.Playlist -> pin.playlist.artworkUrl
         is PinnedItem.Flow -> null
     }
+    val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val themeCardBrush = remember(primary, colors.card) {
+        Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card))
+    }
     val deezerFavBrush = remember(primary) {
         Brush.linearGradient(listOf(primary, Color(0xFF7B63DC), Color(0xFFE993BA)))
     }
@@ -700,35 +793,224 @@ private fun QuickCard(pin: PinnedItem, pinned: Boolean, viewModel: MainViewModel
     val downloadsBrush = remember(primary) {
         Brush.linearGradient(listOf(Color(0xFF0EA5E9), Color(0xFF10B981), primary))
     }
+    val isSpecialCard = pin is PinnedItem.Flow ||
+        (pin is PinnedItem.Playlist && (pin.playlist.id == DEEZER_FAVORITES_ID || pin.playlist.id == LOCAL_DOWNLOADS_ID))
+    val useThemeAdaptive = isSpecialCard && cardStyle == QuickCardStyle.THEME_ADAPTIVE
     val downloadedTracks by viewModel.downloadedTracks.collectAsState()
-    Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).clickable {
-        when (pin) {
-            is PinnedItem.Track -> viewModel.playbackManager.playTrackList(listOf(pin.track))
-            is PinnedItem.Playlist -> onPlaylistClick(pin.playlist)
-            is PinnedItem.Flow -> viewModel.startFlow()
-        }
-    }) {
-        if (pin is PinnedItem.Flow) {
-            Box(Modifier.fillMaxSize().background(flowGradient), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.AllInclusive, contentDescription = "Deezer Flow", tint = Color.White, modifier = Modifier.size(38.dp))
+    val composeShape = cardShape.toComposeShape()
+    val isHorizontal = cardLayout == QuickCardLayout.COMPACT_HORIZONTAL
+    val isCircle = cardShape == QuickCardShape.CIRCLE
+    val centerIcon = when {
+        pin is PinnedItem.Flow -> Icons.Default.AllInclusive
+        pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID -> Icons.Default.Favorite
+        else -> Icons.Default.DownloadDone
+    }
+    val gradient = when {
+        pin is PinnedItem.Flow -> flowGradient
+        pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID -> deezerFavBrush
+        else -> downloadsBrush
+    }
+
+    Box(
+        modifier
+            .then(if (isHorizontal) Modifier.fillMaxWidth().height(size) else Modifier.size(size))
+            .clip(composeShape)
+            .then(
+                if (isHorizontal || useThemeAdaptive) Modifier.border(1.dp, colors.border.copy(alpha = 0.6f), composeShape)
+                else Modifier
+            )
+            .clickable {
+                when (pin) {
+                    is PinnedItem.Track -> viewModel.playbackManager.playTrackList(listOf(pin.track))
+                    is PinnedItem.Playlist -> onPlaylistClick(pin.playlist)
+                    is PinnedItem.Flow -> viewModel.startFlow()
+                }
             }
-        } else if (pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID) {
-            Box(Modifier.fillMaxSize().background(deezerFavBrush), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Favorite, contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
-            }
-        } else if (pin is PinnedItem.Playlist && pin.playlist.id == LOCAL_DOWNLOADS_ID) {
-            Box(Modifier.fillMaxSize().background(downloadsBrush), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.DownloadDone, contentDescription = "İndirilen Müzikler", tint = Color.White, modifier = Modifier.size(42.dp))
+    ) {
+        if (isHorizontal) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.card),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (contentMode != QuickCardContentMode.TITLE_ONLY) {
+                    Box(
+                        modifier = Modifier
+                            .size(size)
+                            .clip(composeShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSpecialCard) {
+                            val thumbIconSize = (24.dp * (size / 58.dp) * iconScale).coerceIn(14.dp, 38.dp)
+                            if (useThemeAdaptive) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(primary.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(centerIcon, contentDescription = title, tint = primary, modifier = Modifier.size(thumbIconSize))
+                                }
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(gradient),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(centerIcon, contentDescription = title, tint = Color.White, modifier = Modifier.size(thumbIconSize))
+                                }
+                            }
+                        } else {
+                            ArtworkImage(
+                                art,
+                                modifier = Modifier.fillMaxSize(),
+                                shape = composeShape,
+                                fallback = if (pin is PinnedItem.Playlist) Icons.AutoMirrored.Filled.PlaylistPlay else Icons.Default.MusicNote
+                            )
+                        }
+                    }
+                }
+                Text(
+                    title,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(
+                            start = if (contentMode == QuickCardContentMode.TITLE_ONLY) 14.dp else 10.dp,
+                            end = 30.dp
+                        ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = if (columnsCount >= 3) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = if (columnsCount >= 3) 1 else 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         } else {
-            ArtworkImage(art, modifier = Modifier.fillMaxSize(), fallback = if (pin is PinnedItem.Playlist) Icons.AutoMirrored.Filled.PlaylistPlay else Icons.Default.MusicNote)
+            val cardRatio = (size / 108.dp).coerceIn(0.45f, 1.3f)
+            val isImageOnly = contentMode == QuickCardContentMode.IMAGE_ONLY
+            val isTitleOnly = contentMode == QuickCardContentMode.TITLE_ONLY
+            val iconVerticalOffset = if (isImageOnly) 0.dp else (-6).dp
+
+            if (isTitleOnly) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(themeCardBrush),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        title,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = if (size < 84.dp) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            } else {
+                if (isSpecialCard) {
+                    if (useThemeAdaptive) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(themeCardBrush),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size((48.dp * cardRatio * iconScale).coerceIn(22.dp, 68.dp))
+                                    .offset(y = iconVerticalOffset)
+                                    .clip(CircleShape)
+                                    .background(primary.copy(alpha = 0.16f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    centerIcon,
+                                    contentDescription = title,
+                                    tint = primary,
+                                    modifier = Modifier.size((26.dp * cardRatio * iconScale).coerceIn(12.dp, 38.dp))
+                                )
+                            }
+                        }
+                    } else {
+                        val baseIconDp = when {
+                            pin is PinnedItem.Flow -> 36.dp
+                            pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID -> 42.dp
+                            else -> 40.dp
+                        }
+                        Box(Modifier.fillMaxSize().background(gradient), contentAlignment = Alignment.Center) {
+                            Icon(
+                                centerIcon,
+                                contentDescription = title,
+                                tint = Color.White,
+                                modifier = Modifier
+                                    .size((baseIconDp * cardRatio * iconScale).coerceIn(16.dp, 56.dp))
+                                    .offset(y = iconVerticalOffset)
+                            )
+                        }
+                        if (!isImageOnly) {
+                            Box(Modifier.fillMaxWidth().height(52.dp).align(Alignment.BottomCenter).background(CardBottomScrim))
+                        }
+                    }
+                } else {
+                    ArtworkImage(
+                        art,
+                        modifier = Modifier.fillMaxSize(),
+                        shape = composeShape,
+                        fallback = if (pin is PinnedItem.Playlist) Icons.AutoMirrored.Filled.PlaylistPlay else Icons.Default.MusicNote
+                    )
+                    if (!isImageOnly) {
+                        Box(Modifier.fillMaxWidth().height(52.dp).align(Alignment.BottomCenter).background(CardBottomScrim))
+                    }
+                }
+                if (!isImageOnly) {
+                    val labelColor = if (useThemeAdaptive) MaterialTheme.colorScheme.onSurface else Color.White
+                    Text(
+                        title,
+                        modifier = if (isCircle) {
+                            Modifier.align(Alignment.BottomCenter).padding(start = 10.dp, end = 10.dp, bottom = 8.dp)
+                        } else {
+                            Modifier.align(Alignment.BottomStart).padding(start = 8.dp, end = 8.dp, bottom = 6.dp)
+                        },
+                        color = labelColor,
+                        style = if (size < 84.dp) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = if (isCircle) TextAlign.Center else TextAlign.Start,
+                        maxLines = if (isCircle || size < 84.dp) 1 else 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
-        Box(Modifier.fillMaxWidth().height(52.dp).align(Alignment.BottomCenter).background(CardBottomScrim))
-        Text(title, modifier = Modifier.align(Alignment.BottomStart).padding(start = 6.dp, end = 6.dp, bottom = 6.dp), color = Color.White,
-            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Box(Modifier.align(Alignment.TopEnd)) {
-            IconButton(onClick = { if (pin is PinnedItem.Track) viewModel.openTrackMenu(pin.track) else menu = true }, modifier = Modifier.size(34.dp)) {
-                Icon(if (pinned) Icons.Default.PushPin else Icons.Default.MoreVert, contentDescription = "Hızlı erişim seçenekleri", tint = Color.White, modifier = Modifier.size(18.dp))
+        Box(
+            Modifier.align(
+                when {
+                    isHorizontal -> Alignment.CenterEnd
+                    isCircle -> Alignment.TopCenter
+                    else -> Alignment.TopEnd
+                }
+            ).then(
+                when {
+                    isHorizontal -> Modifier.padding(end = 2.dp)
+                    isCircle -> Modifier.padding(top = 2.dp)
+                    else -> Modifier
+                }
+            )
+        ) {
+            IconButton(
+                onClick = { if (pin is PinnedItem.Track) viewModel.openTrackMenu(pin.track) else menu = true },
+                modifier = Modifier.size(if (isHorizontal || size < 84.dp) 26.dp else 34.dp)
+            ) {
+                Icon(
+                    if (pinned) Icons.Default.PushPin else Icons.Default.MoreVert,
+                    contentDescription = "Hızlı erişim seçenekleri",
+                    tint = if (isHorizontal || useThemeAdaptive) colors.textSecondary else Color.White,
+                    modifier = Modifier.size(if (isHorizontal || size < 84.dp) 14.dp else 18.dp)
+                )
             }
             if (menu) {
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

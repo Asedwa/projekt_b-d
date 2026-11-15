@@ -53,6 +53,7 @@ fun ArtworkImage(
             AsyncImage(
                 model = request,
                 contentDescription = null,
+                alignment = Alignment.Center,
                 contentScale = contentScale,
                 onError = { failed = true },
                 modifier = Modifier.fillMaxSize()

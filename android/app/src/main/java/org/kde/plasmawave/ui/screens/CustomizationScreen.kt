@@ -4,8 +4,10 @@ import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,31 +21,68 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import java.io.File
+import kotlin.math.roundToInt
 import org.kde.plasmawave.R
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.MainViewModel
+import org.kde.plasmawave.ui.QuickCardContentMode
+import org.kde.plasmawave.ui.QuickCardLayout
+import org.kde.plasmawave.ui.QuickCardShape
+import org.kde.plasmawave.ui.QuickCardStyle
 import org.kde.plasmawave.ui.components.*
 
 private enum class CropTarget {
     HEADER_LOGO,
     LAUNCHER_ICON
+}
+
+private enum class CardEditTarget(val title: String) {
+    BOTH("Birlikte"),
+    HOME("Ana Sayfa"),
+    LIBRARY("Kitaplık")
+}
+
+private enum class CustomizationCategory(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector
+) {
+    IDENTITY(
+        title = "Uygulama Kimliği & Logo",
+        subtitle = "Telefon uygulama ikonu ve ana sayfa üst logosu",
+        icon = Icons.Default.Apps
+    ),
+    HOME_AND_SHORTCUTS(
+        title = "Ana Sayfa & Hızlı Erişim",
+        subtitle = "Hızlı erişim kart stilleri, tuş boyutları, öneriler ve widget'lar",
+        icon = Icons.Default.Home
+    ),
+    PLAYER_AND_VISUALS(
+        title = "Oynatıcı & Görsel Efektler",
+        subtitle = "Dinamik renkler, kapak çerçevesi ve ilerleme çubuğu stilleri",
+        icon = Icons.Default.MusicNote
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,12 +105,34 @@ fun CustomizationScreen(
     val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
     val customLauncherTimestamp by viewModel.customLauncherIconTimestamp.collectAsState()
     val launcherIcon by viewModel.launcherIcon.collectAsState()
-    val homeFeedType by viewModel.homeFeedType.collectAsState()
+    val homeFeedTypes by viewModel.homeFeedTypes.collectAsState()
     val resumePlaybackEnabled by viewModel.resumePlaybackEnabled.collectAsState()
     val enabledHomeWidgets by viewModel.enabledHomeWidgets.collectAsState()
+    val quickCardStyle by viewModel.quickCardStyle.collectAsState()
+    val quickCardScale by viewModel.quickCardScale.collectAsState()
+    val quickIconScale by viewModel.quickIconScale.collectAsState()
+    val quickCardShape by viewModel.quickCardShape.collectAsState()
+    val quickCardLayout by viewModel.quickCardLayout.collectAsState()
+    val quickCardContentMode by viewModel.quickCardContentMode.collectAsState()
+    val librarySyncWithQuick by viewModel.librarySyncWithQuick.collectAsState()
+    val libraryCardStyle by viewModel.libraryCardStyle.collectAsState()
+    val libraryCardScale by viewModel.libraryCardScale.collectAsState()
+    val libraryIconScale by viewModel.libraryIconScale.collectAsState()
+    val libraryCardShape by viewModel.libraryCardShape.collectAsState()
+    val libraryCardLayout by viewModel.libraryCardLayout.collectAsState()
+    val libraryCardContentMode by viewModel.libraryCardContentMode.collectAsState()
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val context = LocalContext.current
+
+    var activeCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    val activeCategory = activeCategoryName?.let { name ->
+        CustomizationCategory.entries.firstOrNull { it.name == name }
+    }
+
+    BackHandler(enabled = activeCategory != null) {
+        activeCategoryName = null
+    }
 
     // Cropper Dialog State
     var selectedCropUri by remember { mutableStateOf<Uri?>(null) }
@@ -155,9 +216,15 @@ fun CustomizationScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text("Özelleştirme") },
+                title = { Text(activeCategory?.title ?: "Özelleştirme") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        if (activeCategory != null) {
+                            activeCategoryName = null
+                        } else {
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
                     }
                 },
@@ -169,13 +236,99 @@ fun CustomizationScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-        ) {
-            // 0. TELEFON UYGULAMA İKONU (BAŞLATICI)
+        AnimatedContent(
+            targetState = activeCategory,
+            label = "customizationCategory"
+        ) { category ->
+            if (category == null) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    item {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "KATEGORİLER",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textSecondary
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
+
+                    items(CustomizationCategory.entries.size) { index ->
+                        val itemCategory = CustomizationCategory.entries[index]
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable { activeCategoryName = itemCategory.name },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = colors.card)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(primary.copy(alpha = 0.14f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = itemCategory.icon,
+                                        contentDescription = null,
+                                        tint = primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = itemCategory.title,
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = itemCategory.subtitle,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = colors.textSecondary
+                                        )
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = colors.textSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(80.dp))
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(horizontal = 16.dp)
+                ) {
+                    if (category == CustomizationCategory.IDENTITY) {
+                        // 0. TELEFON UYGULAMA İKONU (BAŞLATICI)
             item {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
@@ -516,7 +669,669 @@ fun CustomizationScreen(
                 }
             }
 
-            // 2. ANA SAYFA ŞARKI ÖNERİLERİ BÖLÜMÜ
+                    }
+
+                    if (category == CustomizationCategory.HOME_AND_SHORTCUTS) {
+                        // HIZLI ERİŞİM & KİTAPLIK KART AYARLARI
+                        item {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "HIZLI ERİŞİM & KİTAPLIK KART AYARLARI",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.textSecondary
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Ana sayfa ve kitaplıktaki kartların görünümünü birlikte veya ayrı ayrı özelleştirin:",
+                                style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            var editTargetName by rememberSaveable {
+                                mutableStateOf(if (librarySyncWithQuick) CardEditTarget.BOTH.name else CardEditTarget.HOME.name)
+                            }
+                            val editTarget = CardEditTarget.entries.firstOrNull { it.name == editTargetName } ?: CardEditTarget.BOTH
+                            val editingLibraryOnly = editTarget == CardEditTarget.LIBRARY
+                            val activeCardStyle = if (editingLibraryOnly) libraryCardStyle else quickCardStyle
+                            val activeCardScale = if (editingLibraryOnly) libraryCardScale else quickCardScale
+                            val activeIconScale = if (editingLibraryOnly) libraryIconScale else quickIconScale
+                            val activeCardShape = if (editingLibraryOnly) libraryCardShape else quickCardShape
+                            val activeCardLayout = if (editingLibraryOnly) libraryCardLayout else quickCardLayout
+                            val activeContentMode = if (editingLibraryOnly) libraryCardContentMode else quickCardContentMode
+
+                            val applyCardStyle: (QuickCardStyle) -> Unit = { style ->
+                                if (editTarget != CardEditTarget.LIBRARY) viewModel.setQuickCardStyle(style)
+                                if (editTarget != CardEditTarget.HOME) viewModel.setLibraryCardStyle(style)
+                            }
+                            val applyCardScale: (Float) -> Unit = { scale ->
+                                if (editTarget != CardEditTarget.LIBRARY) viewModel.setQuickCardScale(scale)
+                                if (editTarget != CardEditTarget.HOME) viewModel.setLibraryCardScale(scale)
+                            }
+                            val applyIconScale: (Float) -> Unit = { scale ->
+                                if (editTarget != CardEditTarget.LIBRARY) viewModel.setQuickIconScale(scale)
+                                if (editTarget != CardEditTarget.HOME) viewModel.setLibraryIconScale(scale)
+                            }
+                            val applyCardShape: (QuickCardShape) -> Unit = { shape ->
+                                if (editTarget != CardEditTarget.LIBRARY) viewModel.setQuickCardShape(shape)
+                                if (editTarget != CardEditTarget.HOME) viewModel.setLibraryCardShape(shape)
+                            }
+                            val applyCardLayout: (QuickCardLayout) -> Unit = { layout ->
+                                if (editTarget != CardEditTarget.LIBRARY) viewModel.setQuickCardLayout(layout)
+                                if (editTarget != CardEditTarget.HOME) viewModel.setLibraryCardLayout(layout)
+                            }
+                            val applyContentMode: (QuickCardContentMode) -> Unit = { mode ->
+                                if (editTarget != CardEditTarget.LIBRARY) viewModel.setQuickCardContentMode(mode)
+                                if (editTarget != CardEditTarget.HOME) viewModel.setLibraryCardContentMode(mode)
+                            }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = colors.card)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    // Hedef Seçici: Birlikte / Ana Sayfa / Kitaplık
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        CardEditTarget.entries.forEach { targetOption ->
+                                            val selected = editTarget == targetOption
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(
+                                                        if (selected) primary.copy(alpha = 0.16f)
+                                                        else MaterialTheme.colorScheme.background.copy(alpha = 0.5f)
+                                                    )
+                                                    .border(
+                                                        width = if (selected) 1.5.dp else 1.dp,
+                                                        color = if (selected) primary else colors.border.copy(alpha = 0.4f),
+                                                        shape = RoundedCornerShape(10.dp)
+                                                    )
+                                                    .clickable {
+                                                        editTargetName = targetOption.name
+                                                        if (targetOption == CardEditTarget.BOTH) {
+                                                            viewModel.setLibrarySyncWithQuick(true)
+                                                            viewModel.setLibraryCardStyle(quickCardStyle)
+                                                            viewModel.setLibraryCardScale(quickCardScale)
+                                                            viewModel.setLibraryIconScale(quickIconScale)
+                                                            viewModel.setLibraryCardShape(quickCardShape)
+                                                            viewModel.setLibraryCardLayout(quickCardLayout)
+                                                            viewModel.setLibraryCardContentMode(quickCardContentMode)
+                                                        } else {
+                                                            viewModel.setLibrarySyncWithQuick(false)
+                                                        }
+                                                    }
+                                                    .padding(vertical = 9.dp, horizontal = 6.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = targetOption.title,
+                                                    style = MaterialTheme.typography.labelMedium.copy(
+                                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = if (selected) primary else MaterialTheme.colorScheme.onBackground
+                                                    ),
+                                                    maxLines = 1
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // Canlı çoklu kart önizlemesi (HomeScreen / LibraryScreen ızgara düzeniyle birebir)
+                                    val composeShape = activeCardShape.toComposeShape()
+                                    val isCircleShape = activeCardShape == QuickCardShape.CIRCLE
+                                    val previewItems = remember {
+                                        listOf(
+                                            Triple("Deezer Flow", Icons.Default.AllInclusive, listOf(Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF97316))),
+                                            Triple("İndirilenler", Icons.Default.DownloadDone, listOf(Color(0xFF0EA5E9), Color(0xFF10B981), Color(0xFF8B5CF6))),
+                                            Triple("Sevdiğim", Icons.Default.Favorite, listOf(Color(0xFFEF5466), Color(0xFF7B63DC), Color(0xFFE993BA))),
+                                            Triple("Keşfet", Icons.Default.Explore, listOf(Color(0xFF6366F1), Color(0xFF06B6D4), Color(0xFF10B981))),
+                                            Triple("Chill Mix", Icons.Default.Headphones, listOf(Color(0xFFF59E0B), Color(0xFFEF4444), Color(0xFFEC4899))),
+                                            Triple("Liste", Icons.Default.QueueMusic, listOf(Color(0xFF14B8A6), Color(0xFF3B82F6), Color(0xFF6366F1)))
+                                        )
+                                    }
+
+                                    BoxWithConstraints(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.55f))
+                                            .padding(12.dp)
+                                    ) {
+                                        val containerMaxWidth = maxWidth
+                                        val isHorizontalLayout = activeContentMode != QuickCardContentMode.IMAGE_ONLY &&
+                                            activeCardLayout == QuickCardLayout.COMPACT_HORIZONTAL
+                                        val isImageOnlyMode = activeContentMode == QuickCardContentMode.IMAGE_ONLY
+                                        val isTitleOnlyMode = activeContentMode == QuickCardContentMode.TITLE_ONLY
+                                        val previewColumns = if (isHorizontalLayout) {
+                                            when {
+                                                activeCardScale <= 0.78f -> 3
+                                                activeCardScale >= 1.18f -> 1
+                                                else -> 2
+                                            }
+                                        } else {
+                                            val basePreviewCardSize = (containerMaxWidth - 16.dp) / 3
+                                            val previewCardSize = (basePreviewCardSize * activeCardScale).coerceIn(44.dp, 136.dp)
+                                            ((containerMaxWidth + 8.dp) / (previewCardSize + 8.dp)).toInt().coerceIn(2, 6)
+                                        }
+                                        val previewRows = previewItems.chunked(previewColumns)
+
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "CANLI ÖNİZLEME",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = colors.textSecondary
+                                                    )
+                                                )
+                                                Text(
+                                                    text = "$previewColumns sütun yan yana",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = primary
+                                                    )
+                                                )
+                                            }
+
+                                            if (isHorizontalLayout) {
+                                                val previewHeight = (54.dp * activeCardScale).coerceIn(42.dp, 72.dp)
+                                                previewRows.forEach { rowItems ->
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        rowItems.forEach { (itemTitle, itemIcon, gradColors) ->
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .weight(1f)
+                                                                    .height(previewHeight)
+                                                                    .clip(composeShape)
+                                                                    .background(colors.card)
+                                                                    .border(1.dp, colors.border.copy(alpha = 0.6f), composeShape)
+                                                            ) {
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    if (!isTitleOnlyMode) {
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .size(previewHeight)
+                                                                                .clip(composeShape)
+                                                                                .background(
+                                                                                    if (activeCardStyle == QuickCardStyle.VIBRANT_GRADIENT) {
+                                                                                        Brush.linearGradient(gradColors)
+                                                                                    } else {
+                                                                                        Brush.verticalGradient(
+                                                                                            listOf(primary.copy(alpha = 0.18f), primary.copy(alpha = 0.12f))
+                                                                                        )
+                                                                                    }
+                                                                                ),
+                                                                            contentAlignment = Alignment.Center
+                                                                        ) {
+                                                                            Icon(
+                                                                                imageVector = itemIcon,
+                                                                                contentDescription = null,
+                                                                                tint = if (activeCardStyle == QuickCardStyle.VIBRANT_GRADIENT) Color.White else primary,
+                                                                                modifier = Modifier.size((22.dp * (previewHeight / 54.dp) * activeIconScale).coerceIn(13.dp, 34.dp))
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                    Text(
+                                                                        text = itemTitle,
+                                                                        style = if (previewColumns >= 3) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                                                                        fontWeight = FontWeight.SemiBold,
+                                                                        color = MaterialTheme.colorScheme.onBackground,
+                                                                        maxLines = 1,
+                                                                        overflow = TextOverflow.Ellipsis,
+                                                                        modifier = Modifier
+                                                                            .weight(1f)
+                                                                            .padding(horizontal = if (isTitleOnlyMode) 12.dp else 8.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                        repeat(previewColumns - rowItems.size) {
+                                                            Spacer(Modifier.weight(1f))
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                val basePreviewCardSize = (containerMaxWidth - 16.dp) / 3
+                                                val previewCardSize = (basePreviewCardSize * activeCardScale).coerceIn(44.dp, 136.dp)
+                                                previewRows.forEach { rowItems ->
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        rowItems.forEach { (itemTitle, itemIcon, gradColors) ->
+                                                            val cardRatio = (previewCardSize / 104.dp).coerceIn(0.45f, 1.3f)
+                                                            val previewIconBoxSize = (40.dp * cardRatio * activeIconScale).coerceIn(18.dp, 58.dp)
+                                                            val previewIconSize = (20.dp * cardRatio * activeIconScale).coerceIn(11.dp, 34.dp)
+                                                            val previewGradientIconSize = (28.dp * cardRatio * activeIconScale).coerceIn(14.dp, 48.dp)
+
+                                                            val previewIconOffset = if (isImageOnlyMode) 0.dp else (-6).dp
+
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(previewCardSize)
+                                                                    .clip(composeShape)
+                                                                    .then(
+                                                                        if (!isTitleOnlyMode && activeCardStyle == QuickCardStyle.VIBRANT_GRADIENT) {
+                                                                            Modifier.background(Brush.linearGradient(gradColors))
+                                                                        } else {
+                                                                            Modifier
+                                                                                .background(
+                                                                                    Brush.verticalGradient(
+                                                                                        listOf(primary.copy(alpha = 0.24f), colors.card)
+                                                                                    )
+                                                                                )
+                                                                                .border(1.dp, colors.border.copy(alpha = 0.65f), composeShape)
+                                                                        }
+                                                                    )
+                                                            ) {
+                                                                if (isTitleOnlyMode) {
+                                                                    Text(
+                                                                        text = itemTitle,
+                                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                                            color = MaterialTheme.colorScheme.onBackground,
+                                                                            fontWeight = FontWeight.Bold
+                                                                        ),
+                                                                        textAlign = TextAlign.Center,
+                                                                        maxLines = 2,
+                                                                        overflow = TextOverflow.Ellipsis,
+                                                                        modifier = Modifier
+                                                                            .align(Alignment.Center)
+                                                                            .padding(horizontal = 6.dp)
+                                                                    )
+                                                                } else {
+                                                                    if (activeCardStyle == QuickCardStyle.VIBRANT_GRADIENT) {
+                                                                        if (!isImageOnlyMode) {
+                                                                            Box(
+                                                                                modifier = Modifier
+                                                                                    .fillMaxSize()
+                                                                                    .background(
+                                                                                        Brush.verticalGradient(
+                                                                                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))
+                                                                                        )
+                                                                                    )
+                                                                            )
+                                                                        }
+                                                                        Icon(
+                                                                            imageVector = itemIcon,
+                                                                            contentDescription = null,
+                                                                            tint = Color.White,
+                                                                            modifier = Modifier
+                                                                                .size(previewGradientIconSize)
+                                                                                .align(Alignment.Center)
+                                                                                .offset(y = previewIconOffset)
+                                                                        )
+                                                                    } else {
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .size(previewIconBoxSize)
+                                                                                .align(Alignment.Center)
+                                                                                .offset(y = previewIconOffset)
+                                                                                .clip(CircleShape)
+                                                                                .background(primary.copy(alpha = 0.14f)),
+                                                                            contentAlignment = Alignment.Center
+                                                                        ) {
+                                                                            Icon(
+                                                                                imageVector = itemIcon,
+                                                                                contentDescription = null,
+                                                                                tint = primary,
+                                                                                modifier = Modifier.size(previewIconSize)
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                    if (!isImageOnlyMode) {
+                                                                        Text(
+                                                                            text = itemTitle,
+                                                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                                                color = if (activeCardStyle == QuickCardStyle.VIBRANT_GRADIENT) {
+                                                                                    Color.White
+                                                                                } else {
+                                                                                    MaterialTheme.colorScheme.onBackground
+                                                                                },
+                                                                                fontWeight = FontWeight.SemiBold
+                                                                            ),
+                                                                            textAlign = if (isCircleShape) TextAlign.Center else TextAlign.Start,
+                                                                            maxLines = 1,
+                                                                            overflow = TextOverflow.Ellipsis,
+                                                                            modifier = if (isCircleShape) {
+                                                                                Modifier
+                                                                                    .align(Alignment.BottomCenter)
+                                                                                    .padding(start = 8.dp, end = 8.dp, bottom = 6.dp)
+                                                                            } else {
+                                                                                Modifier
+                                                                                    .align(Alignment.BottomStart)
+                                                                                    .padding(horizontal = 6.dp, vertical = 5.dp)
+                                                                            }
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Text(
+                                        text = "Kart Düzeni",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        QuickCardLayout.entries.forEach { layoutOption ->
+                                            val selected = activeCardLayout == layoutOption
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(
+                                                        if (selected) primary.copy(alpha = 0.16f)
+                                                        else MaterialTheme.colorScheme.background.copy(alpha = 0.5f)
+                                                    )
+                                                    .border(
+                                                        width = if (selected) 1.5.dp else 1.dp,
+                                                        color = if (selected) primary else colors.border.copy(alpha = 0.4f),
+                                                        shape = RoundedCornerShape(10.dp)
+                                                    )
+                                                    .clickable { applyCardLayout(layoutOption) }
+                                                    .padding(vertical = 10.dp, horizontal = 8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = layoutOption.title,
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = if (selected) primary else MaterialTheme.colorScheme.onBackground
+                                                    ),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Text(
+                                        text = "İçerik Modu",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        QuickCardContentMode.entries.forEach { modeOption ->
+                                            val selected = activeContentMode == modeOption
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(
+                                                        if (selected) primary.copy(alpha = 0.16f)
+                                                        else MaterialTheme.colorScheme.background.copy(alpha = 0.5f)
+                                                    )
+                                                    .border(
+                                                        width = if (selected) 1.5.dp else 1.dp,
+                                                        color = if (selected) primary else colors.border.copy(alpha = 0.4f),
+                                                        shape = RoundedCornerShape(10.dp)
+                                                    )
+                                                    .clickable { applyContentMode(modeOption) }
+                                                    .padding(vertical = 10.dp, horizontal = 6.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = modeOption.title,
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = if (selected) primary else MaterialTheme.colorScheme.onBackground
+                                                    ),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Text(
+                                        text = "Kart Şekli",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        QuickCardShape.entries.chunked(2).forEach { shapeRow ->
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                shapeRow.forEach { shapeOption ->
+                                                    val selected = activeCardShape == shapeOption
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(
+                                                                if (selected) primary.copy(alpha = 0.16f)
+                                                                else MaterialTheme.colorScheme.background.copy(alpha = 0.5f)
+                                                            )
+                                                            .border(
+                                                                width = if (selected) 1.5.dp else 1.dp,
+                                                                color = if (selected) primary else colors.border.copy(alpha = 0.4f),
+                                                                shape = RoundedCornerShape(10.dp)
+                                                            )
+                                                            .clickable { applyCardShape(shapeOption) }
+                                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(18.dp)
+                                                                .clip(shapeOption.toComposeShape())
+                                                                .background(
+                                                                    if (selected) primary else colors.textSecondary.copy(alpha = 0.35f)
+                                                                )
+                                                        )
+                                                        Text(
+                                                            text = shapeOption.title,
+                                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                                color = if (selected) primary else MaterialTheme.colorScheme.onBackground
+                                                            ),
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Text(
+                                        text = "Kart Görünüm Stili",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        listOf(
+                                            QuickCardStyle.THEME_ADAPTIVE to "Temaya Uyumlu",
+                                            QuickCardStyle.VIBRANT_GRADIENT to "Renkli Gradyan"
+                                        ).forEach { (styleOption, label) ->
+                                            val selected = activeCardStyle == styleOption
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(
+                                                        if (selected) primary.copy(alpha = 0.16f)
+                                                        else MaterialTheme.colorScheme.background.copy(alpha = 0.5f)
+                                                    )
+                                                    .border(
+                                                        width = if (selected) 1.5.dp else 1.dp,
+                                                        color = if (selected) primary else colors.border.copy(alpha = 0.4f),
+                                                        shape = RoundedCornerShape(10.dp)
+                                                    )
+                                                    .clickable { applyCardStyle(styleOption) }
+                                                    .padding(vertical = 10.dp, horizontal = 8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    style = MaterialTheme.typography.bodySmall.copy(
+                                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                        color = if (selected) primary else MaterialTheme.colorScheme.onBackground
+                                                    ),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    // Kart / Tuş Boyutu Slider
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Tuş / Kart Boyutu",
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onBackground
+                                            )
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "${(activeCardScale * 100).roundToInt()}%",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = primary
+                                                )
+                                            )
+                                            if (kotlin.math.abs(activeCardScale - 1.0f) > 0.01f) {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "Sıfırla",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        color = colors.textSecondary,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    ),
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .clickable { applyCardScale(1.0f) }
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Slider(
+                                        value = activeCardScale,
+                                        onValueChange = { applyCardScale(it) },
+                                        valueRange = 0.50f..1.30f
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Simge Boyutu Slider
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Simge Boyutu",
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onBackground
+                                            )
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "${(activeIconScale * 100).roundToInt()}%",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = primary
+                                                )
+                                            )
+                                            if (kotlin.math.abs(activeIconScale - 1.0f) > 0.01f) {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "Sıfırla",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        color = colors.textSecondary,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    ),
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .clickable { applyIconScale(1.0f) }
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Slider(
+                                        value = activeIconScale,
+                                        onValueChange = { applyIconScale(it) },
+                                        valueRange = 0.70f..1.40f
+                                    )
+                                }
+                            }
+                        }
+
+                        // 2. ANA SAYFA ŞARKI ÖNERİLERİ BÖLÜMÜ
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
@@ -528,7 +1343,7 @@ fun CustomizationScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Ana sayfadaki 'Senin için' bölümünün yerine ne gösterileceğini seçin:",
+                    text = "Ana sayfada gösterilecek şarkı öneri bölümlerini seçin (birden fazla seçebilirsiniz):",
                     style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -536,14 +1351,14 @@ fun CustomizationScreen(
 
             items(HomeFeedType.entries.size) { index ->
                 val feedOption = HomeFeedType.entries[index]
-                val isSelected = feedOption == homeFeedType
+                val isSelected = feedOption in homeFeedTypes
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .clickable { viewModel.setHomeFeedType(feedOption) }
+                        .clickable { viewModel.toggleHomeFeedType(feedOption) }
                         .border(
                             width = if (isSelected) 2.dp else 1.dp,
                             color = if (isSelected) primary else colors.border,
@@ -557,10 +1372,10 @@ fun CustomizationScreen(
                             .fillMaxWidth()
                             .padding(12.dp)
                     ) {
-                        RadioButton(
-                            selected = isSelected,
-                            onClick = { viewModel.setHomeFeedType(feedOption) },
-                            colors = RadioButtonDefaults.colors(selectedColor = primary)
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { viewModel.toggleHomeFeedType(feedOption) },
+                            colors = CheckboxDefaults.colors(checkedColor = primary)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
 
@@ -751,9 +1566,12 @@ fun CustomizationScreen(
                 }
             }
 
-            // DİNAMİK ALBÜM RENKLERİ
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            if (category == CustomizationCategory.PLAYER_AND_VISUALS) {
+                // DİNAMİK ALBÜM RENKLERİ
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "DİNAMİK ALBÜM KAPAĞI RENKLERİ",
                     style = MaterialTheme.typography.bodySmall.copy(
@@ -816,8 +1634,11 @@ fun CustomizationScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                }
+            }
 
+            if (category == CustomizationCategory.HOME_AND_SHORTCUTS) {
+                item {
                 // Deezer Flow Yerleşimi
                 Text(
                     text = "DEEZER FLOW YERLEŞİMİ (AI MÜZİK AKIŞI)",
@@ -1072,8 +1893,11 @@ fun CustomizationScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                }
+            }
 
+            if (category == CustomizationCategory.PLAYER_AND_VISUALS) {
+                item {
                 // Albüm Kapağı Hareketi
                 Text(
                     text = "ALBÜM KAPAĞI HAREKETİ",
@@ -1321,8 +2145,12 @@ fun CustomizationScreen(
                 }
             }
 
-            item {
-                Spacer(modifier = Modifier.height(80.dp))
+                    }
+
+                    item {
+                        Spacer(modifier = Modifier.height(80.dp))
+                    }
+                }
             }
         }
     }
