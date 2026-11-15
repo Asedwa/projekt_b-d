@@ -3,6 +3,7 @@ package org.kde.plasmawave.player
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
@@ -22,6 +23,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,9 +83,16 @@ class PlaybackManager private constructor(private val context: Context) {
     // Serialize Rust FFI + SQLite queue operations off the UI thread so rapid taps stay ordered without jank.
     private val queueDispatcher = Dispatchers.IO.limitedParallelism(1)
     private var controllerFuture: ListenableFuture<MediaController>? = null
-    private var mediaController: MediaController? = null
+    private var playbackPlayer: Player? = null
+    private var onQueueChanged: ((FfiQueueSnapshot) -> Unit)? = null
     private var clearWhenConnected = false
-    private var pendingEntry: FfiQueueEntry? = null
+    private var pendingPlayback: Pair<FfiQueueEntry, Long>? = null
+    private val queueMutex = Mutex()
+    private var playbackGeneration = 0L
+    private val transitionWakeLock by lazy {
+        (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PlasmaWave:TrackTransition")
+    }
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -106,32 +116,69 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     private fun initMediaController() {
+        if (controllerFuture != null) return
         val sessionToken = SessionToken(
             context,
             ComponentName(context, PlasmaPlaybackService::class.java)
         )
-        controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
-        controllerFuture?.addListener({
+        // Keep the service connection, but handle playback on its player directly. Track-end
+        // processing must not depend on a UI controller receiving a remote state update.
+        val future = MediaController.Builder(context, sessionToken)
+            .setListener(object : MediaController.Listener {
+                override fun onDisconnected(controller: MediaController) {
+                    controllerFuture = null
+                }
+            })
+            .buildAsync()
+        controllerFuture = future
+        future.addListener({
             scope.launch {
                 try {
-                    mediaController = controllerFuture?.get()?.apply {
-                        addListener(playerListener)
-                    }
-                    if (clearWhenConnected) {
-                        mediaController?.stop()
-                        mediaController?.clearMediaItems()
-                        clearWhenConnected = false
-                    }
-                    pendingEntry?.let { entry ->
-                        pendingEntry = null
-                        prepareAndPlay(entry)
-                    }
-                    syncPlayerState()
+                    future.get()
                 } catch (e: Exception) {
+                    if (controllerFuture === future) controllerFuture = null
                     Log.e(TAG, "Failed to connect to MediaController", e)
                 }
             }
         }, MoreExecutors.directExecutor())
+    }
+
+    internal fun attachPlayer(player: Player, onQueueChanged: (FfiQueueSnapshot) -> Unit) {
+        playbackPlayer?.removeListener(playerListener)
+        playbackPlayer = player
+        this.onQueueChanged = onQueueChanged
+        player.addListener(playerListener)
+        _uiState.value.queueSnapshot?.let(onQueueChanged)
+        if (clearWhenConnected) {
+            player.stop()
+            player.clearMediaItems()
+            clearWhenConnected = false
+        }
+        val pending = pendingPlayback
+        pendingPlayback = null
+        if (pending != null) {
+            launchQueueOperation {
+                if (playbackPlayer === player) prepareAndPlay(pending.first, pending.second)
+            }
+        }
+        syncPlayerState()
+    }
+
+    internal fun detachPlayer(player: Player) {
+        if (playbackPlayer !== player) return
+        player.removeListener(playerListener)
+        playbackPlayer = null
+        onQueueChanged = null
+        playbackGeneration++
+        stopProgressTicker()
+        _uiState.value = _uiState.value.copy(isPlaying = false)
+        controllerFuture?.let(MediaController::releaseFuture)
+        controllerFuture = null
+    }
+
+    // Keep the entire queue change + stream preparation ordered, including suspending lookups.
+    private fun launchQueueOperation(block: suspend () -> Unit): Job = scope.launch {
+        queueMutex.withLock { block() }
     }
 
     private val playerListener = object : Player.Listener {
@@ -163,7 +210,7 @@ class PlaybackManager private constructor(private val context: Context) {
         progressJob?.cancel()
         progressJob = scope.launch {
             while (isActive) {
-                mediaController?.let { player ->
+                playbackPlayer?.let { player ->
                     _progress.value = PlaybackProgress(
                         positionMs = player.currentPosition.coerceAtLeast(0L),
                         durationMs = player.duration.coerceAtLeast(0L)
@@ -180,7 +227,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     private fun syncPlayerState() {
-        val player = mediaController ?: return
+        val player = playbackPlayer ?: return
         _uiState.value = _uiState.value.copy(isPlaying = player.isPlaying)
         _progress.value = PlaybackProgress(
             positionMs = player.currentPosition.coerceAtLeast(0L),
@@ -200,10 +247,11 @@ class PlaybackManager private constructor(private val context: Context) {
             isShuffle = snapshot.isShuffled,
             repeatMode = snapshot.repeatMode
         )
+        onQueueChanged?.invoke(snapshot)
     }
 
     fun refreshQueueSnapshot() {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val snapshot = withContext(queueDispatcher) { readSnapshot() }
                 applySnapshot(snapshot)
@@ -214,14 +262,21 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun playTrackList(tracks: List<FfiTrack>, startIndex: Int = 0, startPositionMs: Long = 0L) {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val (entry, snapshot) = withContext(queueDispatcher) {
                     val replaced = PlasmaWaveApp.core.queueReplace(tracks, startIndex.toUInt())
                     replaced to readSnapshot()
                 }
                 applySnapshot(snapshot)
-                entry?.let { prepareAndPlay(it, startPositionMs) }
+                if (entry != null) {
+                    prepareAndPlay(entry, startPositionMs)
+                } else {
+                    pendingPlayback = null
+                    playbackGeneration++
+                    playbackPlayer?.stop()
+                    playbackPlayer?.clearMediaItems()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error replacing queue", e)
             }
@@ -229,7 +284,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun playNext(tracks: List<FfiTrack>) {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val snapshot = withContext(queueDispatcher) {
                     PlasmaWaveApp.core.queuePlayNext(tracks)
@@ -243,7 +298,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun addToQueue(tracks: List<FfiTrack>) {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val snapshot = withContext(queueDispatcher) {
                     PlasmaWaveApp.core.queueAdd(tracks)
@@ -257,7 +312,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun jumpToQueueIndex(entryId: ULong) {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val (entry, snapshot) = withContext(queueDispatcher) {
                     val jumped = PlasmaWaveApp.core.queueJump(entryId)
@@ -272,7 +327,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun removeQueueEntry(entryId: ULong) {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val (currentRemoved, snapshot) = withContext(queueDispatcher) {
                     val removed = PlasmaWaveApp.core.queueRemove(entryId)
@@ -281,8 +336,10 @@ class PlaybackManager private constructor(private val context: Context) {
                 applySnapshot(snapshot)
                 if (currentRemoved == true) {
                     _uiState.value.currentEntry?.let { prepareAndPlay(it) } ?: run {
-                        pendingEntry = null
-                        mediaController?.stop()
+                        pendingPlayback = null
+                        playbackGeneration++
+                        playbackPlayer?.stop()
+                        playbackPlayer?.clearMediaItems()
                     }
                 }
             } catch (e: Exception) {
@@ -292,14 +349,15 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun clearQueue() {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val snapshot = withContext(queueDispatcher) {
                     PlasmaWaveApp.core.queueReplace(emptyList(), 0u)
                     readSnapshot()
                 }
-                pendingEntry = null
-                val player = mediaController
+                pendingPlayback = null
+                playbackGeneration++
+                val player = playbackPlayer
                 if (player == null) {
                     clearWhenConnected = true
                 } else {
@@ -317,15 +375,28 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
-    fun stopPlayback() { mediaController?.stop() }
+    fun stopPlayback() {
+        playbackGeneration++
+        pendingPlayback = null
+        playbackPlayer?.stop()
+    }
 
     fun togglePlayPause() {
-        val player = mediaController ?: return
-        if (player.isPlaying) {
+        val player = playbackPlayer ?: run {
+            _uiState.value.currentEntry?.let { entry ->
+                launchQueueOperation { prepareAndPlay(entry) }
+            }
+            return
+        }
+        if (player.playWhenReady &&
+            (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+        ) {
             player.pause()
         } else {
-            if (player.playbackState == Player.STATE_IDLE && _uiState.value.currentEntry != null) {
-                _uiState.value.currentEntry?.let { scope.launch { prepareAndPlay(it) } }
+            if ((player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) &&
+                _uiState.value.currentEntry != null
+            ) {
+                _uiState.value.currentEntry?.let { launchQueueOperation { prepareAndPlay(it) } }
             } else {
                 player.play()
             }
@@ -333,46 +404,42 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        mediaController?.seekTo(positionMs)
+        playbackPlayer?.seekTo(positionMs)
         _progress.value = _progress.value.copy(positionMs = positionMs)
     }
 
-    fun skipNext() {
-        scope.launch {
-            try {
-                val (next, snapshot) = withContext(queueDispatcher) {
-                    val advanced = PlasmaWaveApp.core.queueAdvance(FfiAdvanceReason.USER_SKIP)
-                    advanced to readSnapshot()
-                }
-                applySnapshot(snapshot)
-                if (next != null) {
-                    prepareAndPlay(next)
-                } else {
-                    mediaController?.stop()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error skipping to next", e)
+    fun skipNext(): Job = launchQueueOperation {
+        try {
+            val (next, snapshot) = withContext(queueDispatcher) {
+                val advanced = PlasmaWaveApp.core.queueAdvance(FfiAdvanceReason.USER_SKIP)
+                advanced to readSnapshot()
             }
+            applySnapshot(snapshot)
+            if (next != null) {
+                prepareAndPlay(next)
+            } else {
+                playbackPlayer?.stop()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error skipping to next", e)
         }
     }
 
-    fun skipPrevious() {
-        scope.launch {
-            try {
-                val pos = mediaController?.currentPosition?.toULong() ?: 0uL
-                val (res, snapshot) = withContext(queueDispatcher) {
-                    val prev = PlasmaWaveApp.core.queuePrevious(pos)
-                    prev to readSnapshot()
-                }
-                applySnapshot(snapshot)
-                if (res.shouldRestartCurrent) {
-                    mediaController?.seekTo(0L)
-                } else {
-                    res.movedEntry?.let { prepareAndPlay(it) }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error skipping previous", e)
+    fun skipPrevious(): Job = launchQueueOperation {
+        try {
+            val pos = playbackPlayer?.currentPosition?.toULong() ?: 0uL
+            val (res, snapshot) = withContext(queueDispatcher) {
+                val prev = PlasmaWaveApp.core.queuePrevious(pos)
+                prev to readSnapshot()
             }
+            applySnapshot(snapshot)
+            if (res.shouldRestartCurrent) {
+                playbackPlayer?.seekTo(0L)
+            } else {
+                res.movedEntry?.let { prepareAndPlay(it) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error skipping previous", e)
         }
     }
 
@@ -419,35 +486,47 @@ class PlaybackManager private constructor(private val context: Context) {
     private fun onSleepTimerExpired() {
         sleepTimerJob = null
         _sleepTimerState.value = SleepTimerState.Off
-        mediaController?.pause()
+        playbackPlayer?.pause()
         Toast.makeText(context, "Uyku zamanı modu süresi doldu, oynatma duraklatıldı", Toast.LENGTH_SHORT).show()
     }
 
     private fun onTrackEnded() {
+        val player = playbackPlayer ?: return
+        if (!player.playWhenReady) return
         if (_sleepTimerState.value is SleepTimerState.EndOfTrack) {
             _sleepTimerState.value = SleepTimerState.Off
-            mediaController?.pause()
+            player.pause()
             Toast.makeText(context, "Şarkı bitti, uyku zamanı modu oynatmayı duraklattı", Toast.LENGTH_SHORT).show()
             return
         }
-        scope.launch {
+        val generation = playbackGeneration
+        // ExoPlayer releases its own wake lock at STATE_ENDED. Bridge the short queue/URI
+        // lookup until prepare() enables its buffering wake lock for the next stream.
+        transitionWakeLock.acquire(30_000L)
+        val job = launchQueueOperation {
             try {
+                if (playbackPlayer !== player || playbackGeneration != generation ||
+                    player.playbackState != Player.STATE_ENDED || !player.playWhenReady
+                ) return@launchQueueOperation
                 val (next, snapshot) = withContext(queueDispatcher) {
                     val advanced = PlasmaWaveApp.core.queueAdvance(FfiAdvanceReason.TRACK_ENDED)
                     advanced to readSnapshot()
                 }
                 applySnapshot(snapshot)
-                if (next != null) {
-                    prepareAndPlay(next)
+                if (playbackPlayer === player && playbackGeneration == generation && player.playWhenReady) {
+                    if (next != null) prepareAndPlay(next, automatic = true) else player.pause()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error advancing on track end", e)
             }
         }
+        job.invokeOnCompletion {
+            if (transitionWakeLock.isHeld) transitionWakeLock.release()
+        }
     }
 
     fun toggleRepeat() {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val current = _uiState.value.repeatMode
                 val next = when (current) {
@@ -467,7 +546,7 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun toggleShuffle() {
-        scope.launch {
+        launchQueueOperation {
             try {
                 val next = !_uiState.value.isShuffle
                 val snapshot = withContext(queueDispatcher) {
@@ -481,17 +560,24 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
-    private suspend fun prepareAndPlay(entry: FfiQueueEntry, startPositionMs: Long = 0L) {
-        val player = mediaController ?: run {
-            pendingEntry = entry
+    private suspend fun prepareAndPlay(
+        entry: FfiQueueEntry,
+        startPositionMs: Long = 0L,
+        automatic: Boolean = false
+    ) {
+        val player = playbackPlayer ?: run {
+            pendingPlayback = entry to startPositionMs
+            initMediaController()
             return
         }
+        val generation = ++playbackGeneration
         val deezerSession = DeezerSession.get(context)
         val useFullDeezer = entry.track.provider == "deezer" && deezerSession.hasSavedSession
         // Old downloads may be preview clips: do not prefer them over an account's full stream.
         val offlinePath = if (useFullDeezer) null else withContext(queueDispatcher) {
             try { PlasmaWaveApp.core.getOfflinePath(entry.track.id) } catch (_: Exception) { null }
         }
+        if (playbackPlayer !== player || playbackGeneration != generation) return
         val uriStr = when {
             offlinePath != null -> "file://$offlinePath"
             useFullDeezer -> "deezer://track/${entry.track.id.removePrefix("deezer:")}"
@@ -518,6 +604,8 @@ class PlaybackManager private constructor(private val context: Context) {
                 .setMediaMetadata(metadata)
                 .build()
 
+            // A pause or sleep timer during the URI lookup must not restart playback.
+            val playWhenPrepared = !automatic || player.playWhenReady
             val safeStartPos = startPositionMs.coerceAtLeast(0L)
             if (safeStartPos > 0L) {
                 player.setMediaItem(mediaItem, safeStartPos)
@@ -525,7 +613,7 @@ class PlaybackManager private constructor(private val context: Context) {
                 player.setMediaItem(mediaItem)
             }
             player.prepare()
-            player.play()
+            if (playWhenPrepared) player.play()
             currentAudioFormat = null
             val initialQualityLabel = computeInitialQualityLabel(entry, offlinePath)
             _uiState.value = _uiState.value.copy(currentEntry = entry, audioQualityLabel = initialQualityLabel)

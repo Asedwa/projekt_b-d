@@ -17,6 +17,7 @@ class PlasmaPlaybackService : MediaSessionService() {
 
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
+    private var playbackManager: PlaybackManager? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -31,9 +32,14 @@ class PlasmaPlaybackService : MediaSessionService() {
             .setMediaSourceFactory(DefaultMediaSourceFactory(sources))
             .setAudioAttributes(audioAttributes, true) // Handles audio focus automatically
             .setHandleAudioBecomingNoisy(true) // Pauses automatically when headphones are unplugged
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
 
-        mediaSession = MediaSession.Builder(this, player!!).build()
+        val manager = PlaybackManager.getInstance(this)
+        playbackManager = manager
+        val sessionPlayer = QueueSessionPlayer(player!!, manager::skipNext, manager::skipPrevious)
+        mediaSession = MediaSession.Builder(this, sessionPlayer).build()
+        manager.attachPlayer(player!!, sessionPlayer::updateQueue)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -48,6 +54,8 @@ class PlasmaPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        player?.let { playbackManager?.detachPlayer(it) }
+        playbackManager = null
         mediaSession?.run {
             player.release()
             release()
