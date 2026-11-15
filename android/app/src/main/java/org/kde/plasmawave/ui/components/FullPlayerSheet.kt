@@ -43,7 +43,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.kde.plasmawave.deezer.DeezerSession
 import org.kde.plasmawave.deezer.StreamingQuality
-import org.kde.plasmawave.lyrics.LyricLine
 import org.kde.plasmawave.lyrics.LyricsRepository
 import org.kde.plasmawave.lyrics.LyricsState
 import org.kde.plasmawave.player.PlaybackProgress
@@ -92,6 +91,7 @@ fun FullPlayerSheet(
     val primary = MaterialTheme.colorScheme.primary
     val bg = MaterialTheme.colorScheme.background
     val context = LocalContext.current
+    val progress by progressFlow.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     var showLyrics by remember { mutableStateOf(false) }
@@ -252,7 +252,7 @@ fun FullPlayerSheet(
                             if (lyricsVisible) {
                                 PlayerLyricsView(
                                     lyricsState = lyricsState,
-                                    progressFlow = progressFlow,
+                                    positionMs = progress.positionMs,
                                     effectiveAccent = effectiveAccent,
                                     onSeekTo = onSeekTo,
                                     onRetry = { lyricsRetryTick++ },
@@ -309,7 +309,7 @@ fun FullPlayerSheet(
                         )
 
                         PlayerSeekbar(
-                            progressFlow = progressFlow,
+                            progress = progress,
                             seekbarStyle = seekbarStyle,
                             effectiveAccent = effectiveAccent,
                             isPlaying = playerState.isPlaying,
@@ -320,7 +320,7 @@ fun FullPlayerSheet(
                         PlayerControls(
                             isPlaying = playerState.isPlaying,
                             effectiveAccent = effectiveAccent,
-                            progressFlow = progressFlow,
+                            progress = progress,
                             onSkipPrevious = onSkipPrevious,
                             onTogglePlayPause = onTogglePlayPause,
                             onSkipNext = onSkipNext,
@@ -383,7 +383,7 @@ fun FullPlayerSheet(
                         if (lyricsVisible) {
                             PlayerLyricsView(
                                 lyricsState = lyricsState,
-                                progressFlow = progressFlow,
+                                positionMs = progress.positionMs,
                                 effectiveAccent = effectiveAccent,
                                 onSeekTo = onSeekTo,
                                 onRetry = { lyricsRetryTick++ },
@@ -408,7 +408,7 @@ fun FullPlayerSheet(
                     }
 
                     PlayerSeekbar(
-                        progressFlow = progressFlow,
+                        progress = progress,
                         seekbarStyle = seekbarStyle,
                         effectiveAccent = effectiveAccent,
                         isPlaying = playerState.isPlaying,
@@ -427,7 +427,7 @@ fun FullPlayerSheet(
                     PlayerControls(
                         isPlaying = playerState.isPlaying,
                         effectiveAccent = effectiveAccent,
-                        progressFlow = progressFlow,
+                        progress = progress,
                         onSkipPrevious = onSkipPrevious,
                         onTogglePlayPause = onTogglePlayPause,
                         onSkipNext = onSkipNext,
@@ -564,7 +564,7 @@ private fun PlayerHeader(
 @Composable
 private fun PlayerLyricsView(
     lyricsState: LyricsState,
-    progressFlow: StateFlow<PlaybackProgress>,
+    positionMs: Long,
     effectiveAccent: Color,
     onSeekTo: (Long) -> Unit,
     onRetry: () -> Unit,
@@ -591,11 +591,45 @@ private fun PlayerLyricsView(
             }
 
             is LyricsState.Synced -> {
-                SyncedLyricsList(
-                    lines = lyricsState.lines,
-                    progressFlow = progressFlow,
-                    onSeekTo = onSeekTo
-                )
+                val lines = lyricsState.lines
+                val activeIndex = remember(lines, positionMs) {
+                    lines.indexOfLast { it.timeMs <= positionMs }
+                }
+                val listState = rememberLazyListState()
+                LaunchedEffect(activeIndex) {
+                    if (activeIndex >= 0) {
+                        listState.animateScrollToItem((activeIndex - 2).coerceAtLeast(0))
+                    }
+                }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    itemsIndexed(lines) { index, line ->
+                        val isActive = index == activeIndex
+                        Text(
+                            text = line.text,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = if (isActive) 19.sp else 16.sp,
+                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                                lineHeight = if (isActive) 26.sp else 22.sp
+                            ),
+                            color = when {
+                                isActive -> Color.White
+                                index < activeIndex -> Color.White.copy(alpha = 0.42f)
+                                else -> Color.White.copy(alpha = 0.62f)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onSeekTo(line.timeMs) }
+                                .padding(vertical = 2.dp)
+                        )
+                    }
+                }
             }
 
             is LyricsState.Plain -> {
@@ -653,56 +687,6 @@ private fun PlayerLyricsView(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun SyncedLyricsList(
-    lines: List<LyricLine>,
-    progressFlow: StateFlow<PlaybackProgress>,
-    onSeekTo: (Long) -> Unit
-) {
-    val progressState = progressFlow.collectAsState()
-    val activeIndex by remember(lines) {
-        derivedStateOf {
-            val positionMs = progressState.value.positionMs
-            lines.indexOfLast { it.timeMs <= positionMs }
-        }
-    }
-    val listState = rememberLazyListState()
-    LaunchedEffect(activeIndex) {
-        if (activeIndex >= 0) {
-            listState.animateScrollToItem((activeIndex - 2).coerceAtLeast(0))
-        }
-    }
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        itemsIndexed(lines) { index, line ->
-            val isActive = index == activeIndex
-            Text(
-                text = line.text,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = if (isActive) 19.sp else 16.sp,
-                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                    lineHeight = if (isActive) 26.sp else 22.sp
-                ),
-                color = when {
-                    isActive -> Color.White
-                    index < activeIndex -> Color.White.copy(alpha = 0.42f)
-                    else -> Color.White.copy(alpha = 0.62f)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onSeekTo(line.timeMs) }
-                    .padding(vertical = 2.dp)
-            )
         }
     }
 }
@@ -779,14 +763,13 @@ private fun PlayerArtwork(
 
 @Composable
 private fun PlayerSeekbar(
-    progressFlow: StateFlow<PlaybackProgress>,
+    progress: PlaybackProgress,
     seekbarStyle: SeekbarStyle,
     effectiveAccent: Color,
     isPlaying: Boolean,
     audioQualityLabel: String,
     onSeekTo: (Long) -> Unit
 ) {
-    val progress by progressFlow.collectAsState()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -890,7 +873,7 @@ private fun PlayerInfo(
 private fun PlayerControls(
     isPlaying: Boolean,
     effectiveAccent: Color,
-    progressFlow: StateFlow<PlaybackProgress>,
+    progress: PlaybackProgress,
     onSkipPrevious: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
@@ -917,7 +900,7 @@ private fun PlayerControls(
                 tint = Color.White
             )
         }
-        IconButton(onClick = { onSeekTo((progressFlow.value.positionMs - 10000).coerceAtLeast(0L)) }) {
+        IconButton(onClick = { onSeekTo((progress.positionMs - 10000).coerceAtLeast(0L)) }) {
             Icon(
                 Icons.Default.Replay10,
                 contentDescription = "10s Geri",
@@ -942,10 +925,7 @@ private fun PlayerControls(
                 )
             }
         }
-        IconButton(onClick = {
-            val current = progressFlow.value
-            onSeekTo((current.positionMs + 10000).coerceAtMost(current.durationMs))
-        }) {
+        IconButton(onClick = { onSeekTo((progress.positionMs + 10000).coerceAtMost(progress.durationMs)) }) {
             Icon(
                 Icons.Default.Forward10,
                 contentDescription = "10s İleri",
