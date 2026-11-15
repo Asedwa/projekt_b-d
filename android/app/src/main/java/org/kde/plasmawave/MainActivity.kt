@@ -40,7 +40,9 @@ import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.theme.PlasmaTheme
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.SearchCategory
+import org.kde.plasmawave.jam.JamMode
 import org.kde.plasmawave.ui.components.FullPlayerSheet
+import org.kde.plasmawave.ui.components.JamSheet
 import org.kde.plasmawave.ui.components.LocalDeezerConnected
 import org.kde.plasmawave.ui.components.MiniPlayer
 import org.kde.plasmawave.ui.components.PlaylistPicker
@@ -69,9 +71,27 @@ sealed class SubScreen {
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
 
+    private fun handleJamIntent(intent: android.content.Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "plasmawave" && uri.host == "jam") {
+            val code = uri.lastPathSegment?.trim()?.uppercase().orEmpty()
+            if (code.length >= 4) {
+                viewModel.jamManager.joinJamByCode(code)
+                Toast.makeText(this, "Jam #$code oturumuna bağlanılıyor...", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleJamIntent(intent)
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleJamIntent(intent)
         setContent {
             val activeTheme by viewModel.activeTheme.collectAsState()
             val hasCurrentEntry by remember {
@@ -344,6 +364,8 @@ private fun FullPlayerHost(
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val albumFrame by viewModel.albumFrame.collectAsState()
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
+    val jamState by viewModel.jamState.collectAsState()
+    var showJamSheet by remember { mutableStateOf(false) }
 
     var lastTrack by remember { mutableStateOf<FfiTrack?>(null) }
     val nowPlaying = state.currentEntry?.track ?: lastTrack ?: return
@@ -366,10 +388,34 @@ private fun FullPlayerHost(
         albumFrame = albumFrame,
         swipeToSkipEnabled = swipeToSkipEnabled,
         onDismiss = onDismiss,
-        onTogglePlayPause = { viewModel.playbackManager.togglePlayPause() },
-        onSkipNext = { viewModel.playbackManager.skipNext() },
-        onSkipPrevious = { viewModel.playbackManager.skipPrevious() },
-        onSeekTo = { viewModel.playbackManager.seekTo(it) },
+        onTogglePlayPause = {
+            if (jamState.mode == JamMode.GUEST && jamState.allowGuestControls) {
+                viewModel.jamManager.sendGuestControl("toggle")
+            } else {
+                viewModel.playbackManager.togglePlayPause()
+            }
+        },
+        onSkipNext = {
+            if (jamState.mode == JamMode.GUEST && jamState.allowGuestControls) {
+                viewModel.jamManager.sendGuestControl("next")
+            } else {
+                viewModel.playbackManager.skipNext()
+            }
+        },
+        onSkipPrevious = {
+            if (jamState.mode == JamMode.GUEST && jamState.allowGuestControls) {
+                viewModel.jamManager.sendGuestControl("prev")
+            } else {
+                viewModel.playbackManager.skipPrevious()
+            }
+        },
+        onSeekTo = { pos ->
+            if (jamState.mode == JamMode.GUEST && jamState.allowGuestControls) {
+                viewModel.jamManager.sendGuestControl("seek", pos)
+            } else {
+                viewModel.playbackManager.seekTo(pos)
+            }
+        },
         onToggleShuffle = { viewModel.playbackManager.toggleShuffle() },
         onToggleRepeat = { viewModel.playbackManager.toggleRepeat() },
         isFavorite = isFav,
@@ -380,8 +426,27 @@ private fun FullPlayerHost(
         canStartMix = nowPlaying.provider == "deezer" && deezerUser != null,
         onShowSleepTimer = onShowSleepTimer,
         onArtistClick = onArtistClick,
-        onAlbumClick = onAlbumClick
+        onAlbumClick = onAlbumClick,
+        isJamActive = jamState.mode != JamMode.NONE,
+        onOpenJam = { showJamSheet = true }
     )
+
+    if (showJamSheet) {
+        JamSheet(
+            jamState = jamState,
+            localQueueTracks = state.queueSnapshot?.entries?.map { it.track }.orEmpty(),
+            onDismiss = { showJamSheet = false },
+            onStartHost = { viewModel.jamManager.startHostJam(it) },
+            onJoinByCode = { code, name -> viewModel.jamManager.joinJamByCode(code, name) },
+            onJoinJam = { addr, code, name -> viewModel.jamManager.joinJam(addr, code, name) },
+            onStopJam = { viewModel.jamManager.stopJam() },
+            onToggleGuestControls = { viewModel.jamManager.setAllowGuestControls(it) },
+            onStartDiscovery = { viewModel.jamManager.startDiscovery() },
+            onStopDiscovery = { viewModel.jamManager.stopDiscovery() },
+            onAddTrack = { viewModel.jamManager.addTrackToJam(it) },
+            onSearchTracks = { viewModel.searchTracksForJam(it) }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

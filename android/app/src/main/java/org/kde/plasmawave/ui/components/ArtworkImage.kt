@@ -34,7 +34,8 @@ fun ArtworkImage(
     fallback: ImageVector = Icons.Default.MusicNote,
     shape: Shape = RoundedCornerShape(6.dp),
     background: Color = LocalPlasmaColors.current.card,
-    tint: Color = MaterialTheme.colorScheme.primary
+    tint: Color = MaterialTheme.colorScheme.primary,
+    contentScale: ContentScale = ContentScale.Crop
 ) {
     val context = LocalContext.current
     var failed by remember(url) { mutableStateOf(false) }
@@ -52,7 +53,7 @@ fun ArtworkImage(
             AsyncImage(
                 model = request,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = contentScale,
                 onError = { failed = true },
                 modifier = Modifier.fillMaxSize()
             )

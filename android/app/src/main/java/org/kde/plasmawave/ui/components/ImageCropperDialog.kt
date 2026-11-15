@@ -47,21 +47,12 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import kotlin.math.roundToInt
 
-fun isPngUri(context: Context, uri: Uri): Boolean {
+fun isSupportedImageUri(context: Context, uri: Uri): Boolean {
     return try {
         context.contentResolver.openInputStream(uri)?.use { stream ->
-            val header = ByteArray(8)
-            val bytesRead = stream.read(header)
-            if (bytesRead < 8) return false
-            // PNG magic: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
-            header[0] == 0x89.toByte() &&
-            header[1] == 0x50.toByte() &&
-            header[2] == 0x4E.toByte() &&
-            header[3] == 0x47.toByte() &&
-            header[4] == 0x0D.toByte() &&
-            header[5] == 0x0A.toByte() &&
-            header[6] == 0x1A.toByte() &&
-            header[7] == 0x0A.toByte()
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeStream(stream, null, opts)
+            opts.outWidth > 0 && opts.outHeight > 0
         } ?: false
     } catch (_: Exception) {
         false
@@ -72,7 +63,7 @@ fun isPngUri(context: Context, uri: Uri): Boolean {
 fun ImageCropperDialog(
     imageUri: Uri,
     targetFileName: String = "custom_header_logo.png",
-    titleText: String = "PNG Logoyu Kırp ve Konumlandır",
+    titleText: String = "Logoyu Kırp ve Konumlandır",
     onDismiss: () -> Unit,
     onCroppedSaved: (File) -> Unit
 ) {
@@ -90,8 +81,16 @@ fun ImageCropperDialog(
     LaunchedEffect(imageUri) {
         withContext(Dispatchers.IO) {
             try {
-                context.contentResolver.openInputStream(imageUri)?.use { stream ->
-                    originalBitmap = BitmapFactory.decodeStream(stream)
+                val decoded = context.contentResolver.openInputStream(imageUri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+                if (decoded != null) {
+                    originalBitmap = decoded
+                } else {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Görsel açılamadı veya formatı desteklenmiyor", Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    }
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

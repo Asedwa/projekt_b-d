@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -115,7 +116,10 @@ fun SettingsScreen(
     val colors = LocalPlasmaColors.current
     val context = LocalContext.current
 
-    var activeCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    var activeCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    val activeCategory = activeCategoryName?.let { name ->
+        SettingsCategory.entries.find { it.name == name }
+    }
     var showLogin by remember { mutableStateOf(false) }
     var showArl by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
@@ -125,7 +129,7 @@ fun SettingsScreen(
     var searchVisible by remember { mutableStateOf(false) }
 
     BackHandler(enabled = activeCategory != null) {
-        activeCategory = null
+        activeCategoryName = null
     }
 
     if (showLogin) {
@@ -337,7 +341,7 @@ fun SettingsScreen(
                                 badgeColor = SettingsCategory.HOME_AND_WIDGETS.badgeColor,
                                 title = "Ana Sayfa ve Widget'lar",
                                 subtitle = "Widget ekle/düzenle (${enabledWidgets.size} aktif) • Kaldığın yerden devam et",
-                                onClick = { activeCategory = SettingsCategory.HOME_AND_WIDGETS }
+                                onClick = { activeCategoryName = SettingsCategory.HOME_AND_WIDGETS.name }
                             )
                         }
                         if (matchesSearch("widget", "ana sayfa", "kaldığın", "devam") &&
@@ -351,7 +355,7 @@ fun SettingsScreen(
                                 badgeColor = SettingsCategory.CUSTOMIZATION_AND_THEMES.badgeColor,
                                 title = "Özelleştirme ve Temalar",
                                 subtitle = "Tema: ${theme.name} • Uygulama ikonu, logo ve oynatıcı",
-                                onClick = { activeCategory = SettingsCategory.CUSTOMIZATION_AND_THEMES }
+                                onClick = { activeCategoryName = SettingsCategory.CUSTOMIZATION_AND_THEMES.name }
                             )
                         }
                     }
@@ -367,7 +371,7 @@ fun SettingsScreen(
                                 badgeColor = SettingsCategory.AUDIO_AND_PLAYBACK.badgeColor,
                                 title = "Ses Kalitesi ve Oynatma",
                                 subtitle = "Wi-Fi: ${wifiQuality.label} • Mobil: ${mobileQuality.label}",
-                                onClick = { activeCategory = SettingsCategory.AUDIO_AND_PLAYBACK }
+                                onClick = { activeCategoryName = SettingsCategory.AUDIO_AND_PLAYBACK.name }
                             )
                         }
                         if (matchesSearch("ses", "kalite", "wifi", "mobil", "flac", "mp3") &&
@@ -385,7 +389,7 @@ fun SettingsScreen(
                                 } else {
                                     "Kalite: ${downloadQuality.label} • Çevrimdışı müzikler ve sabitleme"
                                 },
-                                onClick = { activeCategory = SettingsCategory.DOWNLOADS_AND_STORAGE }
+                                onClick = { activeCategoryName = SettingsCategory.DOWNLOADS_AND_STORAGE.name }
                             )
                         }
                     }
@@ -401,7 +405,7 @@ fun SettingsScreen(
                                 badgeColor = SettingsCategory.DATA_AND_PRIVACY.badgeColor,
                                 title = "Veri, İstatistikler ve Gizlilik",
                                 subtitle = "Süre: ${viewModel.formatDurationTr(totalListeningMs)} • $totalPlays dinlenme, veri indirme",
-                                onClick = { activeCategory = SettingsCategory.DATA_AND_PRIVACY }
+                                onClick = { activeCategoryName = SettingsCategory.DATA_AND_PRIVACY.name }
                             )
                         }
                         if (matchesSearch("veri", "gizlilik", "istatistik", "süre", "sayaç") &&
@@ -415,7 +419,7 @@ fun SettingsScreen(
                                 badgeColor = SettingsCategory.PLUGINS_AND_ABOUT.badgeColor,
                                 title = "Eklentiler ve Hakkında",
                                 subtitle = "Mod yöneticisi ve sistem • projekt_b-d v${BuildConfig.VERSION_NAME}",
-                                onClick = { activeCategory = SettingsCategory.PLUGINS_AND_ABOUT }
+                                onClick = { activeCategoryName = SettingsCategory.PLUGINS_AND_ABOUT.name }
                             )
                         }
                     }
@@ -436,7 +440,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    IconButton(onClick = { activeCategory = null }) {
+                    IconButton(onClick = { activeCategoryName = null }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
                     }
                     Spacer(Modifier.width(4.dp))

@@ -19,6 +19,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import org.kde.plasmawave.PlasmaWaveApp
+import org.kde.plasmawave.jam.JamManager
 import org.kde.plasmawave.player.PlaybackManager
 import org.kde.plasmawave.deezer.DeezerSession
 import org.kde.plasmawave.deezer.DeezerWebCookies
@@ -712,6 +713,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _externalSearchTrigger.value = null
     }
     val playbackManager = PlaybackManager.getInstance(application)
+    val jamManager = JamManager(application, playbackManager)
+    val jamState = jamManager.state
+
+    suspend fun searchTracksForJam(query: String): List<FfiTrack> = withContext(Dispatchers.IO) {
+        val q = query.trim()
+        if (q.isEmpty()) return@withContext emptyList()
+        runCatching { core.searchAll(q) }.getOrDefault(emptyList())
+    }
     private val deezerSession = DeezerSession.get(application)
     val wifiQuality = deezerSession.wifiQuality
     val mobileQuality = deezerSession.mobileQuality
@@ -1730,5 +1739,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e("MainViewModel", "Error scanning media", e)
             }
         }
+    }
+
+    override fun onCleared() {
+        jamManager.release()
+        super.onCleared()
     }
 }

@@ -19,9 +19,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -83,12 +85,11 @@ fun ArtworkFramedView(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.CenterStart
                 ) {
-                    // 1. Vinyl LP Disc (peeking out from the sleeve)
+                    // 1. Vinyl LP Disc (peeking out from the sleeve, kept inside frame bounds so drag layers never clip it)
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
-                            .size(size * 0.92f)
-                            .offset(x = size * 0.10f)
+                            .size(size * 0.82f)
                             .rotate(rotation),
                         contentAlignment = Alignment.Center
                     ) {
@@ -123,7 +124,7 @@ fun ArtworkFramedView(
                     ArtworkImage(
                         url = artworkUrl,
                         modifier = Modifier
-                            .size(size * 0.88f)
+                            .size(size * 0.78f)
                             .shadow(16.dp, RoundedCornerShape(12.dp))
                             .clip(RoundedCornerShape(12.dp))
                             .border(1.5.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp)),
@@ -223,14 +224,25 @@ fun ArtworkFramedView(
                                 .fillMaxWidth()
                                 .weight(0.68f)
                                 .clip(RoundedCornerShape(10.dp))
+                                .background(Color.Black)
                                 .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(10.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             ArtworkImage(
                                 url = artworkUrl,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .alpha(0.28f),
+                                shape = RoundedCornerShape(10.dp),
+                                background = Color.Black,
+                                contentScale = ContentScale.Crop
+                            )
+                            ArtworkImage(
+                                url = artworkUrl,
                                 modifier = Modifier.fillMaxSize(),
                                 shape = RoundedCornerShape(10.dp),
-                                background = Color.Black
+                                background = Color.Transparent,
+                                contentScale = ContentScale.Fit
                             )
                         }
 

@@ -1,6 +1,7 @@
 package org.kde.plasmawave.ui.components
 
 import android.widget.Toast
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -9,6 +10,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,6 +43,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.kde.plasmawave.deezer.DeezerSession
 import org.kde.plasmawave.deezer.StreamingQuality
+import org.kde.plasmawave.lyrics.LyricsRepository
+import org.kde.plasmawave.lyrics.LyricsState
 import org.kde.plasmawave.player.PlaybackProgress
 import org.kde.plasmawave.player.PlayerUiState
 import org.kde.plasmawave.theme.DynamicThemeHelper
@@ -72,7 +78,9 @@ fun FullPlayerSheet(
     canStartMix: Boolean,
     onShowSleepTimer: () -> Unit,
     onArtistClick: (String) -> Unit = {},
-    onAlbumClick: (String, String) -> Unit = { _, _ -> }
+    onAlbumClick: (String, String) -> Unit = { _, _ -> },
+    isJamActive: Boolean = false,
+    onOpenJam: () -> Unit = {}
 ) {
     var lastEntry by remember { mutableStateOf(playerState.currentEntry) }
     val entry = playerState.currentEntry ?: lastEntry ?: return
@@ -85,6 +93,27 @@ fun FullPlayerSheet(
     val context = LocalContext.current
     val progress by progressFlow.collectAsState()
     val coroutineScope = rememberCoroutineScope()
+
+    var showLyrics by remember { mutableStateOf(false) }
+    var lyricsState by remember(entry.track.id) {
+        mutableStateOf(
+            LyricsRepository.getCached(entry.track.title, entry.track.artist) ?: LyricsState.Idle
+        )
+    }
+    var lyricsRetryTick by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(entry.track.id, showLyrics, lyricsRetryTick) {
+        if (showLyrics && (lyricsState is LyricsState.Idle || lyricsState is LyricsState.Error || lyricsRetryTick > 0)) {
+            lyricsState = LyricsState.Loading
+            lyricsState = LyricsRepository.fetchLyrics(
+                title = entry.track.title,
+                artist = entry.track.artist,
+                album = entry.track.album,
+                durationMs = entry.track.durationMs.toLong(),
+                forceRefresh = lyricsRetryTick > 0
+            )
+        }
+    }
 
     var extractedColors by remember(entry.track.artworkUrl) { mutableStateOf<ExtractedArtworkColors?>(null) }
     LaunchedEffect(entry.track.artworkUrl, dynamicColorEnabled) {
@@ -200,18 +229,33 @@ fun FullPlayerSheet(
                             .fillMaxHeight(),
                         contentAlignment = Alignment.Center
                     ) {
-                        PlayerArtwork(
-                            coverSize = landCoverSize,
-                            dragOffset = dragOffset,
-                            swipeToSkipEnabled = swipeToSkipEnabled,
-                            entry = entry,
-                            albumFrame = albumFrame,
-                            effectiveAccent = effectiveAccent,
-                            isPlaying = playerState.isPlaying,
-                            onSkipPrevious = onSkipPrevious,
-                            onSkipNext = onSkipNext,
-                            coroutineScope = coroutineScope
-                        )
+                        Crossfade(targetState = showLyrics, label = "landLyricsCrossfade") { lyricsVisible ->
+                            if (lyricsVisible) {
+                                PlayerLyricsView(
+                                    lyricsState = lyricsState,
+                                    positionMs = progress.positionMs,
+                                    effectiveAccent = effectiveAccent,
+                                    onSeekTo = onSeekTo,
+                                    onRetry = { lyricsRetryTick++ },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(landCoverSize + 24.dp)
+                                )
+                            } else {
+                                PlayerArtwork(
+                                    coverSize = landCoverSize,
+                                    dragOffset = dragOffset,
+                                    swipeToSkipEnabled = swipeToSkipEnabled,
+                                    entry = entry,
+                                    albumFrame = albumFrame,
+                                    effectiveAccent = effectiveAccent,
+                                    isPlaying = playerState.isPlaying,
+                                    onSkipPrevious = onSkipPrevious,
+                                    onSkipNext = onSkipNext,
+                                    coroutineScope = coroutineScope
+                                )
+                            }
+                        }
                     }
 
                     Spacer(Modifier.width(18.dp))
@@ -227,6 +271,11 @@ fun FullPlayerSheet(
                         PlayerHeader(
                             currentTrackIndex = currentTrackIndex,
                             totalTracks = totalTracks,
+                            showLyrics = showLyrics,
+                            isJamActive = isJamActive,
+                            effectiveAccent = effectiveAccent,
+                            onToggleLyrics = { showLyrics = !showLyrics },
+                            onOpenJam = onOpenJam,
                             onDismiss = onDismiss,
                             onOpenMenu = onOpenMenu,
                             context = context
@@ -301,23 +350,43 @@ fun FullPlayerSheet(
                     PlayerHeader(
                         currentTrackIndex = currentTrackIndex,
                         totalTracks = totalTracks,
+                        showLyrics = showLyrics,
+                        isJamActive = isJamActive,
+                        effectiveAccent = effectiveAccent,
+                        onToggleLyrics = { showLyrics = !showLyrics },
+                        onOpenJam = onOpenJam,
                         onDismiss = onDismiss,
                         onOpenMenu = onOpenMenu,
                         context = context
                     )
 
-                    PlayerArtwork(
-                        coverSize = coverSize,
-                        dragOffset = dragOffset,
-                        swipeToSkipEnabled = swipeToSkipEnabled,
-                        entry = entry,
-                        albumFrame = albumFrame,
-                        effectiveAccent = effectiveAccent,
-                        isPlaying = playerState.isPlaying,
-                        onSkipPrevious = onSkipPrevious,
-                        onSkipNext = onSkipNext,
-                        coroutineScope = coroutineScope
-                    )
+                    Crossfade(targetState = showLyrics, label = "portLyricsCrossfade") { lyricsVisible ->
+                        if (lyricsVisible) {
+                            PlayerLyricsView(
+                                lyricsState = lyricsState,
+                                positionMs = progress.positionMs,
+                                effectiveAccent = effectiveAccent,
+                                onSeekTo = onSeekTo,
+                                onRetry = { lyricsRetryTick++ },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(coverSize)
+                            )
+                        } else {
+                            PlayerArtwork(
+                                coverSize = coverSize,
+                                dragOffset = dragOffset,
+                                swipeToSkipEnabled = swipeToSkipEnabled,
+                                entry = entry,
+                                albumFrame = albumFrame,
+                                effectiveAccent = effectiveAccent,
+                                isPlaying = playerState.isPlaying,
+                                onSkipPrevious = onSkipPrevious,
+                                onSkipNext = onSkipNext,
+                                coroutineScope = coroutineScope
+                            )
+                        }
+                    }
 
                     PlayerSeekbar(
                         progress = progress,
@@ -372,6 +441,11 @@ fun FullPlayerSheet(
 private fun PlayerHeader(
     currentTrackIndex: Int,
     totalTracks: Int,
+    showLyrics: Boolean,
+    isJamActive: Boolean,
+    effectiveAccent: Color,
+    onToggleLyrics: () -> Unit,
+    onOpenJam: () -> Unit,
     onDismiss: () -> Unit,
     onOpenMenu: () -> Unit,
     context: android.content.Context
@@ -417,17 +491,37 @@ private fun PlayerHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = { Toast.makeText(context, "Yayın cihazı aranıyor...", Toast.LENGTH_SHORT).show() },
+                onClick = onToggleLyrics,
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.28f))
+                    .background(
+                        if (showLyrics) effectiveAccent.copy(alpha = 0.32f)
+                        else Color.Black.copy(alpha = 0.28f)
+                    )
             ) {
                 Icon(
-                    Icons.Default.Cast,
-                    contentDescription = "Yayınla",
+                    Icons.Default.Lyrics,
+                    contentDescription = "Şarkı sözleri",
                     modifier = Modifier.size(19.dp),
-                    tint = Color.White
+                    tint = if (showLyrics) effectiveAccent else Color.White
+                )
+            }
+            IconButton(
+                onClick = onOpenJam,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isJamActive) effectiveAccent.copy(alpha = 0.32f)
+                        else Color.Black.copy(alpha = 0.28f)
+                    )
+            ) {
+                Icon(
+                    Icons.Default.Group,
+                    contentDescription = "Jam",
+                    modifier = Modifier.size(19.dp),
+                    tint = if (isJamActive) effectiveAccent else Color.White
                 )
             }
             IconButton(
@@ -443,6 +537,136 @@ private fun PlayerHeader(
                     modifier = Modifier.size(20.dp),
                     tint = Color.White
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerLyricsView(
+    lyricsState: LyricsState,
+    positionMs: Long,
+    effectiveAccent: Color,
+    onSeekTo: (Long) -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = Color.Black.copy(alpha = 0.35f)
+    ) {
+        when (lyricsState) {
+            LyricsState.Idle, LyricsState.Loading -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = effectiveAccent)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Şarkı sözleri aranıyor...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
+                }
+            }
+
+            is LyricsState.Synced -> {
+                val lines = lyricsState.lines
+                val activeIndex = remember(lines, positionMs) {
+                    lines.indexOfLast { it.timeMs <= positionMs }
+                }
+                val listState = rememberLazyListState()
+                LaunchedEffect(activeIndex) {
+                    if (activeIndex >= 0) {
+                        listState.animateScrollToItem((activeIndex - 2).coerceAtLeast(0))
+                    }
+                }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    itemsIndexed(lines) { index, line ->
+                        val isActive = index == activeIndex
+                        Text(
+                            text = line.text,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = if (isActive) 19.sp else 16.sp,
+                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+                                lineHeight = if (isActive) 26.sp else 22.sp
+                            ),
+                            color = when {
+                                isActive -> Color.White
+                                index < activeIndex -> Color.White.copy(alpha = 0.42f)
+                                else -> Color.White.copy(alpha = 0.62f)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onSeekTo(line.timeMs) }
+                                .padding(vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            is LyricsState.Plain -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(18.dp)
+                ) {
+                    Text(
+                        text = lyricsState.text,
+                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 25.sp),
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                }
+            }
+
+            LyricsState.Instrumental -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Enstrümantal parça",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                }
+            }
+
+            LyricsState.NotFound -> {
+                Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Bu şarkı için söz bulunamadı",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.75f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            is LyricsState.Error -> {
+                Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            lyricsState.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.8f),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = onRetry,
+                            colors = ButtonDefaults.buttonColors(containerColor = effectiveAccent)
+                        ) {
+                            Text("Tekrar Dene")
+                        }
+                    }
+                }
             }
         }
     }

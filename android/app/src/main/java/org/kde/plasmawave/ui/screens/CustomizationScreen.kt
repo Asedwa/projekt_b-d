@@ -36,25 +36,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import java.io.File
-import java.util.UUID
 import org.kde.plasmawave.R
 import org.kde.plasmawave.theme.LocalPlasmaColors
-import org.kde.plasmawave.ui.CustomThemeSpec
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.components.*
 
 private enum class CropTarget {
     HEADER_LOGO,
     LAUNCHER_ICON
-}
-
-private fun parseComposeColor(hex: String, fallback: Color): Color {
-    return try {
-        val clean = if (hex.startsWith("#")) hex else "#$hex"
-        Color(AndroidColor.parseColor(clean))
-    } catch (_: Exception) {
-        fallback
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,8 +69,6 @@ fun CustomizationScreen(
     val homeFeedType by viewModel.homeFeedType.collectAsState()
     val resumePlaybackEnabled by viewModel.resumePlaybackEnabled.collectAsState()
     val enabledHomeWidgets by viewModel.enabledHomeWidgets.collectAsState()
-    val activeTheme by viewModel.activeTheme.collectAsState()
-    val userCustomThemes by viewModel.userCustomThemes.collectAsState()
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val context = LocalContext.current
@@ -89,10 +76,6 @@ fun CustomizationScreen(
     // Cropper Dialog State
     var selectedCropUri by remember { mutableStateOf<Uri?>(null) }
     var activeCropTarget by remember { mutableStateOf(CropTarget.HEADER_LOGO) }
-
-    // Custom Theme Editor Dialog State
-    var showCustomThemeDialog by remember { mutableStateOf(false) }
-    var editingCustomTheme by remember { mutableStateOf<CustomThemeSpec?>(null) }
 
     val customFile = remember(customLogoTimestamp) {
         File(context.filesDir, "custom_header_logo.png")
@@ -112,17 +95,17 @@ fun CustomizationScreen(
         } else null
     }
 
-    // Image Picker for PNG custom logo / launcher icon
-    val pngPickerLauncher = rememberLauncherForActivityResult(
+    // Image Picker for custom logo / launcher icon (supports PNG, JPG, WebP, GIF, etc.)
+    val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            if (isPngUri(context, uri)) {
+            if (isSupportedImageUri(context, uri)) {
                 selectedCropUri = uri
             } else {
                 Toast.makeText(
                     context,
-                    "Seçilen dosya geçerli bir PNG formatında değil! Lütfen PNG formatında bir görsel seçin.",
+                    "Seçilen dosya geçerli bir görsel formatında değil! Lütfen PNG, JPG veya WebP gibi bir görsel seçin.",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -141,7 +124,7 @@ fun CustomizationScreen(
             titleText = if (isLauncherTarget) {
                 "Telefon İkonunu Kırp ve Konumlandır"
             } else {
-                "PNG Logoyu Kırp ve Konumlandır"
+                "Logoyu Kırp ve Konumlandır"
             },
             onDismiss = { selectedCropUri = null },
             onCroppedSaved = {
@@ -159,35 +142,11 @@ fun CustomizationScreen(
                     viewModel.setHeaderLogoStyle(HeaderLogoStyle.CUSTOM)
                     Toast.makeText(
                         context,
-                        "PNG logo başarıyla kaydedildi ve uygulandı!",
+                        "Özel logo başarıyla kaydedildi ve uygulandı!",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
                 selectedCropUri = null
-            }
-        )
-    }
-
-    if (showCustomThemeDialog) {
-        CustomThemeEditorDialog(
-            initialSpec = editingCustomTheme,
-            onDismiss = {
-                showCustomThemeDialog = false
-                editingCustomTheme = null
-            },
-            onSave = { spec ->
-                viewModel.saveUserCustomTheme(spec)
-                showCustomThemeDialog = false
-                editingCustomTheme = null
-                Toast.makeText(context, "'${spec.name}' teması kaydedildi ve uygulandı!", Toast.LENGTH_SHORT).show()
-            },
-            onDelete = editingCustomTheme?.let { existing ->
-                {
-                    viewModel.deleteUserCustomTheme(existing.id)
-                    showCustomThemeDialog = false
-                    editingCustomTheme = null
-                    Toast.makeText(context, "'${existing.name}' teması silindi.", Toast.LENGTH_SHORT).show()
-                }
             }
         )
     }
@@ -246,7 +205,7 @@ fun CustomizationScreen(
                         .clickable {
                             if (iconOption == AppLauncherIcon.CUSTOM && customLauncherBitmap == null) {
                                 activeCropTarget = CropTarget.LAUNCHER_ICON
-                                pngPickerLauncher.launch("image/png")
+                                imagePickerLauncher.launch("image/*")
                             } else {
                                 viewModel.setLauncherIcon(iconOption)
                                 if (iconOption == AppLauncherIcon.CUSTOM) {
@@ -276,7 +235,7 @@ fun CustomizationScreen(
                                 onClick = {
                                     if (iconOption == AppLauncherIcon.CUSTOM && customLauncherBitmap == null) {
                                         activeCropTarget = CropTarget.LAUNCHER_ICON
-                                        pngPickerLauncher.launch("image/png")
+                                        imagePickerLauncher.launch("image/*")
                                     } else {
                                         viewModel.setLauncherIcon(iconOption)
                                         if (iconOption == AppLauncherIcon.CUSTOM) {
@@ -371,7 +330,7 @@ fun CustomizationScreen(
                                 Button(
                                     onClick = {
                                         activeCropTarget = CropTarget.LAUNCHER_ICON
-                                        pngPickerLauncher.launch("image/png")
+                                        imagePickerLauncher.launch("image/*")
                                     },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(8.dp),
@@ -383,7 +342,7 @@ fun CustomizationScreen(
                                     Icon(Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        if (customLauncherBitmap != null) "PNG Değiştir & Kırp" else "PNG İkon Yükle & Kırp",
+                                        if (customLauncherBitmap != null) "Görsel Değiştir & Kırp" else "Görsel Yükle & Kırp",
                                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -426,7 +385,7 @@ fun CustomizationScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Ana sayfanın üstünde gösterilecek klasik logoyu veya özel PNG logonuzu seçin:",
+                    text = "Ana sayfanın üstünde gösterilecek klasik logoyu veya özel logonuzu seçin:",
                     style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -536,7 +495,7 @@ fun CustomizationScreen(
                             Button(
                                 onClick = {
                                     activeCropTarget = CropTarget.HEADER_LOGO
-                                    pngPickerLauncher.launch("image/png")
+                                    imagePickerLauncher.launch("image/*")
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(8.dp),
@@ -548,7 +507,7 @@ fun CustomizationScreen(
                                 Icon(Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    if (customBitmap != null) "PNG Değiştir, Kırp & Ayarla" else "PNG Yükle, Kırp & Ayarla",
+                                    if (customBitmap != null) "Görsel Değiştir, Kırp & Ayarla" else "Görsel Yükle, Kırp & Ayarla",
                                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                                 )
                             }
@@ -790,224 +749,6 @@ fun CustomizationScreen(
                         }
                     }
                 }
-            }
-
-            // CUSTOM THEMES
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = "CUSTOM THEMES",
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = colors.textSecondary
-                    )
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = colors.card),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFED438D).copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Palette,
-                                    contentDescription = null,
-                                    tint = Color(0xFFED438D),
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "Custom Themes",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                                )
-                                Text(
-                                    "Twilight, Pinkie ve kendi oluşturduğunuz özel temalar (Kaydedin, düzenleyin veya silin)",
-                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            val isTwilight = activeTheme.id == "mlp.twilight-sparkle"
-                            val isPinkie = activeTheme.id == "mlp.pinkie-pie"
-
-                            Button(
-                                onClick = { viewModel.setTheme("mlp.twilight-sparkle") },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF282348),
-                                    contentColor = Color(0xFFF5EEF8)
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                border = if (isTwilight) androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFED438D)) else null
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFED438D)))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Twilight", maxLines = 1, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                                }
-                            }
-
-                            Button(
-                                onClick = { viewModel.setTheme("mlp.pinkie-pie") },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF3E1C32),
-                                    contentColor = Color(0xFFFFF0F5)
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                border = if (isPinkie) androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFFF2E93)) else null
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFFF2E93)))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Pinkie", maxLines = 1, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
-                                }
-                            }
-                        }
-
-                        if (userCustomThemes.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                userCustomThemes.forEach { customSpec ->
-                                    val isCustomSelected = activeTheme.id == customSpec.id
-                                    val cardBg = parseComposeColor(customSpec.cardHex, Color(0xFF232629))
-                                    val accentCol = parseComposeColor(customSpec.accentHex, primary)
-                                    val textCol = parseComposeColor(customSpec.textHex, Color.White)
-
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Button(
-                                            onClick = { viewModel.setTheme(customSpec.id) },
-                                            modifier = Modifier.weight(1f),
-                                            colors = ButtonDefaults.buttonColors(
-                                                containerColor = cardBg,
-                                                contentColor = textCol
-                                            ),
-                                            shape = RoundedCornerShape(10.dp),
-                                            border = if (isCustomSelected) {
-                                                androidx.compose.foundation.BorderStroke(2.dp, accentCol)
-                                            } else {
-                                                androidx.compose.foundation.BorderStroke(1.dp, accentCol.copy(alpha = 0.4f))
-                                            }
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Box(
-                                                    Modifier
-                                                        .size(12.dp)
-                                                        .clip(CircleShape)
-                                                        .background(accentCol)
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(
-                                                    text = customSpec.name,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                if (isCustomSelected) {
-                                                    Icon(
-                                                        Icons.Default.Check,
-                                                        contentDescription = "Aktif",
-                                                        tint = accentCol,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        IconButton(
-                                            onClick = {
-                                                editingCustomTheme = customSpec
-                                                showCustomThemeDialog = true
-                                            },
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Edit,
-                                                contentDescription = "Temayı Düzenle",
-                                                tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-
-                                        IconButton(
-                                            onClick = {
-                                                viewModel.deleteUserCustomTheme(customSpec.id)
-                                                Toast.makeText(
-                                                    context,
-                                                    "'${customSpec.name}' teması silindi.",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            },
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(Color(0xFFEF4444).copy(alpha = 0.15f))
-                                        ) {
-                                            Icon(
-                                                Icons.Default.DeleteOutline,
-                                                contentDescription = "Temayı Sil",
-                                                tint = Color(0xFFEF4444),
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Button(
-                            onClick = {
-                                editingCustomTheme = null
-                                showCustomThemeDialog = true
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = primary.copy(alpha = 0.18f),
-                                contentColor = primary
-                            )
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                "Custom Tema Yap",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
             }
 
             // DİNAMİK ALBÜM RENKLERİ
@@ -1582,300 +1323,6 @@ fun CustomizationScreen(
 
             item {
                 Spacer(modifier = Modifier.height(80.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun CustomThemeEditorDialog(
-    initialSpec: CustomThemeSpec?,
-    onDismiss: () -> Unit,
-    onSave: (CustomThemeSpec) -> Unit,
-    onDelete: (() -> Unit)? = null
-) {
-    val colors = LocalPlasmaColors.current
-    var name by remember { mutableStateOf(initialSpec?.name ?: "Benim Temam") }
-    var bgHex by remember { mutableStateOf(initialSpec?.backgroundHex ?: "#141022") }
-    var cardHex by remember { mutableStateOf(initialSpec?.cardHex ?: "#241D3D") }
-    var accentHex by remember { mutableStateOf(initialSpec?.accentHex ?: "#A855F7") }
-    var textHex by remember { mutableStateOf(initialSpec?.textHex ?: "#F8FAFC") }
-
-    val previewBg = parseComposeColor(bgHex, Color(0xFF141022))
-    val previewCard = parseComposeColor(cardHex, Color(0xFF241D3D))
-    val previewAccent = parseComposeColor(accentHex, Color(0xFFA855F7))
-    val previewText = parseComposeColor(textHex, Color(0xFFF8FAFC))
-
-    val bgPresets = listOf("#0F172A", "#141022", "#18181B", "#1E1424", "#0B192C", "#1A120B", "#0D1F17", "#F8FAFC")
-    val cardPresets = listOf("#1E293B", "#241D3D", "#27272A", "#321E39", "#162B47", "#2D2016", "#183629", "#E2E8F0")
-    val accentPresets = listOf("#A855F7", "#EC4899", "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#06B6D4", "#8B5CF6")
-    val textPresets = listOf("#F8FAFC", "#FFF0F5", "#F5EEF8", "#E2E8F0", "#FEF3C7", "#DCFCE7", "#1E293B", "#0F172A")
-
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 650.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = colors.card,
-            tonalElevation = 8.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
-                Text(
-                    text = if (initialSpec == null) "Custom Tema Oluştur" else "Custom Temayı Düzenle",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Live Preview Box
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(previewBg)
-                        .border(1.dp, previewAccent.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                        .padding(12.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(previewCard)
-                            .padding(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(previewAccent),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.MusicNote,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = name.ifBlank { "Tema Önizleme" },
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = previewText
-                                )
-                            )
-                            Text(
-                                text = "projekt_b-d • Özel Renk Paleti",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = previewText.copy(alpha = 0.7f)
-                                )
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(previewAccent.copy(alpha = 0.2f))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                "Aktif",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = previewAccent,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Tema Adı") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    ColorFieldPicker(
-                        label = "Vurgu (Ana) Rengi",
-                        hexValue = accentHex,
-                        onHexChange = { accentHex = it },
-                        presets = accentPresets
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    ColorFieldPicker(
-                        label = "Arka Plan Rengi",
-                        hexValue = bgHex,
-                        onHexChange = { bgHex = it },
-                        presets = bgPresets
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    ColorFieldPicker(
-                        label = "Kart / Yüzey Rengi",
-                        hexValue = cardHex,
-                        onHexChange = { cardHex = it },
-                        presets = cardPresets
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    ColorFieldPicker(
-                        label = "Yazı Rengi",
-                        hexValue = textHex,
-                        onHexChange = { textHex = it },
-                        presets = textPresets
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (onDelete != null) {
-                        OutlinedButton(
-                            onClick = onDelete,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFEF4444)),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Sil")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    TextButton(onClick = onDismiss) {
-                        Text("İptal")
-                    }
-
-                    Button(
-                        onClick = {
-                            val cleanName = name.trim().ifEmpty { "Custom Tema" }
-                            val spec = CustomThemeSpec(
-                                id = initialSpec?.id ?: "custom.${UUID.randomUUID().toString().take(8)}",
-                                name = cleanName,
-                                backgroundHex = if (bgHex.startsWith("#")) bgHex else "#$bgHex",
-                                cardHex = if (cardHex.startsWith("#")) cardHex else "#$cardHex",
-                                accentHex = if (accentHex.startsWith("#")) accentHex else "#$accentHex",
-                                textHex = if (textHex.startsWith("#")) textHex else "#$textHex"
-                            )
-                            onSave(spec)
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = previewAccent,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Kaydet")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ColorFieldPicker(
-    label: String,
-    hexValue: String,
-    onHexChange: (String) -> Unit,
-    presets: List<String>
-) {
-    val parsedColor = parseComposeColor(hexValue, Color.Gray)
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge.copy(
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(parsedColor)
-                        .border(1.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                OutlinedTextField(
-                    value = hexValue,
-                    onValueChange = { if (it.length <= 7) onHexChange(it.uppercase()) },
-                    singleLine = true,
-                    modifier = Modifier.width(108.dp),
-                    textStyle = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-        ) {
-            presets.forEach { presetHex ->
-                val swatchColor = parseComposeColor(presetHex, Color.Gray)
-                val isSelected = hexValue.equals(presetHex, ignoreCase = true)
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(swatchColor)
-                        .border(
-                            width = if (isSelected) 2.5.dp else 1.dp,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.3f),
-                            shape = CircleShape
-                        )
-                        .clickable { onHexChange(presetHex) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isSelected) {
-                        Icon(
-                            Icons.Default.Check,
-                            contentDescription = null,
-                            tint = if (presetHex == "#F8FAFC" || presetHex == "#E2E8F0") Color.Black else Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
             }
         }
     }
