@@ -60,6 +60,8 @@ sealed class Screen(val title: String, val icon: ImageVector) {
     data object Queue : Screen("Sıra", Icons.AutoMirrored.Filled.QueueMusic)
     data object Settings : Screen("Ayarlar", Icons.Default.Settings)
 }
+private const val CALM_NAV_INDICATOR_ALPHA = 0.18f
+
 sealed class SubScreen {
     data object None : SubScreen()
     class PlaylistDetail(val playlist: FfiPlaylist) : SubScreen()
@@ -202,7 +204,11 @@ class MainActivity : ComponentActivity() {
                                             selectedTextColor = MaterialTheme.colorScheme.primary,
                                             unselectedIconColor = colors.textSecondary,
                                             unselectedTextColor = colors.textSecondary,
-                                            indicatorColor = if (colors.legacyUiMode) colors.border else Color.Transparent
+                                            indicatorColor = if (colors.legacyUiMode) {
+                                                colors.border
+                                            } else {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = CALM_NAV_INDICATOR_ALPHA)
+                                            }
                                         )
                                     )
                                 }
@@ -248,7 +254,11 @@ class MainActivity : ComponentActivity() {
                                                     selectedTextColor = MaterialTheme.colorScheme.primary,
                                                     unselectedIconColor = colors.textSecondary,
                                                     unselectedTextColor = colors.textSecondary,
-                                                    indicatorColor = if (colors.legacyUiMode) colors.border else Color.Transparent
+                                                    indicatorColor = if (colors.legacyUiMode) {
+                                                colors.border
+                                            } else {
+                                                MaterialTheme.colorScheme.primary.copy(alpha = CALM_NAV_INDICATOR_ALPHA)
+                                            }
                                                 )
                                             )
                                         }

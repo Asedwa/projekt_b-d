@@ -105,7 +105,9 @@ fun MiniPlayer(
             ArtworkImage(
                 url = entry.track.artworkUrl,
                 modifier = Modifier.size(44.dp),
-                background = customColors.border
+                background = customColors.border,
+                fallbackTitle = entry.track.title,
+                fallbackArtist = entry.track.artist
             )
 
             Spacer(modifier = Modifier.width(12.dp))

@@ -45,7 +45,13 @@ fun SongLongPressBottomSheet(
         containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)) {
         Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 28.dp)) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                ArtworkImage(url = track.artworkUrl, modifier = Modifier.size(72.dp), shape = RoundedCornerShape(10.dp))
+                ArtworkImage(
+                    url = track.artworkUrl,
+                    modifier = Modifier.size(72.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    fallbackTitle = track.title,
+                    fallbackArtist = track.artist
+                )
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(track.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)

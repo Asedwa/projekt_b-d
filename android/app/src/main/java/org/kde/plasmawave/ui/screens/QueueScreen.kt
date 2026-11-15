@@ -108,7 +108,9 @@ fun QueueScreen(
                             modifier = Modifier.size(40.dp),
                             fallback = if (isCurrent) Icons.Default.Equalizer else Icons.Default.MusicNote,
                             background = if (isCurrent) MaterialTheme.colorScheme.primary else customColors.card,
-                            tint = if (isCurrent) MaterialTheme.colorScheme.onPrimary else customColors.textSecondary
+                            tint = if (isCurrent) MaterialTheme.colorScheme.onPrimary else customColors.textSecondary,
+                            fallbackTitle = entry.track.title,
+                            fallbackArtist = entry.track.artist
                         )
 
                         Spacer(modifier = Modifier.width(12.dp))

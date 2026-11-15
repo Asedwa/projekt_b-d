@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,19 +36,39 @@ fun ArtworkImage(
     shape: Shape = RoundedCornerShape(6.dp),
     background: Color = LocalPlasmaColors.current.card,
     tint: Color = MaterialTheme.colorScheme.primary,
-    contentScale: ContentScale = ContentScale.Crop
+    contentScale: ContentScale = ContentScale.Crop,
+    fallbackTitle: String? = null,
+    fallbackArtist: String? = null
 ) {
     val context = LocalContext.current
-    var failed by remember(url) { mutableStateOf(false) }
+    val initialUrl = url?.takeUnless(ArtworkResolver::isPlaceholderOrBlank)
+    var resolvedFallback by remember(initialUrl, fallbackTitle, fallbackArtist) {
+        mutableStateOf(
+            if (initialUrl == null && !fallbackTitle.isNullOrBlank()) {
+                ArtworkResolver.getCached(context, fallbackTitle, fallbackArtist)
+            } else null
+        )
+    }
+    val effectiveUrl = initialUrl ?: resolvedFallback
+    var failed by remember(effectiveUrl) { mutableStateOf(false) }
+
+    LaunchedEffect(initialUrl, failed, fallbackTitle, fallbackArtist) {
+        if ((initialUrl == null || failed) && !fallbackTitle.isNullOrBlank() && resolvedFallback == null) {
+            resolvedFallback = ArtworkResolver.resolve(context, fallbackTitle, fallbackArtist)
+        }
+    }
+
+    val displayUrl = if (!failed) effectiveUrl else resolvedFallback?.takeIf { it != effectiveUrl }
+
     Box(modifier = modifier.clip(shape).background(background), contentAlignment = Alignment.Center) {
-        if (url.isNullOrBlank() || failed) {
+        if (displayUrl.isNullOrBlank()) {
             Icon(fallback, contentDescription = null, tint = tint, modifier = Modifier.fillMaxSize(0.5f))
         } else {
-            val request = remember(url, context) {
+            val request = remember(displayUrl, context) {
                 ImageRequest.Builder(context)
-                    .data(url)
-                    .memoryCacheKey(url)
-                    .diskCacheKey(url)
+                    .data(displayUrl)
+                    .memoryCacheKey(displayUrl)
+                    .diskCacheKey(displayUrl)
                     .build()
             }
             AsyncImage(

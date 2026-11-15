@@ -115,12 +115,25 @@ fun FullPlayerSheet(
         }
     }
 
-    var extractedColors by remember(entry.track.artworkUrl) { mutableStateOf<ExtractedArtworkColors?>(null) }
-    LaunchedEffect(entry.track.artworkUrl, dynamicColorEnabled, colors.legacyUiMode) {
-        if (dynamicColorEnabled && !entry.track.artworkUrl.isNullOrBlank()) {
+    var resolvedArtworkUrl by remember(entry.track.artworkUrl, entry.track.title, entry.track.artist) {
+        mutableStateOf(
+            entry.track.artworkUrl?.takeUnless(ArtworkResolver::isPlaceholderOrBlank)
+                ?: ArtworkResolver.getCached(context, entry.track.title, entry.track.artist)
+        )
+    }
+    LaunchedEffect(entry.track.artworkUrl, entry.track.title, entry.track.artist) {
+        if (ArtworkResolver.isPlaceholderOrBlank(entry.track.artworkUrl) && resolvedArtworkUrl == null) {
+            resolvedArtworkUrl = ArtworkResolver.resolve(context, entry.track.title, entry.track.artist)
+        }
+    }
+
+    var extractedColors by remember(resolvedArtworkUrl) { mutableStateOf<ExtractedArtworkColors?>(null) }
+    LaunchedEffect(resolvedArtworkUrl, dynamicColorEnabled, colors.legacyUiMode) {
+        val artUrl = resolvedArtworkUrl
+        if (dynamicColorEnabled && !artUrl.isNullOrBlank()) {
             extractedColors = DynamicThemeHelper.extractColors(
                 context = context,
-                url = entry.track.artworkUrl,
+                url = artUrl,
                 calmMode = !colors.legacyUiMode
             )
         } else {
@@ -738,7 +751,8 @@ private fun PlayerArtwork(
         contentAlignment = Alignment.Center
     ) {
         ArtworkFramedView(
-            artworkUrl = entry.track.artworkUrl,
+            artworkUrl = entry.track.artworkUrl?.takeUnless(ArtworkResolver::isPlaceholderOrBlank)
+                ?: ArtworkResolver.getCached(androidx.compose.ui.platform.LocalContext.current, entry.track.title, entry.track.artist),
             frame = albumFrame,
             accentColor = effectiveAccent,
             isPlaying = isPlaying,

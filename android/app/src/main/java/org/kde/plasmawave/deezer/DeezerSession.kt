@@ -211,7 +211,11 @@ class DeezerSession private constructor(context: Context) {
             ?: "https://api.deezer.com/playlist/$id/image?size=medium"
 
     private fun cover(type: String, hash: String): String? =
-        hash.takeIf { it.matches(Regex("[a-fA-F0-9]{32}")) }
+        hash.takeIf {
+            it.matches(Regex("[a-fA-F0-9]{32}")) &&
+                !it.equals("d41d8cd98f00b204e9800998ecf8427e", ignoreCase = true) &&
+                it != "00000000000000000000000000000000"
+        }
             ?.let { "https://e-cdns-images.dzcdn.net/images/$type/$it/250x250-000000-80-0-0.jpg" }
 
     private fun secretKey(): SecretKey {

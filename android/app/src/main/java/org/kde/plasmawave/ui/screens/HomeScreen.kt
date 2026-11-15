@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -84,6 +85,11 @@ private fun parseHexColorSafe(hex: String, fallback: Color): Color {
         fallback
     }
 }
+
+private const val CALM_TOP_GRADIENT_ALPHA = 0.22f
+private const val CALM_TOP_GRADIENT_END_STOP = 0.35f
+private const val CALM_SPECIAL_TILE_ALPHA = 0.14f
+private const val CALM_RESUME_CARD_PRIMARY_MIX = 0.12f
 
 @Composable
 fun HomeScreen(
@@ -163,7 +169,13 @@ fun HomeScreen(
                                 }
                                 .padding(8.dp)
                         ) {
-                            ArtworkImage(t.artworkUrl, modifier = Modifier.size(36.dp), shape = RoundedCornerShape(6.dp))
+                            ArtworkImage(
+                                t.artworkUrl,
+                                modifier = Modifier.size(36.dp),
+                                shape = RoundedCornerShape(6.dp),
+                                fallbackTitle = t.title,
+                                fallbackArtist = t.artist
+                            )
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
@@ -263,7 +275,12 @@ fun HomeScreen(
         if (colors.legacyUiMode) {
             Brush.verticalGradient(listOf(primary.copy(alpha = 0.16f), bg, bg))
         } else {
-            Brush.verticalGradient(listOf(bg, bg))
+            val topTint = primary.copy(alpha = CALM_TOP_GRADIENT_ALPHA).compositeOver(bg)
+            Brush.verticalGradient(
+                0f to topTint,
+                CALM_TOP_GRADIENT_END_STOP to bg,
+                1f to bg
+            )
         }
     }
 
@@ -567,7 +584,7 @@ fun HomeScreen(
                                 TextButton(onClick = { onPlaylistClick(likedPlaylist) }) {
                                     Text(
                                         "Tümünü gör",
-                                        color = if (colors.legacyUiMode) MaterialTheme.colorScheme.primary else colors.textSecondary
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -867,14 +884,14 @@ private fun QuickCard(
                         if (isSpecialCard) {
                             val thumbIconSize = (24.dp * (size / 58.dp) * iconScale).coerceIn(14.dp, 38.dp)
                             if (!legacyUi) {
-                                // Calm flat cover tile: no gradients, no circular well, neutral icon
+                                // Calm flat cover tile: tinted primary backdrop + primary icon
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .background(colors.cardPressed),
+                                        .background(primary.copy(alpha = CALM_SPECIAL_TILE_ALPHA)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(centerIcon, contentDescription = title, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(thumbIconSize))
+                                    Icon(centerIcon, contentDescription = title, tint = primary, modifier = Modifier.size(thumbIconSize))
                                 }
                             } else if (useThemeAdaptive) {
                                 Box(
@@ -955,13 +972,13 @@ private fun QuickCard(
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .background(colors.card),
+                                .background(primary.copy(alpha = CALM_SPECIAL_TILE_ALPHA).compositeOver(colors.card)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 centerIcon,
                                 contentDescription = title,
-                                tint = MaterialTheme.colorScheme.onSurface,
+                                tint = primary,
                                 modifier = Modifier
                                     .size((baseIconDp * cardRatio * iconScale).coerceIn(14.dp, 46.dp))
                                     .offset(y = iconVerticalOffset)
@@ -1268,11 +1285,17 @@ private fun ResumePlaybackCard(
     val safeDur = state.durationMs.coerceAtLeast(1L)
     val fraction = (state.positionMs.toFloat() / safeDur.toFloat()).coerceIn(0f, 1f)
 
+    val calmResumeContainer = remember(colors.card, primary) {
+        primary.copy(alpha = CALM_RESUME_CARD_PRIMARY_MIX).compositeOver(colors.card)
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onResume() },
-        colors = CardDefaults.cardColors(containerColor = colors.card),
+        colors = CardDefaults.cardColors(
+            containerColor = if (legacyUi) colors.card else calmResumeContainer
+        ),
         shape = RoundedCornerShape(16.dp),
         border = if (legacyUi) BorderStroke(1.dp, primary.copy(alpha = 0.4f)) else null
     ) {
@@ -1327,7 +1350,9 @@ private fun ResumePlaybackCard(
                     url = state.track.artworkUrl,
                     modifier = Modifier.size(54.dp),
                     fallback = Icons.Default.MusicNote,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    fallbackTitle = state.track.title,
+                    fallbackArtist = state.track.artist
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -1413,7 +1438,7 @@ private fun StatsHomeWidgetCard(
                         Icon(Icons.Default.BarChart, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
                     }
                 } else {
-                    Icon(Icons.Default.BarChart, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.BarChart, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
@@ -1436,7 +1461,7 @@ private fun StatsHomeWidgetCard(
                 TextButton(onClick = onOpenFullStats) {
                     Text(
                         "Tümünü gör",
-                        color = if (legacyUi) primary else colors.textSecondary
+                        color = primary
                     )
                 }
             }
@@ -1464,7 +1489,9 @@ private fun StatsHomeWidgetCard(
                             url = s.track.artworkUrl,
                             modifier = Modifier.size(36.dp),
                             fallback = Icons.Default.MusicNote,
-                            shape = RoundedCornerShape(6.dp)
+                            shape = RoundedCornerShape(6.dp),
+                            fallbackTitle = s.track.title,
+                            fallbackArtist = s.track.artist
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
@@ -1804,7 +1831,9 @@ private fun LuckyPickWidgetCard(
                     url = chosenTrack.artworkUrl,
                     modifier = Modifier.size(46.dp),
                     fallback = Icons.Default.MusicNote,
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    fallbackTitle = chosenTrack.title,
+                    fallbackArtist = chosenTrack.artist
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {

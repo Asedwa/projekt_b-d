@@ -128,7 +128,9 @@ object DownloadStorage {
                                 artist = item.track.artist.ifBlank { hint?.artist ?: "Bilinmeyen Sanatçı" },
                                 album = item.track.album.ifBlank { hint?.album ?: "İndirilenler" },
                                 durationMs = if (item.track.durationMs > 0uL) item.track.durationMs else (hint?.durationMs ?: 0uL),
-                                artworkUrl = item.track.artworkUrl ?: hint?.artworkUrl,
+                                artworkUrl = item.track.artworkUrl?.takeUnless(org.kde.plasmawave.ui.components.ArtworkResolver::isPlaceholderOrBlank)
+                                    ?: hint?.artworkUrl?.takeUnless(org.kde.plasmawave.ui.components.ArtworkResolver::isPlaceholderOrBlank)
+                                    ?: org.kde.plasmawave.ui.components.AudioArtFetcher.uriFor(resolvedUri),
                                 playbackUri = resolvedUri,
                                 isPreview = false,
                                 origin = "real"
@@ -179,11 +181,8 @@ object DownloadStorage {
                     val rawTitle = cursor.getString(titleCol)?.takeIf { it.isNotBlank() && !it.contains("[$cleanId]") }
                     val rawArtist = cursor.getString(artistCol)?.takeIf { it.isNotBlank() && it != "<unknown>" }
                     val rawAlbum = cursor.getString(albumCol)?.takeIf { it.isNotBlank() && it != "<unknown>" }
-                    val albumId = cursor.getLong(albumIdCol)
                     val durationMs = cursor.getLong(durationCol).coerceAtLeast(0L).toULong()
-                    val mediaStoreArt = if (albumId > 0) {
-                        ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId).toString()
-                    } else null
+                    val mediaStoreArt = org.kde.plasmawave.ui.components.AudioArtFetcher.uriFor(contentUri)
 
                     results.add(
                         FfiTrack(
@@ -193,7 +192,7 @@ object DownloadStorage {
                             artist = hint?.artist ?: parsedArtist.ifBlank { rawArtist ?: "İndirilen" },
                             album = hint?.album ?: (rawAlbum ?: "İndirilen Müzikler"),
                             durationMs = if (durationMs > 0uL) durationMs else (hint?.durationMs ?: 0uL),
-                            artworkUrl = hint?.artworkUrl ?: mediaStoreArt,
+                            artworkUrl = hint?.artworkUrl?.takeUnless(org.kde.plasmawave.ui.components.ArtworkResolver::isPlaceholderOrBlank) ?: mediaStoreArt,
                             playbackUri = contentUri,
                             isPreview = false,
                             origin = "real"
@@ -228,7 +227,8 @@ object DownloadStorage {
                             artist = hint?.artist ?: parsedArtist.ifBlank { "İndirilen" },
                             album = hint?.album ?: "İndirilen Müzikler",
                             durationMs = hint?.durationMs ?: 0uL,
-                            artworkUrl = hint?.artworkUrl,
+                            artworkUrl = hint?.artworkUrl?.takeUnless(org.kde.plasmawave.ui.components.ArtworkResolver::isPlaceholderOrBlank)
+                                ?: org.kde.plasmawave.ui.components.AudioArtFetcher.uriFor(fileUri),
                             playbackUri = fileUri,
                             isPreview = false,
                             origin = "real"

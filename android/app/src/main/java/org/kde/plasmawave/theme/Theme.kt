@@ -28,8 +28,30 @@ data class PlasmaCustomColors(
 
 val LocalPlasmaColors = staticCompositionLocalOf { PlasmaCustomColors() }
 
+// Yeni (sade) mod vurgu ve yüzey ayarları — buradan ince ayar yapılabilir
+private const val CALM_ACCENT_SAT_MIN = 0.58f
+private const val CALM_ACCENT_SAT_MAX = 0.76f
+private const val CALM_ACCENT_BLUE_SAT_MAX = 0.82f
+private const val CALM_ACCENT_LIGHT_MIN = 0.54f
+private const val CALM_ACCENT_LIGHT_MAX = 0.64f
+
+private const val CALM_BG_SAT = 0.30f               // Zemin doygunluğu (0.25–0.35)
+private const val CALM_SURFACE_SAT = 0.32f          // Yüzey / Nav bar / Mini player doygunluğu (0.25–0.35)
+private const val CALM_CARD_SAT = 0.35f             // Kart doygunluğu (0.30–0.40)
+private const val CALM_CARD_PRESSED_SAT = 0.38f     // Basılı kart doygunluğu (0.30–0.40)
+private const val CALM_BORDER_SAT = 0.28f
+private const val CALM_TEXT_SEC_SAT = 0.18f
+
+private const val CALM_BG_LIGHTNESS = 0.09f         // Zemin açıklığı (0.07–0.10)
+private const val CALM_SURFACE_LIGHTNESS = 0.125f   // Nav bar & Mini player açıklığı (kartlarla aynı/1 kademe koyu)
+private const val CALM_CARD_LIGHTNESS = 0.16f       // Kart açıklığı (0.13–0.18)
+private const val CALM_CARD_PRESSED_LIGHTNESS = 0.21f
+private const val CALM_BORDER_LIGHTNESS = 0.23f
+private const val CALM_DIVIDER_LIGHTNESS = 0.19f
+private const val CALM_TEXT_SEC_LIGHTNESS = 0.70f
+
 /**
- * Desaturates vivid/neon theme accents into calmer, product-grade tones while preserving hue identity.
+ * Keeps theme accents lively and distinct while preventing harsh neon glare in calm UI mode.
  */
 fun desaturateForCalmUi(color: Color): Color {
     val hsl = FloatArray(3)
@@ -38,15 +60,28 @@ fun desaturateForCalmUi(color: Color): Color {
     val sat = hsl[1]
     val light = hsl[2]
     if (sat < 0.08f) return color
-    // Blues stay slightly crisper (Breeze aesthetic); pinks/magentas/reds are damped more gently
-    val maxSat = if (hue in 185f..245f) 0.58f else 0.44f
-    val targetSat = if (sat > maxSat) {
-        (maxSat - (sat - maxSat) * 0.12f).coerceIn(0.30f, maxSat)
-    } else {
-        sat.coerceAtLeast(0.26f)
-    }
-    val targetLight = light.coerceIn(0.54f, 0.66f)
+    val maxSat = if (hue in 185f..245f) CALM_ACCENT_BLUE_SAT_MAX else CALM_ACCENT_SAT_MAX
+    val targetSat = sat.coerceIn(CALM_ACCENT_SAT_MIN, maxSat)
+    val targetLight = light.coerceIn(CALM_ACCENT_LIGHT_MIN, CALM_ACCENT_LIGHT_MAX)
     return Color(ColorUtils.HSLToColor(floatArrayOf(hue, targetSat, targetLight)))
+}
+
+private fun pickSurfaceHueAndChroma(card: Color, surface: Color, bg: Color, accent: Color): Pair<Float, Boolean> {
+    val hsl = FloatArray(3)
+    for (candidate in arrayOf(card, surface, bg, accent)) {
+        ColorUtils.colorToHSL(candidate.toArgb(), hsl)
+        if (hsl[1] >= 0.05f) return hsl[0] to true
+    }
+    return 0f to false
+}
+
+private fun tintedCalmDarkSurface(hue: Float, hasChroma: Boolean, sat: Float, light: Float, amoledNothing: Boolean): Color {
+    if (amoledNothing) {
+        val amoledLight = (light - 0.05f).coerceAtLeast(0.03f)
+        return Color(ColorUtils.HSLToColor(floatArrayOf(0f, 0f, amoledLight)))
+    }
+    val effectiveSat = if (hasChroma) sat else 0f
+    return Color(ColorUtils.HSLToColor(floatArrayOf(hue, effectiveSat, light)))
 }
 
 @Composable
@@ -66,27 +101,36 @@ fun PlasmaTheme(
     val rawBorder = activeTheme?.borderColor?.let { parseHexColor(it, BreezeBorder) } ?: BreezeBorder
     val rawTextSecondary = activeTheme?.textSecondaryColor?.let { parseHexColor(it, BreezeTextSecondary) } ?: BreezeTextSecondary
 
-    // In calm (new default) dark mode: flat neutral charcoal/black with cards only 1-2 shades lighter and zero color tint
+    val accent = if (!legacyUiMode) desaturateForCalmUi(rawAccent) else rawAccent
+    val (calmSurfaceHue, hasSurfaceChroma) = pickSurfaceHueAndChroma(rawCard, rawSurface, rawBg, accent)
+
+    // In calm (new default) dark mode: preserve legacy theme's surface hue (e.g. Twilight indigo/purple)
     val bg = if (!legacyUiMode && isDark) {
-        if (isAmoledNothing) Color(0xFF0A0A0B) else Color(0xFF131416)
+        tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_BG_SAT, CALM_BG_LIGHTNESS, isAmoledNothing)
     } else rawBg
 
     val surface = if (!legacyUiMode && isDark) {
-        if (isAmoledNothing) Color(0xFF121214) else Color(0xFF18191B)
+        tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_SURFACE_SAT, CALM_SURFACE_LIGHTNESS, isAmoledNothing)
     } else rawSurface
 
     val card = if (!legacyUiMode && isDark) {
-        if (isAmoledNothing) Color(0xFF171719) else Color(0xFF1C1D20)
+        tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_CARD_SAT, CALM_CARD_LIGHTNESS, isAmoledNothing)
     } else rawCard
 
     val cardPressed = if (!legacyUiMode && isDark) {
-        if (isAmoledNothing) Color(0xFF202023) else Color(0xFF242529)
+        tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_CARD_PRESSED_SAT, CALM_CARD_PRESSED_LIGHTNESS, isAmoledNothing)
     } else if (isDark) BreezeCardPressed else Color(0xFFDDE1E4)
 
-    val border = if (!legacyUiMode && isDark) Color(0xFF27282C) else rawBorder
-    val text = if (!legacyUiMode && isDark) Color(0xFFF1F2F4) else rawText
-    val textSecondary = if (!legacyUiMode && isDark) Color(0xFF9BA0A8) else rawTextSecondary
-    val accent = if (!legacyUiMode) desaturateForCalmUi(rawAccent) else rawAccent
+    val border = if (!legacyUiMode && isDark) {
+        tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_BORDER_SAT, CALM_BORDER_LIGHTNESS, isAmoledNothing)
+    } else rawBorder
+    val divider = if (!legacyUiMode && isDark) {
+        tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_BORDER_SAT, CALM_DIVIDER_LIGHTNESS, isAmoledNothing)
+    } else BreezeDivider
+    val text = if (!legacyUiMode && isDark) Color(0xFFF3EFF7) else rawText
+    val textSecondary = if (!legacyUiMode && isDark) {
+        tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_TEXT_SEC_SAT, CALM_TEXT_SEC_LIGHTNESS, isAmoledNothing)
+    } else rawTextSecondary
 
     val onAccent = if (accent.luminance() > 0.52f) Color(0xFF1A1D20) else Color.White
 
@@ -100,6 +144,11 @@ fun PlasmaTheme(
             onSurface = text,
             surfaceVariant = card,
             onSurfaceVariant = textSecondary,
+            surfaceContainerLowest = bg,
+            surfaceContainerLow = surface,
+            surfaceContainer = card,
+            surfaceContainerHigh = cardPressed,
+            surfaceContainerHighest = cardPressed,
             outline = border
         )
     } else {
@@ -120,7 +169,7 @@ fun PlasmaTheme(
         card = card,
         cardPressed = cardPressed,
         border = border,
-        divider = if (!legacyUiMode && isDark) Color(0xFF232428) else BreezeDivider,
+        divider = divider,
         textSecondary = textSecondary,
         legacyUiMode = legacyUiMode
     )

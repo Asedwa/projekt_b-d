@@ -37,6 +37,9 @@ class PlasmaWaveApp : Application(), ImageLoaderFactory {
     }
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .components {
+            add(org.kde.plasmawave.ui.components.AudioArtFetcher.Factory(this@PlasmaWaveApp))
+        }
         .memoryCache {
             MemoryCache.Builder(this)
                 .maxSizePercent(0.25)

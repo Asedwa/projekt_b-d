@@ -346,7 +346,9 @@ fun ListeningStatsDialog(
                                     url = item.track.artworkUrl,
                                     modifier = Modifier.size(44.dp),
                                     fallback = Icons.Default.MusicNote,
-                                    shape = RoundedCornerShape(8.dp)
+                                    shape = RoundedCornerShape(8.dp),
+                                    fallbackTitle = item.track.title,
+                                    fallbackArtist = item.track.artist
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {

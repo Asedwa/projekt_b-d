@@ -1918,9 +1918,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 artist = artist,
                                 album = album,
                                 durationMs = duration.toULong(),
-                                artworkUri = if (albumId > 0) ContentUris.withAppendedId(
-                                    android.net.Uri.parse("content://media/external/audio/albumart"), albumId
-                                ).toString() else null,
+                                artworkUri = org.kde.plasmawave.ui.components.AudioArtFetcher.uriFor(contentUri),
                                 fileName = displayName
                             )
                         )

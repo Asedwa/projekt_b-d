@@ -67,7 +67,9 @@ fun TrackListItem(
         ArtworkImage(
             url = track.artworkUrl,
             modifier = Modifier.size(48.dp),
-            tint = if (isPlaying && customColors.legacyUiMode) MaterialTheme.colorScheme.primary else customColors.textSecondary
+            tint = if (isPlaying && customColors.legacyUiMode) MaterialTheme.colorScheme.primary else customColors.textSecondary,
+            fallbackTitle = track.title,
+            fallbackArtist = track.artist
         )
 
         Spacer(modifier = Modifier.width(12.dp))
