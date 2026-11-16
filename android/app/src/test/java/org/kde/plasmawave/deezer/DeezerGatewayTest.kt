@@ -219,4 +219,84 @@ class DeezerGatewayTest {
         })
         assertThrows(DeezerException::class.java) { gateway.playlistTracks("314") }
     }
+
+    @Test fun nonTokenSessionErrorsRefreshAndRetry() {
+        var logins = 0
+        var calls = 0
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, _, _ ->
+            when {
+                url.contains("getUserData") -> { logins++; DeezerGateway.Reply(login) }
+                url.contains("song.getData") -> {
+                    calls++
+                    if (calls == 1) DeezerGateway.Reply("""{"error":{"NEED_USER_AUTH_REQUIRED":"Session expired"}}""")
+                    else DeezerGateway.Reply("""{"error":{},"results":{"TRACK_TOKEN":"t"}}""")
+                }
+                else -> DeezerGateway.Reply("""{"data":[{"media":[{"format":"MP3_320","sources":[{"url":"https://test.dzcdn.net/audio"}]}]}]}""")
+            }
+        })
+        gateway.login()
+        assertEquals("MP3_320", gateway.resolve("55").format)
+        assertEquals(2, logins)
+        assertEquals(2, calls)
+    }
+
+    @Test fun transientMalformedHtmlResponseRetriesAndRecovers() {
+        var songAttempts = 0
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, _, _ ->
+            when {
+                url.contains("getUserData") -> DeezerGateway.Reply(login)
+                url.contains("song.getData") -> {
+                    songAttempts++
+                    if (songAttempts == 1) DeezerGateway.Reply("<html>502 Bad Gateway</html>")
+                    else DeezerGateway.Reply("""{"error":{},"results":{"TRACK_TOKEN":"t"}}""")
+                }
+                else -> DeezerGateway.Reply("""{"data":[{"media":[{"format":"MP3_128","sources":[{"url":"https://test.dzcdn.net/audio"}]}]}]}""")
+            }
+        })
+        gateway.login()
+        assertEquals("MP3_128", gateway.resolve("99").format)
+        assertEquals(2, songAttempts)
+    }
+
+    @Test fun playlistsKeepFirstPageIfSecondPageFails() {
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, body, _ ->
+            if (url.contains("getUserData")) DeezerGateway.Reply(login)
+            else {
+                val index = JSONObject(body).getInt("index")
+                if (index == 0) {
+                    val data = org.json.JSONArray()
+                    repeat(100) { data.put(JSONObject().put("PLAYLIST_ID", (1000 + it).toString()).put("TITLE", "List $it")) }
+                    DeezerGateway.Reply(JSONObject().put("error", JSONObject()).put("results", JSONObject().put("TAB", JSONObject().put("playlists", JSONObject().put("data", data)))).toString())
+                } else {
+                    throw IOException("timeout on page 2")
+                }
+            }
+        })
+        assertEquals(100, gateway.playlists().length())
+    }
+
+    @Test fun concurrentPlaylistsDoNotBlockTrackResolve() {
+        val playlistEntered = java.util.concurrent.CountDownLatch(1)
+        val allowPlaylistFinish = java.util.concurrent.CountDownLatch(1)
+        val gateway = DeezerGateway("test", DeezerGateway.Transport { url, _, _ ->
+            when {
+                url.contains("getUserData") -> DeezerGateway.Reply(login)
+                url.contains("deezer.pageProfile") -> {
+                    playlistEntered.countDown()
+                    allowPlaylistFinish.await(3, java.util.concurrent.TimeUnit.SECONDS)
+                    DeezerGateway.Reply("""{"error":{},"results":{"TAB":{"playlists":{"data":[]}}}}""")
+                }
+                url.contains("song.getData") -> DeezerGateway.Reply("""{"error":{},"results":{"TRACK_TOKEN":"t"}}""")
+                else -> DeezerGateway.Reply("""{"data":[{"media":[{"format":"MP3_320","sources":[{"url":"https://test.dzcdn.net/audio"}]}]}]}""")
+            }
+        })
+        gateway.login()
+        val playlistThread = Thread { gateway.playlists() }
+        playlistThread.start()
+        assertTrue(playlistEntered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        val media = gateway.resolve("777")
+        assertEquals("777", media.trackId)
+        allowPlaylistFinish.countDown()
+        playlistThread.join(2000)
+    }
 }

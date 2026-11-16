@@ -8,6 +8,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 class DeezerException(message: String) : IOException(message)
+internal class TransientDeezerException(message: String) : IOException(message)
 
 /** The web-player session only asks Deezer for media permitted to this account. */
 internal class DeezerGateway(private val arl: String, private val transport: Transport = HttpTransport()) {
@@ -18,14 +19,14 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
     internal data class Account(val id: String, val name: String, val plan: String, val highQuality: Boolean)
     internal data class Media(val url: String, val trackId: String, val format: String)
 
-    private var sid = ""
-    private var apiToken = ""
-    private var licenseToken = ""
-    private var account: Account? = null
+    private val authLock = Any()
+    @Volatile private var sid = ""
+    @Volatile private var apiToken = ""
+    @Volatile private var licenseToken = ""
+    @Volatile private var account: Account? = null
 
-    @Synchronized
-    fun login(): Account {
-        val result = call("deezer.getUserData", JSONObject(), authenticated = false)
+    fun login(): Account = synchronized(authLock) {
+        val result = withTransientRetry { call("deezer.getUserData", JSONObject(), authenticated = false) }
         val user = result.optJSONObject("USER") ?: throw DeezerException("Deezer oturumu doğrulanamadı")
         val id = user.optString("USER_ID")
         val token = result.optString("checkForm")
@@ -44,16 +45,22 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
             .also { account = it }
     }
 
-    @Synchronized
-    fun getAccount(): Account = account ?: login()
+    private fun refreshSessionIfNeeded(staleToken: String?): Account = synchronized(authLock) {
+        if (staleToken != null && apiToken.isNotBlank() && apiToken != staleToken && account != null) {
+            return account!!
+        }
+        return login()
+    }
 
-    @Synchronized
+    fun getAccount(): Account = account ?: synchronized(authLock) { account ?: login() }
+
     fun resolve(trackId: String, exactFormat: String? = null): Media {
         require(trackId.isNotEmpty() && trackId.all(Char::isDigit)) { "Geçersiz şarkı kimliği" }
         require(exactFormat == null || exactFormat in setOf("FLAC", "MP3_320", "MP3_128")) { "Geçersiz ses biçimi" }
         getAccount()
         // Refresh the session and track token once if Deezer rejects an old media grant.
         repeat(2) { attempt ->
+            val usedToken = apiToken
             val track = callWithRefresh("song.getData", JSONObject().put("sng_id", trackId))
             val candidates = listOfNotNull(track, track.optJSONObject("FALLBACK"))
             for ((index, candidate) in candidates.withIndex()) {
@@ -62,7 +69,7 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
                 if (id.isBlank() || !id.all(Char::isDigit) || token.isBlank() || licenseToken.isBlank()) continue
                 resolveMedia(id, token, exactFormat)?.let { return it }
             }
-            if (attempt == 0) login()
+            if (attempt == 0) refreshSessionIfNeeded(usedToken)
         }
         throw DeezerException(if (exactFormat == null) "Bu şarkının tamamı hesapta kullanılamıyor"
             else "Bu şarkı seçilen $exactFormat biçiminde hesabında kullanılamıyor")
@@ -78,7 +85,8 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
         val payload = JSONObject().put("license_token", licenseToken)
             .put("media", JSONArray().put(JSONObject().put("type", "FULL").put("formats", formats)))
             .put("track_tokens", JSONArray().put(token))
-        val reply = JSONObject(transport.post("https://media.deezer.com/v1/get_url", payload.toString(), null).body)
+        val rawReply = withTransientRetry { transport.post("https://media.deezer.com/v1/get_url", payload.toString(), null).body }
+        val reply = parseJson(rawReply)
         val item = reply.optJSONArray("data")?.optJSONObject(0)
         val media = item?.optJSONArray("media")?.optJSONObject(0) ?: return null
         if (exactFormat != null && media.optString("format") != exactFormat) return null
@@ -193,10 +201,32 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
         require(id.isNotEmpty() && id.all(Char::isDigit)) { "Geçersiz Deezer kimliği" }
     }
 
-    fun playlists(): JSONArray = pages { start ->
-        callWithRefresh("deezer.pageProfile", JSONObject()
-            .put("user_id", getAccount().id).put("tab", "playlists").put("nb", 100).put("index", start))
-            .optJSONObject("TAB")?.optJSONObject("playlists")?.optJSONArray("data")
+    fun playlists(): JSONArray {
+        val all = JSONArray()
+        var start = 0
+        var previous: String? = null
+        while (true) {
+            val page = try {
+                callWithRefresh("deezer.pageProfile", JSONObject()
+                    .put("user_id", getAccount().id).put("tab", "playlists").put("nb", 100).put("index", start))
+                    .optJSONObject("TAB")?.optJSONObject("playlists")?.optJSONArray("data")
+            } catch (e: Exception) {
+                if (start == 0) throw e
+                break
+            }
+            if (page == null) {
+                if (start == 0) throw DeezerException("Deezer listesi okunamadı")
+                break
+            }
+            val signature = page.toString()
+            if (page.length() > 0 && signature == previous) break
+            for (index in 0 until page.length()) all.put(page.get(index))
+            if (page.length() < 100) break
+            previous = signature
+            start += page.length()
+            if (start > 100_000) break
+        }
+        return all
     }
 
     fun playlistTracks(id: String): JSONArray {
@@ -258,33 +288,47 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
         return all
     }
 
-    @Synchronized
     private fun callWithRefresh(method: String, body: JSONObject): JSONObject {
-        try {
-            return call(method, body, authenticated = true)
+        val usedToken = synchronized(authLock) { apiToken }
+        return try {
+            withTransientRetry { call(method, body, authenticated = true) }
         } catch (e: TokenExpired) {
-            login()
-            return call(method, body, authenticated = true)
+            refreshSessionIfNeeded(usedToken)
+            withTransientRetry { call(method, body, authenticated = true) }
         }
     }
 
     private class TokenExpired : IOException()
 
     private fun call(method: String, body: JSONObject, authenticated: Boolean): JSONObject {
-        val token = if (authenticated) apiToken else ""
+        val (token, currentSid) = synchronized(authLock) {
+            (if (authenticated) apiToken else "") to sid
+        }
         val url = "https://www.deezer.com/ajax/gw-light.php?method=$method&input=3&api_version=1.0&api_token=" +
             URLEncoder.encode(token, "UTF-8")
-        val cookie = "arl=$arl" + if (sid.isBlank()) "" else "; sid=$sid"
+        val cookie = "arl=$arl" + if (currentSid.isBlank()) "" else "; sid=$currentSid"
         val response = transport.post(url, body.toString(), cookie)
-        response.cookies.forEach { header ->
-            val pair = header.substringBefore(';').trim()
-            if (pair.startsWith("sid=", ignoreCase = true)) sid = pair.substringAfter('=')
+        if (response.cookies.isNotEmpty()) {
+            synchronized(authLock) {
+                response.cookies.forEach { header ->
+                    val pair = header.substringBefore(';').trim()
+                    if (pair.startsWith("sid=", ignoreCase = true)) sid = pair.substringAfter('=')
+                }
+            }
         }
-        val envelope = JSONObject(response.body)
+        val envelope = parseJson(response.body)
         val error = envelope.opt("error")
         val errorText = error?.toString().orEmpty()
         if (errorText.isNotBlank() && errorText != "{}" && errorText != "[]" && errorText != "null") {
-            if (authenticated && errorText.contains("TOKEN", ignoreCase = true)) throw TokenExpired()
+            val isAuthError = authenticated && (
+                errorText.contains("TOKEN", ignoreCase = true) ||
+                errorText.contains("CSRF", ignoreCase = true) ||
+                errorText.contains("SESSION", ignoreCase = true) ||
+                errorText.contains("EXPIRED", ignoreCase = true) ||
+                errorText.contains("NEED_USER_AUTH", ignoreCase = true) ||
+                errorText.contains("VALID_TOKEN", ignoreCase = true)
+            )
+            if (isAuthError) throw TokenExpired()
             throw DeezerException("Deezer isteği başarısız oldu")
         }
         return when (val result = envelope.opt("results")) {
@@ -295,6 +339,37 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
                 JSONObject().put("value", result) else throw DeezerException("Deezer işlemi reddetti")
             else -> throw DeezerException("Deezer yanıtı okunamadı")
         }
+    }
+
+    private fun parseJson(body: String): JSONObject {
+        return try {
+            JSONObject(body)
+        } catch (_: Exception) {
+            throw TransientDeezerException("Deezer yanıtı okunamadı")
+        }
+    }
+
+    private inline fun <T> withTransientRetry(block: () -> T): T {
+        var lastError: Exception? = null
+        repeat(2) { attempt ->
+            try {
+                return block()
+            } catch (e: TokenExpired) {
+                throw e
+            } catch (e: DeezerException) {
+                throw e
+            } catch (e: IOException) {
+                lastError = e
+                if (attempt == 0) {
+                    try { Thread.sleep(200L) } catch (_: InterruptedException) { Thread.currentThread().interrupt(); throw e }
+                }
+            }
+        }
+        val error = lastError!!
+        if (error is TransientDeezerException) {
+            throw DeezerException(error.message ?: "Deezer bağlantı hatası")
+        }
+        throw error
     }
 
     private class HttpTransport : Transport {
@@ -311,7 +386,11 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
                 connection.setRequestProperty("Accept", "application/json")
                 if (cookie != null) connection.setRequestProperty("Cookie", cookie)
                 connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                if (connection.responseCode !in 200..299) throw DeezerException("Deezer bağlantı hatası (HTTP ${connection.responseCode})")
+                val code = connection.responseCode
+                if (code == 429 || code in 500..599) {
+                    throw TransientDeezerException("Deezer bağlantı hatası (HTTP $code)")
+                }
+                if (code !in 200..299) throw DeezerException("Deezer bağlantı hatası (HTTP $code)")
                 val cookies = connection.headerFields.entries.filter { it.key.equals("Set-Cookie", ignoreCase = true) }
                     .flatMap { it.value ?: emptyList() }
                 val response = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }

@@ -41,6 +41,7 @@ import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.deezer.DeezerSession
 import org.kde.plasmawave.deezer.DeezerException
 import org.kde.plasmawave.deezer.StreamingQuality
+import java.io.IOException
 import uniffi.plasmawave_core.FfiAdvanceReason
 import uniffi.plasmawave_core.FfiQueueEntry
 import uniffi.plasmawave_core.FfiQueueSnapshot
@@ -89,9 +90,26 @@ class PlaybackManager private constructor(private val context: Context) {
     private var pendingPlayback: Pair<FfiQueueEntry, Long>? = null
     private val queueMutex = Mutex()
     private var playbackGeneration = 0L
+    private val wakeLockSync = Any()
     private val transitionWakeLock by lazy {
         (context.getSystemService(Context.POWER_SERVICE) as PowerManager)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PlasmaWave:TrackTransition")
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PlasmaWave:TrackTransition").apply {
+                setReferenceCounted(false)
+            }
+    }
+
+    private fun acquireTransitionWakeLock() {
+        synchronized(wakeLockSync) {
+            runCatching { transitionWakeLock.acquire(30_000L) }
+        }
+    }
+
+    private fun releaseTransitionWakeLock() {
+        synchronized(wakeLockSync) {
+            runCatching {
+                if (transitionWakeLock.isHeld) transitionWakeLock.release()
+            }
+        }
     }
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -108,6 +126,11 @@ class PlaybackManager private constructor(private val context: Context) {
     private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
     private var currentAudioFormat: Format? = null
+    private var lastKnownTrackId: String? = null
+    private var lastKnownPositionMs: Long = 0L
+    private var errorRetryTrackId: String? = null
+    private var errorRetryCount: Int = 0
+    private var errorRetryJob: Job? = null
 
     init {
         initMediaController()
@@ -183,15 +206,62 @@ class PlaybackManager private constructor(private val context: Context) {
 
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
-            val message = generateSequence(error.cause) { it.cause }
+            val currentEntry = _uiState.value.currentEntry
+            val deezerError = generateSequence(error.cause) { it.cause }
                 .filterIsInstance<DeezerException>()
-                .firstOrNull()?.message ?: "Şarkı oynatılamadı. Bağlantını ve Deezer hesabını kontrol et."
+                .firstOrNull()
+            val deezerMsg = deezerError?.message
+            val isPermanentAuthOrRights = deezerMsg != null && (
+                deezerMsg.contains("oturum", ignoreCase = true) ||
+                deezerMsg.contains("giriş", ignoreCase = true) ||
+                deezerMsg.contains("kullanılamıyor", ignoreCase = true) ||
+                deezerMsg.contains("kimliği", ignoreCase = true)
+            )
+            val isRecoverableIo = !isPermanentAuthOrRights && (
+                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+                generateSequence(error.cause) { it.cause }.any { it is IOException }
+            )
+            if (currentEntry != null && isRecoverableIo && currentEntry.track.provider == "deezer") {
+                val trackId = currentEntry.track.id
+                if (errorRetryTrackId != trackId) {
+                    errorRetryTrackId = trackId
+                    errorRetryCount = 0
+                }
+                if (errorRetryCount < 2) {
+                    errorRetryCount++
+                    val attempt = errorRetryCount
+                    val resumePos = if (lastKnownTrackId == trackId) lastKnownPositionMs else 0L
+                    DeezerSession.get(context).invalidateResolvedMedia(trackId)
+                    errorRetryJob?.cancel()
+                    errorRetryJob = scope.launch {
+                        delay(700L * attempt)
+                        launchQueueOperation {
+                            if (_uiState.value.currentEntry?.track?.id == trackId) {
+                                prepareAndPlay(currentEntry, resumePos, automatic = false, resetRetry = false)
+                            }
+                        }
+                    }
+                    return
+                }
+            }
+            val message = deezerMsg
+                ?: if (isRecoverableIo) "Bağlantı kesildi; şarkı yüklenemedi. İnternetini kontrol edip tekrar dene."
+                else "Şarkı oynatılamadı. Bağlantını ve Deezer hesabını kontrol et."
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _uiState.value = _uiState.value.copy(isPlaying = isPlaying)
-            if (isPlaying) startProgressTicker() else stopProgressTicker()
+            if (isPlaying) {
+                errorRetryCount = 0
+                startProgressTicker()
+            } else {
+                stopProgressTicker()
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -211,9 +281,17 @@ class PlaybackManager private constructor(private val context: Context) {
         progressJob = scope.launch {
             while (isActive) {
                 playbackPlayer?.let { player ->
+                    val pos = player.currentPosition.coerceAtLeast(0L)
+                    val dur = player.duration.coerceAtLeast(0L)
+                    _uiState.value.currentEntry?.track?.id?.let { id ->
+                        if (player.playbackState != Player.STATE_IDLE) {
+                            lastKnownTrackId = id
+                            lastKnownPositionMs = pos
+                        }
+                    }
                     _progress.value = PlaybackProgress(
-                        positionMs = player.currentPosition.coerceAtLeast(0L),
-                        durationMs = player.duration.coerceAtLeast(0L)
+                        positionMs = pos,
+                        durationMs = dur
                     )
                 }
                 delay(300)
@@ -229,10 +307,17 @@ class PlaybackManager private constructor(private val context: Context) {
     private fun syncPlayerState() {
         val player = playbackPlayer ?: return
         _uiState.value = _uiState.value.copy(isPlaying = player.isPlaying)
-        _progress.value = PlaybackProgress(
-            positionMs = player.currentPosition.coerceAtLeast(0L),
-            durationMs = player.duration.coerceAtLeast(0L)
-        )
+        if (player.playbackState != Player.STATE_IDLE) {
+            val pos = player.currentPosition.coerceAtLeast(0L)
+            _uiState.value.currentEntry?.track?.id?.let { id ->
+                lastKnownTrackId = id
+                lastKnownPositionMs = pos
+            }
+            _progress.value = PlaybackProgress(
+                positionMs = pos,
+                durationMs = player.duration.coerceAtLeast(0L)
+            )
+        }
     }
 
     private fun readSnapshot(): FfiQueueSnapshot = PlasmaWaveApp.core.getQueueSnapshot()
@@ -356,6 +441,11 @@ class PlaybackManager private constructor(private val context: Context) {
                     readSnapshot()
                 }
                 pendingPlayback = null
+                errorRetryJob?.cancel()
+                errorRetryJob = null
+                lastKnownTrackId = null
+                lastKnownPositionMs = 0L
+                errorRetryCount = 0
                 playbackGeneration++
                 val player = playbackPlayer
                 if (player == null) {
@@ -376,6 +466,11 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun stopPlayback() {
+        errorRetryJob?.cancel()
+        errorRetryJob = null
+        lastKnownTrackId = null
+        lastKnownPositionMs = 0L
+        errorRetryCount = 0
         playbackGeneration++
         pendingPlayback = null
         playbackPlayer?.stop()
@@ -384,7 +479,8 @@ class PlaybackManager private constructor(private val context: Context) {
     fun togglePlayPause() {
         val player = playbackPlayer ?: run {
             _uiState.value.currentEntry?.let { entry ->
-                launchQueueOperation { prepareAndPlay(entry) }
+                val resumePos = if (lastKnownTrackId == entry.track.id) lastKnownPositionMs else 0L
+                launchQueueOperation { prepareAndPlay(entry, resumePos) }
             }
             return
         }
@@ -396,7 +492,14 @@ class PlaybackManager private constructor(private val context: Context) {
             if ((player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) &&
                 _uiState.value.currentEntry != null
             ) {
-                _uiState.value.currentEntry?.let { launchQueueOperation { prepareAndPlay(it) } }
+                _uiState.value.currentEntry?.let { entry ->
+                    val resumePos = if (player.playbackState == Player.STATE_IDLE && lastKnownTrackId == entry.track.id) {
+                        lastKnownPositionMs
+                    } else {
+                        0L
+                    }
+                    launchQueueOperation { prepareAndPlay(entry, resumePos) }
+                }
             } else {
                 player.play()
             }
@@ -404,8 +507,13 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        playbackPlayer?.seekTo(positionMs)
-        _progress.value = _progress.value.copy(positionMs = positionMs)
+        val safePos = positionMs.coerceAtLeast(0L)
+        playbackPlayer?.seekTo(safePos)
+        _uiState.value.currentEntry?.track?.id?.let { id ->
+            lastKnownTrackId = id
+            lastKnownPositionMs = safePos
+        }
+        _progress.value = _progress.value.copy(positionMs = safePos)
     }
 
     fun skipNext(): Job = launchQueueOperation {
@@ -502,7 +610,7 @@ class PlaybackManager private constructor(private val context: Context) {
         val generation = playbackGeneration
         // ExoPlayer releases its own wake lock at STATE_ENDED. Bridge the short queue/URI
         // lookup until prepare() enables its buffering wake lock for the next stream.
-        transitionWakeLock.acquire(30_000L)
+        acquireTransitionWakeLock()
         val job = launchQueueOperation {
             try {
                 if (playbackPlayer !== player || playbackGeneration != generation ||
@@ -521,7 +629,7 @@ class PlaybackManager private constructor(private val context: Context) {
             }
         }
         job.invokeOnCompletion {
-            if (transitionWakeLock.isHeld) transitionWakeLock.release()
+            releaseTransitionWakeLock()
         }
     }
 
@@ -563,8 +671,15 @@ class PlaybackManager private constructor(private val context: Context) {
     private suspend fun prepareAndPlay(
         entry: FfiQueueEntry,
         startPositionMs: Long = 0L,
-        automatic: Boolean = false
+        automatic: Boolean = false,
+        resetRetry: Boolean = true
     ) {
+        if (resetRetry) {
+            errorRetryJob?.cancel()
+            errorRetryJob = null
+            errorRetryTrackId = entry.track.id
+            errorRetryCount = 0
+        }
         val player = playbackPlayer ?: run {
             pendingPlayback = entry to startPositionMs
             initMediaController()
@@ -598,15 +713,23 @@ class PlaybackManager private constructor(private val context: Context) {
                 }
                 .build()
 
-            val mediaItem = MediaItem.Builder()
+            val mediaItemBuilder = MediaItem.Builder()
                 .setMediaId(entry.track.id)
                 .setUri(uri)
                 .setMediaMetadata(metadata)
-                .build()
+            if (useFullDeezer) {
+                val cleanId = entry.track.id.removePrefix("deezer:")
+                val qualityKey = deezerSession.getResolvedTrackFormat(cleanId)
+                    ?: deezerSession.currentStreamingQuality().name
+                mediaItemBuilder.setCustomCacheKey("deezer:$cleanId:$qualityKey")
+            }
+            val mediaItem = mediaItemBuilder.build()
 
             // A pause or sleep timer during the URI lookup must not restart playback.
             val playWhenPrepared = !automatic || player.playWhenReady
             val safeStartPos = startPositionMs.coerceAtLeast(0L)
+            lastKnownTrackId = entry.track.id
+            lastKnownPositionMs = safeStartPos
             if (safeStartPos > 0L) {
                 player.setMediaItem(mediaItem, safeStartPos)
             } else {

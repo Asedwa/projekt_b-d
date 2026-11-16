@@ -44,6 +44,8 @@ object LauncherIconManager {
     private const val TAG = "LauncherIconManager"
     private const val PREFS = "launcher_icon_prefs"
     private const val KEY_ICON = "selected_launcher_icon"
+    private const val KEY_SYNC_VERSION = "launcher_sync_version"
+    private const val CURRENT_SYNC_VERSION = 1
     private const val MAIN_ACTIVITY_CLASS = "org.kde.plasmawave.MainActivity"
     private val LEGACY_ALIASES = listOf(
         "org.kde.plasmawave.MainActivityTwilight",
@@ -60,8 +62,11 @@ object LauncherIconManager {
     }
 
     fun syncLauncherIcon(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getInt(KEY_SYNC_VERSION, 0) >= CURRENT_SYNC_VERSION) return
         val selected = getSelectedIcon(context)
         setLauncherIcon(context, selected, requestPin = false)
+        prefs.edit().putInt(KEY_SYNC_VERSION, CURRENT_SYNC_VERSION).apply()
     }
 
     fun setLauncherIcon(context: Context, icon: AppLauncherIcon, requestPin: Boolean = false) {

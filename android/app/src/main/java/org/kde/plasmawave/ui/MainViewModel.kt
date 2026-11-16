@@ -2,6 +2,9 @@ package org.kde.plasmawave.ui
 
 import android.app.Application
 import android.content.ContentUris
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.ui.unit.dp
@@ -17,7 +20,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.ConcurrentHashMap
 import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.jam.JamManager
@@ -963,10 +968,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _localTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
     val localTracks: StateFlow<List<FfiTrack>> = _localTracks.asStateFlow()
 
-    private val _deezerUser = MutableStateFlow<FfiDeezerUser?>(null)
+    private val _deezerUser = MutableStateFlow<FfiDeezerUser?>(deezerSession.cachedUser())
     val deezerUser: StateFlow<FfiDeezerUser?> = _deezerUser.asStateFlow()
 
-    private val _deezerPlaylists = MutableStateFlow<List<LibraryPlaylistEntry>>(emptyList())
+    private val _deezerPlaylists = MutableStateFlow<List<LibraryPlaylistEntry>>(loadCachedDeezerPlaylists())
     val deezerPlaylists: StateFlow<List<LibraryPlaylistEntry>> = _deezerPlaylists.asStateFlow()
     private val _deezerLibraryLoading = MutableStateFlow(deezerSession.hasSavedSession)
     val deezerLibraryLoading: StateFlow<Boolean> = _deezerLibraryLoading.asStateFlow()
@@ -974,6 +979,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _deezerFavorites = MutableStateFlow<List<FfiTrack>>(emptyList())
     val deezerFavorites: StateFlow<List<FfiTrack>> = _deezerFavorites.asStateFlow()
     private var deezerFavoriteEntries: List<PlaylistTrackEntry> = emptyList()
+    @Volatile private var needsDeezerRefresh = false
+    @Volatile private var lastDeezerRefreshAttemptMs = 0L
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val _deezerFlow = MutableStateFlow<List<FfiTrack>>(emptyList())
     val deezerFlow: StateFlow<List<FfiTrack>> = _deezerFlow.asStateFlow()
@@ -1022,16 +1030,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
     init {
-        viewModelScope.launch(Dispatchers.IO) {
-            warmupPlaylistCacheFromDisk()
-            try { core.clearDeezerUser() } catch (_: Exception) { }
-            try { fullDownloadManager.recover() } catch (_: Exception) { }
-            if (!deezerSession.hasSavedSession) {
-                try {
-                    DeezerWebCookies.readArl()?.let { connectDeezerArl(it) }
-                } catch (_: Exception) { }
-            }
-        }
+        registerNetworkRecoveryCallback()
         viewModelScope.launch {
             playbackManager.currentTrackId.collect { id ->
                 if (id != null) {
@@ -1053,20 +1052,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch(Dispatchers.IO) {
             var tickCounter = 0
+            var pendingTrack: FfiTrack? = null
+            var pendingMs = 0L
             while (isActive) {
                 delay(1000L)
                 val ui = playbackManager.uiState.value
                 val curTrack = ui.currentEntry?.track
                 if (ui.isPlaying && curTrack != null) {
-                    recordActiveListeningTick(curTrack, 1000L)
+                    if (pendingTrack != null && pendingTrack.id != curTrack.id && pendingMs > 0L) {
+                        recordActiveListeningTick(pendingTrack, pendingMs)
+                        pendingMs = 0L
+                    }
+                    pendingTrack = curTrack
+                    pendingMs += 1000L
                     tickCounter++
-                    if (tickCounter % 2 == 0) {
+                    if (pendingMs >= 10_000L) {
+                        recordActiveListeningTick(curTrack, pendingMs)
+                        pendingMs = 0L
+                    }
+                    if (tickCounter % 5 == 0) {
                         val snap = ui.queueSnapshot
                         val qTracks = snap?.entries?.map { it.track }.orEmpty().ifEmpty { listOf(curTrack) }
                         val qIdx = snap?.currentIndex?.toInt() ?: 0
                         val prog = playbackManager.progress.value
                         saveResumePlaybackSnapshot(
                             track = curTrack,
+                            positionMs = prog.positionMs,
+                            durationMs = prog.durationMs,
+                            queueTracks = qTracks,
+                            queueIndex = qIdx
+                        )
+                    }
+                } else if (pendingTrack != null && pendingMs > 0L) {
+                    recordActiveListeningTick(pendingTrack, pendingMs)
+                    pendingMs = 0L
+                    pendingTrack = null
+                    val pausedTrack = curTrack ?: ui.currentEntry?.track
+                    if (pausedTrack != null) {
+                        val snap = ui.queueSnapshot
+                        val qTracks = snap?.entries?.map { it.track }.orEmpty().ifEmpty { listOf(pausedTrack) }
+                        val qIdx = snap?.currentIndex?.toInt() ?: 0
+                        val prog = playbackManager.progress.value
+                        saveResumePlaybackSnapshot(
+                            track = pausedTrack,
                             positionMs = prog.positionMs,
                             durationMs = prog.durationMs,
                             queueTracks = qTracks,
@@ -1096,12 +1124,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadData() {
         viewModelScope.launch(Dispatchers.IO) {
+            warmupPlaylistCacheFromDisk()
+            try { core.clearDeezerUser() } catch (_: Exception) { }
+            try { fullDownloadManager.recover() } catch (_: Exception) { }
             refreshThemes()
             refreshMods()
             refreshPlaylists()
             refreshFavorites()
             refreshLocalTracks()
             refreshDownloads()
+            if (!deezerSession.hasSavedSession) {
+                try {
+                    DeezerWebCookies.readArl()?.let { connectDeezerArl(it) }
+                } catch (_: Exception) { }
+            }
             refreshDeezerData()
         }
     }
@@ -1287,7 +1323,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 if (onDeezer) {
                     deezerSession.createPlaylist(name)
-                    try { _deezerPlaylists.value = deezerSession.playlists() } catch (_: Exception) { }
+                    try {
+                        val updated = deezerSession.playlists()
+                        _deezerPlaylists.value = updated
+                        persistDeezerPlaylistsCache(updated)
+                    } catch (_: Exception) { }
                 } else { core.createPlaylist(name); refreshPlaylists() }
                 _statusMessage.value = "Çalma listesi oluşturuldu"
             } catch (_: Exception) {
@@ -1301,7 +1341,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 if (playlist.id.startsWith("deezer:")) {
                     deezerSession.deletePlaylist(playlist.id)
-                    try { _deezerPlaylists.value = deezerSession.playlists() } catch (_: Exception) { }
+                    try {
+                        val updated = deezerSession.playlists()
+                        _deezerPlaylists.value = updated
+                        persistDeezerPlaylistsCache(updated)
+                    } catch (_: Exception) { }
                 } else { core.deletePlaylist(playlist.id); refreshPlaylists() }
                 pinnedItems.remove("playlist:${playlist.id}")
                 localCoverCache.remove(playlist.id)
@@ -1390,6 +1434,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun disconnectDeezer() {
         val generation = deezerGeneration.incrementAndGet()
         _deezerBusy.value = true
+        needsDeezerRefresh = false
         playbackManager.stopPlayback()
         android.webkit.CookieManager.getInstance().removeAllCookies(null)
         _deezerUser.value = null
@@ -1398,6 +1443,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _deezerFavorites.value = emptyList()
         deezerFavoriteEntries = emptyList()
         _deezerFlow.value = emptyList()
+        playlistTracksMemCache.remove(DEEZER_FAVORITES_ID)
+        playlistCachePrefs.edit().remove("deezer:playlists").apply()
         _statusMessage.value = "Deezer oturumu kapatıldı"
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1411,16 +1458,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshDeezerData() {
         val generation = deezerGeneration.get()
+        lastDeezerRefreshAttemptMs = SystemClock.elapsedRealtime()
         _deezerLibraryLoading.value = deezerSession.hasSavedSession
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val user = deezerSession.restore()
                 if (generation != deezerGeneration.get()) return@launch
-                _deezerUser.value = user
-                if (user != null) loadDeezerLibrary(generation)
+                if (user != null) {
+                    _deezerUser.value = user
+                    loadDeezerLibrary(generation)
+                } else {
+                    _deezerUser.value = null
+                    needsDeezerRefresh = false
+                }
             } catch (e: Exception) {
                 if (generation == deezerGeneration.get()) {
-                    _statusMessage.value = "Deezer oturumu açılamadı: ${(e as? DeezerException)?.message ?: "Bağlantıyı kontrol et"}"
+                    val msg = (e as? DeezerException)?.message.orEmpty()
+                    val isInvalidSession = msg.contains("geçersiz veya süresi dolmuş", ignoreCase = true) ||
+                        msg.contains("yeniden giriş yap", ignoreCase = true)
+                    if (isInvalidSession) {
+                        _deezerUser.value = null
+                        needsDeezerRefresh = false
+                        _statusMessage.value = "Deezer oturumu açılamadı: $msg"
+                    } else {
+                        needsDeezerRefresh = true
+                        if (_deezerPlaylists.value.isEmpty() && _deezerFavorites.value.isEmpty()) {
+                            _statusMessage.value = "Deezer oturumu açılamadı: ${msg.ifBlank { "Bağlantıyı kontrol et" }}"
+                        }
+                    }
                 }
             } finally {
                 if (generation == deezerGeneration.get()) _deezerLibraryLoading.value = false
@@ -1430,14 +1495,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadDeezerLibrary(generation: Long) {
         var loadedPlaylists: List<LibraryPlaylistEntry> = emptyList()
+        var playlistsOk = false
+        var favoritesOk = false
         try {
             val playlists = deezerSession.playlists()
             if (generation == deezerGeneration.get()) {
                 _deezerPlaylists.value = playlists
+                persistDeezerPlaylistsCache(playlists)
                 loadedPlaylists = playlists
+                playlistsOk = true
             }
         } catch (_: Exception) {
-            if (generation == deezerGeneration.get()) _statusMessage.value = "Deezer çalma listeleri yüklenemedi"
+            if (generation == deezerGeneration.get() && _deezerPlaylists.value.isEmpty()) {
+                _statusMessage.value = "Deezer çalma listeleri yüklenemedi"
+            }
         }
         if (generation != deezerGeneration.get()) return
         try {
@@ -1447,24 +1518,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 playlistTracksMemCache[DEEZER_FAVORITES_ID] = entries
                 persistCachedPlaylistEntries(DEEZER_FAVORITES_ID, entries)
                 _deezerFavorites.value = entries.map { it.track }
+                favoritesOk = true
             }
         } catch (_: Exception) {
-            if (generation == deezerGeneration.get()) _statusMessage.value = "Deezer favorileri yüklenemedi"
+            if (generation == deezerGeneration.get() && _deezerFavorites.value.isEmpty()) {
+                _statusMessage.value = "Deezer favorileri yüklenemedi"
+            }
         }
-        // Background parallel prefetch of playlists so opening any playlist is instant (0 ms)
+        if (generation == deezerGeneration.get()) {
+            needsDeezerRefresh = !(playlistsOk && favoritesOk)
+        }
+        // Background bounded prefetch of playlists so opening any playlist is instant without starving playback
         if (loadedPlaylists.isNotEmpty() && generation == deezerGeneration.get()) {
             viewModelScope.launch(Dispatchers.IO) {
                 try {
+                    val gate = Semaphore(2)
                     coroutineScope {
-                        loadedPlaylists.take(16).map { entry ->
+                        loadedPlaylists.take(12).map { entry ->
                             async {
                                 val pid = entry.playlist.id
                                 if (!playlistTracksMemCache.containsKey(pid)) {
-                                    runCatching {
-                                        val fetched = deezerSession.playlistTrackEntries(pid)
-                                        if (fetched.isNotEmpty()) {
-                                            playlistTracksMemCache[pid] = fetched
-                                            persistCachedPlaylistEntries(pid, fetched)
+                                    gate.withPermit {
+                                        runCatching {
+                                            val fetched = deezerSession.playlistTrackEntries(pid)
+                                            if (fetched.isNotEmpty()) {
+                                                playlistTracksMemCache[pid] = fetched
+                                                persistCachedPlaylistEntries(pid, fetched)
+                                            }
                                         }
                                     }
                                 }
@@ -1473,6 +1553,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (_: Exception) {}
             }
+        }
+    }
+
+    private fun registerNetworkRecoveryCallback() {
+        val cm = getApplication<Application>().getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (!deezerSession.hasSavedSession) return
+                val missingData = _deezerUser.value == null || _deezerPlaylists.value.isEmpty() || _deezerFavorites.value.isEmpty()
+                if (!needsDeezerRefresh && !missingData) return
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastDeezerRefreshAttemptMs < 5_000L) return
+                refreshDeezerData()
+            }
+        }
+        runCatching {
+            cm.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
         }
     }
 
@@ -1612,6 +1710,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try { core.getDeezerArtistAlbums(artistId) } catch (e: Exception) { emptyList() }
     }
 
+    private fun loadCachedDeezerPlaylists(): List<LibraryPlaylistEntry> {
+        if (!deezerSession.hasSavedSession) return emptyList()
+        val raw = playlistCachePrefs.getString("deezer:playlists", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+                val id = obj.optString("id")
+                val name = obj.optString("name")
+                if (id.isBlank() || name.isBlank()) return@mapNotNull null
+                val pl = FfiPlaylist(
+                    id = id,
+                    name = name,
+                    description = obj.optString("description").takeIf { it.isNotBlank() && it != "null" },
+                    isLocal = obj.optBoolean("isLocal", false),
+                    trackCount = obj.optLong("trackCount", 0L).coerceAtLeast(0L).toUInt(),
+                    artworkUrl = obj.optString("artworkUrl").takeIf { it.isNotBlank() && it != "null" },
+                    origin = obj.optString("origin", "real")
+                )
+                LibraryPlaylistEntry(
+                    playlist = pl,
+                    addedAt = if (obj.has("addedAt") && !obj.isNull("addedAt")) obj.optLong("addedAt") else null,
+                    modifiedAt = if (obj.has("modifiedAt") && !obj.isNull("modifiedAt")) obj.optLong("modifiedAt") else null
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun persistDeezerPlaylistsCache(entries: List<LibraryPlaylistEntry>) {
+        runCatching {
+            val arr = JSONArray()
+            entries.forEach { entry ->
+                val p = entry.playlist
+                arr.put(
+                    JSONObject()
+                        .put("id", p.id)
+                        .put("name", p.name)
+                        .put("description", p.description)
+                        .put("isLocal", p.isLocal)
+                        .put("trackCount", p.trackCount.toLong())
+                        .put("artworkUrl", p.artworkUrl)
+                        .put("origin", p.origin)
+                        .put("addedAt", entry.addedAt)
+                        .put("modifiedAt", entry.modifiedAt)
+                )
+            }
+            playlistCachePrefs.edit().putString("deezer:playlists", arr.toString()).apply()
+        }
+    }
+
     private fun warmupPlaylistCacheFromDisk() {
         try {
             val cachedFromRust = core.getAllCachedPlaylistEntries()
@@ -1641,6 +1789,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     runCatching { core.setCachedPlaylistEntries(playlistId, entries.map { it.toFfi() }) }
                 }
             }
+            if (deezerSession.hasSavedSession) {
+                if (_deezerUser.value == null) {
+                    _deezerUser.value = deezerSession.cachedUser()
+                }
+                if (_deezerPlaylists.value.isEmpty()) {
+                    val cachedPls = loadCachedDeezerPlaylists()
+                    if (cachedPls.isNotEmpty()) _deezerPlaylists.value = cachedPls
+                }
+                val cachedFavs = playlistTracksMemCache[DEEZER_FAVORITES_ID]
+                if (!cachedFavs.isNullOrEmpty() && _deezerFavorites.value.isEmpty()) {
+                    deezerFavoriteEntries = cachedFavs
+                    _deezerFavorites.value = cachedFavs.map { it.track }
+                }
+            }
         } catch (_: Exception) {}
     }
 
@@ -1667,11 +1829,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getPlaylistTrackEntries(playlistId: String): List<PlaylistTrackEntry> = withContext(Dispatchers.IO) {
         if (playlistId == DEEZER_FAVORITES_ID) {
             val cached = deezerFavoriteEntries.takeIf { it.isNotEmpty() } ?: playlistTracksMemCache[playlistId]
-            if (cached != null) return@withContext cached
+            if (cached != null) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    runCatching {
+                        val fresh = deezerSession.favoriteTrackEntries()
+                        if (fresh.isNotEmpty() && fresh.map { it.track.id } != cached.map { it.track.id }) {
+                            deezerFavoriteEntries = fresh
+                            playlistTracksMemCache[playlistId] = fresh
+                            persistCachedPlaylistEntries(playlistId, fresh)
+                            _deezerFavorites.value = fresh.map { it.track }
+                            _playlistRevisions.update { it + (playlistId to ((it[playlistId] ?: 0L) + 1L)) }
+                        }
+                    }
+                }
+                return@withContext cached
+            }
             deezerSession.favoriteTrackEntries().also { fetched ->
                 deezerFavoriteEntries = fetched
                 playlistTracksMemCache[playlistId] = fetched
                 persistCachedPlaylistEntries(playlistId, fetched)
+                _deezerFavorites.value = fetched.map { it.track }
             }
         } else if (playlistId == LOCAL_DOWNLOADS_ID) {
             val current = _downloadedTracks.value.ifEmpty {
@@ -1773,7 +1950,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 invalidatePlaylist(playlistId)
                 _statusMessage.value = "Şarkı listeye eklendi"
-                if (playlistId.startsWith("deezer:")) try { _deezerPlaylists.value = deezerSession.playlists() } catch (_: Exception) { }
+                if (playlistId.startsWith("deezer:")) try {
+                    val updated = deezerSession.playlists()
+                    _deezerPlaylists.value = updated
+                    persistDeezerPlaylistsCache(updated)
+                } catch (_: Exception) { }
             } catch (e: Exception) {
                 _statusMessage.value = (e as? DeezerException)?.message ?: "Şarkı eklenemedi; liste düzenleme iznini ve bağlantını kontrol et"
             }
@@ -1797,7 +1978,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 invalidatePlaylist(menu.playlist.id)
                 _statusMessage.value = "Şarkı listeden çıkarıldı"
-                if (menu.playlist.id.startsWith("deezer:")) try { _deezerPlaylists.value = deezerSession.playlists() } catch (_: Exception) { }
+                if (menu.playlist.id.startsWith("deezer:")) try {
+                    val updated = deezerSession.playlists()
+                    _deezerPlaylists.value = updated
+                    persistDeezerPlaylistsCache(updated)
+                } catch (_: Exception) { }
             } catch (_: Exception) {
                 _statusMessage.value = "Şarkı çıkarılamadı; liste düzenleme iznini ve bağlantını kontrol et"
             }
@@ -1937,6 +2122,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        networkCallback?.let { cb ->
+            runCatching {
+                getApplication<Application>().getSystemService(ConnectivityManager::class.java)
+                    ?.unregisterNetworkCallback(cb)
+            }
+        }
+        networkCallback = null
         jamManager.release()
         super.onCleared()
     }

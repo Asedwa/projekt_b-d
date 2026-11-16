@@ -99,7 +99,7 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
     }
     val liked = if (favorites.isNotEmpty()) FfiPlaylist(LOCAL_FAVORITES_ID, "Beğenilen Şarkılar", null, true,
         favorites.size.toUInt(), null, "real") else null
-    val deezerLiked = if (deezerFavorites.isNotEmpty()) FfiPlaylist(DEEZER_FAVORITES_ID, "Deezer • Sevdiğim Şarkılar", null, false,
+    val deezerLiked = if (deezerUser != null || deezerFavorites.isNotEmpty()) FfiPlaylist(DEEZER_FAVORITES_ID, "Deezer • Sevdiğim Şarkılar", null, false,
         deezerFavorites.size.toUInt(), null, "real") else null
     val downloadedPlaylist = remember(downloadedTracks) {
         FfiPlaylist(

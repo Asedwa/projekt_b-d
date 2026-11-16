@@ -6,6 +6,10 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import uniffi.plasmawave_core.PlasmaWaveCore
 import java.io.File
 
@@ -19,6 +23,8 @@ class PlasmaWaveApp : Application(), ImageLoaderFactory {
             private set
     }
 
+    private val appInitScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -29,7 +35,11 @@ class PlasmaWaveApp : Application(), ImageLoaderFactory {
             val storageDir = File(filesDir, "plasmawave_data").apply { mkdirs() }
             core = PlasmaWaveCore(storageDir.absolutePath)
             Log.i(TAG, "PlasmaWave core initialized: ${core.getVersion()}")
-            org.kde.plasmawave.ui.components.LauncherIconManager.syncLauncherIcon(this)
+            appInitScope.launch {
+                runCatching {
+                    org.kde.plasmawave.ui.components.LauncherIconManager.syncLauncherIcon(this@PlasmaWaveApp)
+                }
+            }
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to initialize PlasmaWave core", e)
             throw e

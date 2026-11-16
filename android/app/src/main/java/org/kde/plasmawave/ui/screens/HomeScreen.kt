@@ -234,7 +234,7 @@ fun HomeScreen(
         } else null
     }
 
-    val likedPlaylist = if (deezerFavorites.isNotEmpty()) FfiPlaylist(
+    val likedPlaylist = if (deezerUser != null || deezerFavorites.isNotEmpty()) FfiPlaylist(
         DEEZER_FAVORITES_ID, "Sevdiğim Şarkılar", null, false,
         deezerFavorites.size.toUInt(), null, "real"
     ) else null

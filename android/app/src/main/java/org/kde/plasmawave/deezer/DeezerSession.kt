@@ -35,6 +35,11 @@ internal fun useMobileStreamingQuality(wifi: Boolean, cellular: Boolean, metered
 internal fun qualityForNetwork(useMobile: Boolean, wifi: StreamingQuality, mobile: StreamingQuality): StreamingQuality =
     if (useMobile) mobile else wifi
 
+internal val EXACT_DEEZER_FORMATS = setOf("FLAC", "MP3_320", "MP3_128")
+
+internal fun selectResolveFormat(lockedFormat: String?, currentQuality: StreamingQuality): String? =
+    lockedFormat?.takeIf { it in EXACT_DEEZER_FORMATS } ?: currentQuality.format
+
 /** Owns the user's session. ARL is encrypted by a non-exportable Android Keystore key. */
 class DeezerSession private constructor(context: Context) {
     companion object {
@@ -68,7 +73,9 @@ class DeezerSession private constructor(context: Context) {
     private val _lastResolvedMedia = MutableStateFlow<Pair<String, String>?>(null)
     val lastResolvedMedia: StateFlow<Pair<String, String>?> = _lastResolvedMedia.asStateFlow()
     private val _trackFormats = java.util.concurrent.ConcurrentHashMap<String, String>()
-    private var gateway: DeezerGateway? = null
+    private data class CachedMedia(val media: DeezerGateway.Media, val formatKey: String?, val resolvedAtMs: Long)
+    private val mediaCache = java.util.concurrent.ConcurrentHashMap<String, CachedMedia>()
+    @Volatile private var gateway: DeezerGateway? = null
     val hasSavedSession: Boolean get() = prefs.contains("session")
     val isAccountHighQuality: Boolean get() = gateway?.getAccount()?.highQuality == true
 
@@ -81,6 +88,7 @@ class DeezerSession private constructor(context: Context) {
         val candidate = DeezerGateway(value)
         val user = candidate.login()
         saveSecret(value)
+        saveCachedAccount(user)
         gateway = candidate
         _connected.value = true
         return user.toFfi()
@@ -92,9 +100,37 @@ class DeezerSession private constructor(context: Context) {
         val secret = readSecret() ?: return null
         val candidate = DeezerGateway(secret)
         val user = candidate.login()
+        saveCachedAccount(user)
         gateway = candidate
         _connected.value = true
         return user.toFfi()
+    }
+
+    fun cachedUser(): FfiDeezerUser? {
+        if (!hasSavedSession) return null
+        val raw = prefs.getString("cached_account", null) ?: return null
+        return runCatching {
+            val obj = JSONObject(raw)
+            val id = obj.optString("id")
+            val name = obj.optString("name")
+            if (id.isBlank() || name.isBlank()) return null
+            DeezerGateway.Account(
+                id = id,
+                name = name,
+                plan = obj.optString("plan", "Deezer"),
+                highQuality = obj.optBoolean("highQuality", false)
+            ).toFfi()
+        }.getOrNull()
+    }
+
+    private fun saveCachedAccount(account: DeezerGateway.Account) {
+        val json = JSONObject()
+            .put("id", account.id)
+            .put("name", account.name)
+            .put("plan", account.plan)
+            .put("highQuality", account.highQuality)
+            .toString()
+        prefs.edit().putString("cached_account", json).apply()
     }
 
     @Synchronized
@@ -118,19 +154,42 @@ class DeezerSession private constructor(context: Context) {
     fun getResolvedTrackFormat(trackId: String): String? =
         _trackFormats[trackId.removePrefix("deezer:")]
 
-    internal fun resolve(trackId: String): DeezerGateway.Media {
-        val quality = currentStreamingQuality()
+    fun invalidateResolvedMedia(trackId: String) {
+        mediaCache.remove(trackId.removePrefix("deezer:"))
+    }
+
+    internal fun resolve(
+        trackId: String,
+        lockedFormat: String? = null,
+        forceRefresh: Boolean = false
+    ): DeezerGateway.Media {
+        val cleanId = trackId.removePrefix("deezer:")
+        val pinned = lockedFormat?.takeIf { it in EXACT_DEEZER_FORMATS }
+        val requestedFormat = selectResolveFormat(pinned, currentStreamingQuality())
+        val now = System.currentTimeMillis()
+        if (!forceRefresh) {
+            mediaCache[cleanId]?.let { cached ->
+                val fresh = now - cached.resolvedAtMs < 180_000L
+                val formatMatches = if (pinned != null) {
+                    cached.media.format == pinned
+                } else {
+                    cached.formatKey == requestedFormat
+                }
+                if (fresh && formatMatches) return cached.media
+            }
+        }
         val media = try {
-            activeGateway().resolve(trackId, quality.format)
+            activeGateway().resolve(cleanId, requestedFormat)
         } catch (e: DeezerException) {
-            if (quality.format != null) {
+            if (pinned == null && requestedFormat != null) {
                 // Graceful fallback to best available quality if exact format isn't available
-                activeGateway().resolve(trackId, null)
+                activeGateway().resolve(cleanId, null)
             } else {
                 throw e
             }
         }
-        val cleanId = trackId.removePrefix("deezer:")
+        if (mediaCache.size > 128) mediaCache.clear()
+        mediaCache[cleanId] = CachedMedia(media, requestedFormat, now)
         _trackFormats[cleanId] = media.format
         _lastResolvedMedia.value = cleanId to media.format
         return media
@@ -181,6 +240,7 @@ class DeezerSession private constructor(context: Context) {
         gateway = null
         _connected.value = false
         _trackFormats.clear()
+        mediaCache.clear()
         _lastResolvedMedia.value = null
         prefs.edit().clear().commit()
     }

@@ -144,19 +144,25 @@ class MqttRelayClient(
         isConnected = false
         readerJob?.cancel()
         pingJob?.cancel()
-        runCatching {
-            output?.let { out ->
-                synchronized(writeLock) {
-                    out.write(0xE0)
-                    out.write(0x00)
-                    out.flush()
+        val oldOutput = output
+        val oldSocket = socket
+        output = null
+        socket = null
+        scope.cancel()
+        if (oldOutput != null || oldSocket != null) {
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    oldOutput?.let { out ->
+                        synchronized(writeLock) {
+                            out.write(0xE0)
+                            out.write(0x00)
+                            out.flush()
+                        }
+                    }
                 }
+                runCatching { oldSocket?.close() }
             }
         }
-        runCatching { socket?.close() }
-        socket = null
-        output = null
-        scope.cancel()
     }
 
     private fun startLoops(inp: DataInputStream) {
