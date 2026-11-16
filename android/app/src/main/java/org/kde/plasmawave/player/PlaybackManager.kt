@@ -2,7 +2,11 @@ package org.kde.plasmawave.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
@@ -101,17 +105,33 @@ class PlaybackManager private constructor(private val context: Context) {
                 setReferenceCounted(false)
             }
     }
+    @Suppress("DEPRECATION")
+    private val transitionWifiLock by lazy {
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+        } else {
+            WifiManager.WIFI_MODE_FULL_HIGH_PERF
+        }
+        (context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager)
+            .createWifiLock(mode, "PlasmaWave:TransitionWifi").apply {
+                setReferenceCounted(false)
+            }
+    }
 
-    private fun acquireTransitionWakeLock() {
+    private fun acquireTransitionLocks(timeoutMs: Long = 30_000L) {
         synchronized(wakeLockSync) {
-            runCatching { transitionWakeLock.acquire(30_000L) }
+            runCatching { transitionWakeLock.acquire(timeoutMs) }
+            runCatching { if (!transitionWifiLock.isHeld) transitionWifiLock.acquire() }
         }
     }
 
-    private fun releaseTransitionWakeLock() {
+    private fun releaseTransitionLocks() {
         synchronized(wakeLockSync) {
             runCatching {
                 if (transitionWakeLock.isHeld) transitionWakeLock.release()
+            }
+            runCatching {
+                if (transitionWifiLock.isHeld) transitionWifiLock.release()
             }
         }
     }
@@ -138,6 +158,8 @@ class PlaybackManager private constructor(private val context: Context) {
     private var errorRetryTrackId: String? = null
     private var errorRetryCount: Int = 0
     private var errorRetryJob: Job? = null
+    private var recoveryNetworkCallback: ConnectivityManager.NetworkCallback? = null
+    private var nextSyncJob: Job? = null
 
     init {
         initMediaController()
@@ -178,6 +200,11 @@ class PlaybackManager private constructor(private val context: Context) {
         playbackPlayer = player
         this.onQueueChanged = onQueueChanged
         player.addListener(playerListener)
+        player.repeatMode = if (_uiState.value.repeatMode == FfiRepeatMode.ONE) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
         _uiState.value.queueSnapshot?.let(onQueueChanged)
         if (clearWhenConnected) {
             player.stop()
@@ -197,6 +224,10 @@ class PlaybackManager private constructor(private val context: Context) {
     internal fun detachPlayer(player: Player) {
         if (playbackPlayer !== player) return
         cancelPrefetch()
+        nextSyncJob?.cancel()
+        nextSyncJob = null
+        clearErrorRecoveryNetworkCallback()
+        releaseTransitionLocks()
         player.removeListener(playerListener)
         playbackPlayer = null
         onQueueChanged = null
@@ -212,7 +243,125 @@ class PlaybackManager private constructor(private val context: Context) {
         queueMutex.withLock { block() }
     }
 
+    private fun clearErrorRecoveryNetworkCallback() {
+        recoveryNetworkCallback?.let { cb ->
+            runCatching {
+                context.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb)
+            }
+        }
+        recoveryNetworkCallback = null
+    }
+
+    private fun registerErrorRecoveryNetworkCallback(entry: FfiQueueEntry, resumePos: Long) {
+        clearErrorRecoveryNetworkCallback()
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return
+        val expectedTrackId = entry.track.id
+        val expectedIntent = intentGeneration
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                scope.launch {
+                    if (intentGeneration != expectedIntent) {
+                        clearErrorRecoveryNetworkCallback()
+                        return@launch
+                    }
+                    val player = playbackPlayer ?: return@launch
+                    if (!player.playWhenReady || _uiState.value.currentEntry?.track?.id != expectedTrackId) {
+                        clearErrorRecoveryNetworkCallback()
+                        return@launch
+                    }
+                    clearErrorRecoveryNetworkCallback()
+                    acquireTransitionLocks(30_000L)
+                    try {
+                        DeezerSession.get(context).invalidateResolvedMedia(expectedTrackId)
+                        launchQueueOperation {
+                            if (_uiState.value.currentEntry?.track?.id == expectedTrackId &&
+                                intentGeneration == expectedIntent &&
+                                playbackPlayer?.playWhenReady == true
+                            ) {
+                                prepareAndPlay(entry, resumePos, automatic = false, resetRetry = true)
+                            }
+                        }.join()
+                    } finally {
+                        releaseTransitionLocks()
+                    }
+                }
+            }
+        }
+        runCatching {
+            cm.registerDefaultNetworkCallback(cb)
+            recoveryNetworkCallback = cb
+        }
+    }
+
     private val playerListener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                lastKnownPositionMs = 0L
+                _uiState.value.currentEntry?.let { entry ->
+                    _progress.value = PlaybackProgress(0L, entry.track.durationMs.toLong())
+                }
+                return
+            }
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
+            val player = playbackPlayer ?: return
+            if (_sleepTimerState.value is SleepTimerState.EndOfTrack) {
+                _sleepTimerState.value = SleepTimerState.Off
+                player.pause()
+                Toast.makeText(context, "Şarkı bitti, uyku zamanı modu oynatmayı duraklattı", Toast.LENGTH_SHORT).show()
+                return
+            }
+            cancelPrefetch()
+            while (player.currentMediaItemIndex > 0) {
+                player.removeMediaItem(0)
+            }
+            val generation = playbackGeneration
+            val expectedIntent = intentGeneration
+            acquireTransitionLocks(30_000L)
+            val job = launchQueueOperation {
+                try {
+                    if (playbackPlayer !== player || playbackGeneration != generation ||
+                        intentGeneration != expectedIntent
+                    ) return@launchQueueOperation
+                    val (next, snapshot) = withContext(queueDispatcher) {
+                        val advanced = PlasmaWaveApp.core.queueAdvance(FfiAdvanceReason.TRACK_ENDED)
+                        advanced to readSnapshot()
+                    }
+                    applySnapshot(snapshot)
+                    if (playbackPlayer !== player || playbackGeneration != generation ||
+                        intentGeneration != expectedIntent
+                    ) return@launchQueueOperation
+                    if (next != null && next.track.id == mediaItem?.mediaId) {
+                        val deezerSession = DeezerSession.get(context)
+                        val streamingQuality = deezerSession.currentStreamingQuality()
+                        lastKnownTrackId = next.track.id
+                        lastKnownPositionMs = 0L
+                        errorRetryTrackId = next.track.id
+                        errorRetryCount = 0
+                        currentAudioFormat = null
+                        val label = computeInitialQualityLabel(
+                            entry = next,
+                            offlinePath = null,
+                            downloadedFormat = null,
+                            streamingQuality = streamingQuality
+                        )
+                        _uiState.value = _uiState.value.copy(currentEntry = next, audioQualityLabel = label)
+                        _progress.value = PlaybackProgress(0L, next.track.durationMs.toLong())
+                        syncNextExoPlayerItem(snapshot, generation)
+                        scheduleLookaheadPrefetch(snapshot, intentGeneration)
+                    } else if (next != null && player.playWhenReady) {
+                        prepareAndPlay(next, automatic = true)
+                    } else {
+                        player.pause()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error handling auto media transition", e)
+                }
+            }
+            job.invokeOnCompletion {
+                releaseTransitionLocks()
+            }
+        }
+
         override fun onPlayerError(error: PlaybackException) {
             val currentEntry = _uiState.value.currentEntry
             val deezerError = generateSequence(error.cause) { it.cause }
@@ -239,25 +388,41 @@ class PlaybackManager private constructor(private val context: Context) {
                     errorRetryTrackId = trackId
                     errorRetryCount = 0
                 }
-                if (errorRetryCount < 2) {
+                val backoffs = longArrayOf(700L, 1500L, 3000L, 5000L)
+                val resumePos = if (lastKnownTrackId == trackId) lastKnownPositionMs else 0L
+                if (errorRetryCount < backoffs.size) {
+                    val waitMs = backoffs[errorRetryCount]
                     errorRetryCount++
-                    val attempt = errorRetryCount
-                    val resumePos = if (lastKnownTrackId == trackId) lastKnownPositionMs else 0L
+                    val expectedIntent = intentGeneration
                     DeezerSession.get(context).invalidateResolvedMedia(trackId)
                     errorRetryJob?.cancel()
+                    // Keep CPU + Wi-Fi awake across the retry delay so Doze doesn't freeze it until screen unlock.
+                    acquireTransitionLocks(waitMs + 20_000L)
                     errorRetryJob = scope.launch {
-                        delay(700L * attempt)
-                        launchQueueOperation {
-                            if (_uiState.value.currentEntry?.track?.id == trackId) {
-                                prepareAndPlay(currentEntry, resumePos, automatic = false, resetRetry = false)
-                            }
+                        try {
+                            delay(waitMs)
+                            if (intentGeneration != expectedIntent) return@launch
+                            if (playbackPlayer?.playWhenReady == false) return@launch
+                            launchQueueOperation {
+                                if (_uiState.value.currentEntry?.track?.id == trackId &&
+                                    intentGeneration == expectedIntent &&
+                                    playbackPlayer?.playWhenReady != false
+                                ) {
+                                    prepareAndPlay(currentEntry, resumePos, automatic = false, resetRetry = false)
+                                }
+                            }.join()
+                        } finally {
+                            releaseTransitionLocks()
                         }
                     }
                     return
                 }
+                if (playbackPlayer?.playWhenReady != false) {
+                    registerErrorRecoveryNetworkCallback(currentEntry, resumePos)
+                }
             }
             val message = deezerMsg
-                ?: if (isRecoverableIo) "Bağlantı kesildi; şarkı yüklenemedi. İnternetini kontrol edip tekrar dene."
+                ?: if (isRecoverableIo) "Bağlantı kesildi; internet gelince otomatik devam edecek."
                 else "Şarkı oynatılamadı. Bağlantını ve Deezer hesabını kontrol et."
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
@@ -266,6 +431,7 @@ class PlaybackManager private constructor(private val context: Context) {
             _uiState.value = _uiState.value.copy(isPlaying = isPlaying)
             if (isPlaying) {
                 errorRetryCount = 0
+                clearErrorRecoveryNetworkCallback()
                 startProgressTicker()
             } else {
                 stopProgressTicker()
@@ -357,6 +523,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun playTrackList(tracks: List<FfiTrack>, startIndex: Int = 0, startPositionMs: Long = 0L) {
         val myIntent = ++intentGeneration
         cancelPrefetch()
+        clearErrorRecoveryNetworkCallback()
         launchQueueOperation {
             try {
                 val (entry, snapshot) = withContext(queueDispatcher) {
@@ -387,6 +554,7 @@ class PlaybackManager private constructor(private val context: Context) {
                     readSnapshot()
                 }
                 applySnapshot(snapshot)
+                syncNextExoPlayerItem(snapshot, playbackGeneration)
                 scheduleLookaheadPrefetch(snapshot, intentGeneration)
             } catch (e: Exception) {
                 Log.e(TAG, "Error on playNext", e)
@@ -402,6 +570,7 @@ class PlaybackManager private constructor(private val context: Context) {
                     readSnapshot()
                 }
                 applySnapshot(snapshot)
+                syncNextExoPlayerItem(snapshot, playbackGeneration)
                 scheduleLookaheadPrefetch(snapshot, intentGeneration)
             } catch (e: Exception) {
                 Log.e(TAG, "Error on addToQueue", e)
@@ -412,6 +581,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun jumpToQueueIndex(entryId: ULong) {
         val myIntent = ++intentGeneration
         cancelPrefetch()
+        clearErrorRecoveryNetworkCallback()
         launchQueueOperation {
             try {
                 val (entry, snapshot) = withContext(queueDispatcher) {
@@ -443,6 +613,7 @@ class PlaybackManager private constructor(private val context: Context) {
                         playbackPlayer?.clearMediaItems()
                     }
                 } else {
+                    syncNextExoPlayerItem(snapshot, playbackGeneration)
                     scheduleLookaheadPrefetch(snapshot, intentGeneration)
                 }
             } catch (e: Exception) {
@@ -454,6 +625,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun clearQueue() {
         intentGeneration++
         cancelPrefetch()
+        clearErrorRecoveryNetworkCallback()
         launchQueueOperation {
             try {
                 val snapshot = withContext(queueDispatcher) {
@@ -488,6 +660,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun stopPlayback() {
         intentGeneration++
         cancelPrefetch()
+        clearErrorRecoveryNetworkCallback()
         errorRetryJob?.cancel()
         errorRetryJob = null
         lastKnownTrackId = null
@@ -509,6 +682,9 @@ class PlaybackManager private constructor(private val context: Context) {
         if (player.playWhenReady &&
             (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
         ) {
+            clearErrorRecoveryNetworkCallback()
+            errorRetryJob?.cancel()
+            errorRetryJob = null
             player.pause()
         } else {
             if ((player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) &&
@@ -541,6 +717,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun skipNext(): Job {
         val myIntent = ++intentGeneration
         cancelPrefetch()
+        clearErrorRecoveryNetworkCallback()
         return launchQueueOperation {
             try {
                 val (next, snapshot) = withContext(queueDispatcher) {
@@ -563,6 +740,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun skipPrevious(): Job {
         val myIntent = ++intentGeneration
         cancelPrefetch()
+        clearErrorRecoveryNetworkCallback()
         return launchQueueOperation {
             try {
                 val pos = playbackPlayer?.currentPosition?.toULong() ?: 0uL
@@ -611,6 +789,7 @@ class PlaybackManager private constructor(private val context: Context) {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         _sleepTimerState.value = SleepTimerState.EndOfTrack
+        syncNextExoPlayerItem(_uiState.value.queueSnapshot, playbackGeneration)
         Toast.makeText(context, "Uyku zamanı modu: Bu şarkı bitince duracak", Toast.LENGTH_SHORT).show()
     }
 
@@ -618,6 +797,7 @@ class PlaybackManager private constructor(private val context: Context) {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
         _sleepTimerState.value = SleepTimerState.Off
+        syncNextExoPlayerItem(_uiState.value.queueSnapshot, playbackGeneration)
         if (showToast) {
             Toast.makeText(context, "Uyku zamanı modu kapatıldı", Toast.LENGTH_SHORT).show()
         }
@@ -639,10 +819,11 @@ class PlaybackManager private constructor(private val context: Context) {
             Toast.makeText(context, "Şarkı bitti, uyku zamanı modu oynatmayı duraklattı", Toast.LENGTH_SHORT).show()
             return
         }
+        cancelPrefetch()
         val generation = playbackGeneration
         // ExoPlayer releases its own wake lock at STATE_ENDED. Bridge the short queue/URI
         // lookup until prepare() enables its buffering wake lock for the next stream.
-        acquireTransitionWakeLock()
+        acquireTransitionLocks(30_000L)
         val job = launchQueueOperation {
             try {
                 if (playbackPlayer !== player || playbackGeneration != generation ||
@@ -661,7 +842,7 @@ class PlaybackManager private constructor(private val context: Context) {
             }
         }
         job.invokeOnCompletion {
-            releaseTransitionWakeLock()
+            releaseTransitionLocks()
         }
     }
 
@@ -679,6 +860,13 @@ class PlaybackManager private constructor(private val context: Context) {
                     readSnapshot()
                 }
                 applySnapshot(snapshot)
+                playbackPlayer?.repeatMode = if (next == FfiRepeatMode.ONE) {
+                    Player.REPEAT_MODE_ONE
+                } else {
+                    Player.REPEAT_MODE_OFF
+                }
+                syncNextExoPlayerItem(snapshot, playbackGeneration)
+                scheduleLookaheadPrefetch(snapshot, intentGeneration)
             } catch (e: Exception) {
                 Log.e(TAG, "Error toggling repeat", e)
             }
@@ -694,6 +882,8 @@ class PlaybackManager private constructor(private val context: Context) {
                     readSnapshot()
                 }
                 applySnapshot(snapshot)
+                syncNextExoPlayerItem(snapshot, playbackGeneration)
+                scheduleLookaheadPrefetch(snapshot, intentGeneration)
             } catch (e: Exception) {
                 Log.e(TAG, "Error toggling shuffle", e)
             }
@@ -740,7 +930,7 @@ class PlaybackManager private constructor(private val context: Context) {
             val cleanId = nextTrack.id.removePrefix("deezer:")
             val quality = deezerSession.currentStreamingQuality()
             val cacheKey = deezerSession.cacheKeyFor(cleanId, quality)
-            val maxBytes = if (deezerSession.isOnUnmeteredWifi()) 512L * 1024L else 256L * 1024L
+            val maxBytes = if (deezerSession.isOnUnmeteredWifi()) 256L * 1024L else 128L * 1024L
             val writer = PlayerMediaCache.createPrefetchWriter(context, cleanId, cacheKey, maxBytes) ?: return@launch
             activePrefetchWriter = writer
             try {
@@ -749,6 +939,102 @@ class PlaybackManager private constructor(private val context: Context) {
                 // Best-effort prefetch; ignore cancellations or transient network blips
             } finally {
                 if (activePrefetchWriter === writer) activePrefetchWriter = null
+            }
+        }
+    }
+
+    private data class PreparedMediaItem(
+        val mediaItem: MediaItem,
+        val offlinePath: String?,
+        val downloadedFormat: String?,
+        val streamingQuality: StreamingQuality
+    )
+
+    private fun buildPreparedMediaItem(track: FfiTrack): PreparedMediaItem? {
+        val deezerSession = DeezerSession.get(context)
+        val completedDownload = if (track.provider == "deezer") {
+            Downloads.get(context).findCompletedTrack(track.id)
+        } else {
+            null
+        }
+        val useFullDeezer = track.provider == "deezer" && deezerSession.hasSavedSession && completedDownload == null
+        // Old Rust preview downloads are ignored when streaming or full Downloads exist.
+        val offlinePath = if (useFullDeezer || completedDownload != null) null else {
+            try { PlasmaWaveApp.core.getOfflinePath(track.id) } catch (_: Exception) { null }
+        }
+        val uriStr = when {
+            completedDownload?.uri != null -> completedDownload.uri
+            offlinePath != null -> "file://$offlinePath"
+            useFullDeezer -> "deezer://track/${track.id.removePrefix("deezer:")}"
+            else -> track.playbackUri ?: return null
+        }
+        val uri = Uri.parse(uriStr)
+        val metadata = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artist)
+            .setAlbumTitle(track.album)
+            .apply {
+                track.artworkUrl?.let { setArtworkUri(Uri.parse(it)) }
+            }
+            .build()
+
+        val streamingQuality = if (useFullDeezer) deezerSession.currentStreamingQuality() else StreamingQuality.AUTO
+        val mediaItemBuilder = MediaItem.Builder()
+            .setMediaId(track.id)
+            .setUri(uri)
+            .setMediaMetadata(metadata)
+        if (useFullDeezer) {
+            mediaItemBuilder.setCustomCacheKey(deezerSession.cacheKeyFor(track.id, streamingQuality))
+        }
+        return PreparedMediaItem(
+            mediaItem = mediaItemBuilder.build(),
+            offlinePath = offlinePath,
+            downloadedFormat = completedDownload?.quality?.format,
+            streamingQuality = streamingQuality
+        )
+    }
+
+    private fun syncNextExoPlayerItem(snapshot: FfiQueueSnapshot?, expectedGeneration: Long) {
+        nextSyncJob?.cancel()
+        val player = playbackPlayer ?: return
+        val shouldQueueNext = snapshot != null &&
+            snapshot.repeatMode != FfiRepeatMode.ONE &&
+            _sleepTimerState.value !is SleepTimerState.EndOfTrack
+        if (!shouldQueueNext) {
+            val curIdx = player.currentMediaItemIndex.coerceAtLeast(0)
+            while (player.mediaItemCount > curIdx + 1) {
+                player.removeMediaItem(player.mediaItemCount - 1)
+            }
+            return
+        }
+        val nextTrack = selectLookaheadTracks(snapshot!!, maxCount = 1).firstOrNull()
+        if (nextTrack == null) {
+            val curIdx = player.currentMediaItemIndex.coerceAtLeast(0)
+            while (player.mediaItemCount > curIdx + 1) {
+                player.removeMediaItem(player.mediaItemCount - 1)
+            }
+            return
+        }
+        nextSyncJob = scope.launch {
+            val prepared = withContext(queueDispatcher) {
+                buildPreparedMediaItem(nextTrack)
+            } ?: return@launch
+            if (playbackPlayer !== player || playbackGeneration != expectedGeneration) return@launch
+            if (_uiState.value.repeatMode == FfiRepeatMode.ONE || _sleepTimerState.value is SleepTimerState.EndOfTrack) return@launch
+            val curIdx = player.currentMediaItemIndex.coerceAtLeast(0)
+            val nextIdx = curIdx + 1
+            if (nextIdx < player.mediaItemCount) {
+                val existing = player.getMediaItemAt(nextIdx)
+                if (existing.mediaId != prepared.mediaItem.mediaId ||
+                    existing.localConfiguration?.uri != prepared.mediaItem.localConfiguration?.uri
+                ) {
+                    player.replaceMediaItem(nextIdx, prepared.mediaItem)
+                }
+                while (player.mediaItemCount > nextIdx + 1) {
+                    player.removeMediaItem(player.mediaItemCount - 1)
+                }
+            } else {
+                player.addMediaItem(prepared.mediaItem)
             }
         }
     }
@@ -764,77 +1050,52 @@ class PlaybackManager private constructor(private val context: Context) {
             errorRetryJob = null
             errorRetryTrackId = entry.track.id
             errorRetryCount = 0
+            clearErrorRecoveryNetworkCallback()
         }
+        cancelPrefetch()
         val player = playbackPlayer ?: run {
             pendingPlayback = entry to startPositionMs
             initMediaController()
             return
         }
         val generation = ++playbackGeneration
-        val deezerSession = DeezerSession.get(context)
-        val completedDownload = if (entry.track.provider == "deezer") {
-            Downloads.get(context).findCompletedTrack(entry.track.id)
-        } else {
-            null
-        }
-        val useFullDeezer = entry.track.provider == "deezer" && deezerSession.hasSavedSession && completedDownload == null
-        // Old Rust preview downloads are ignored when streaming or full Downloads exist.
-        val offlinePath = if (useFullDeezer || completedDownload != null) null else withContext(queueDispatcher) {
-            try { PlasmaWaveApp.core.getOfflinePath(entry.track.id) } catch (_: Exception) { null }
+        val prepared = withContext(queueDispatcher) {
+            buildPreparedMediaItem(entry.track)
         }
         if (playbackPlayer !== player || playbackGeneration != generation) return
-        val uriStr = when {
-            completedDownload?.uri != null -> completedDownload.uri
-            offlinePath != null -> "file://$offlinePath"
-            useFullDeezer -> "deezer://track/${entry.track.id.removePrefix("deezer:")}"
-            else -> entry.track.playbackUri ?: run {
-                Toast.makeText(context, "Bu şarkıyı dinlemek için Deezer'a giriş yap", Toast.LENGTH_LONG).show()
-                return
-            }
+        if (prepared == null) {
+            Toast.makeText(context, "Bu şarkıyı dinlemek için Deezer'a giriş yap", Toast.LENGTH_LONG).show()
+            return
         }
 
         try {
-            val uri = Uri.parse(uriStr)
-            val metadata = MediaMetadata.Builder()
-                .setTitle(entry.track.title)
-                .setArtist(entry.track.artist)
-                .setAlbumTitle(entry.track.album)
-                .apply {
-                    entry.track.artworkUrl?.let { setArtworkUri(Uri.parse(it)) }
-                }
-                .build()
-
-            val streamingQuality = if (useFullDeezer) deezerSession.currentStreamingQuality() else StreamingQuality.AUTO
-            val mediaItemBuilder = MediaItem.Builder()
-                .setMediaId(entry.track.id)
-                .setUri(uri)
-                .setMediaMetadata(metadata)
-            if (useFullDeezer) {
-                mediaItemBuilder.setCustomCacheKey(deezerSession.cacheKeyFor(entry.track.id, streamingQuality))
-            }
-            val mediaItem = mediaItemBuilder.build()
-
             // A pause or sleep timer during the URI lookup must not restart playback.
             val playWhenPrepared = !automatic || player.playWhenReady
             val safeStartPos = startPositionMs.coerceAtLeast(0L)
             lastKnownTrackId = entry.track.id
             lastKnownPositionMs = safeStartPos
-            if (safeStartPos > 0L) {
-                player.setMediaItem(mediaItem, safeStartPos)
+            player.repeatMode = if (_uiState.value.repeatMode == FfiRepeatMode.ONE) {
+                Player.REPEAT_MODE_ONE
             } else {
-                player.setMediaItem(mediaItem)
+                Player.REPEAT_MODE_OFF
+            }
+            if (safeStartPos > 0L) {
+                player.setMediaItem(prepared.mediaItem, safeStartPos)
+            } else {
+                player.setMediaItem(prepared.mediaItem)
             }
             player.prepare()
             if (playWhenPrepared) player.play()
             currentAudioFormat = null
             val initialQualityLabel = computeInitialQualityLabel(
                 entry = entry,
-                offlinePath = offlinePath,
-                downloadedFormat = completedDownload?.quality?.format,
-                streamingQuality = streamingQuality
+                offlinePath = prepared.offlinePath,
+                downloadedFormat = prepared.downloadedFormat,
+                streamingQuality = prepared.streamingQuality
             )
             _uiState.value = _uiState.value.copy(currentEntry = entry, audioQualityLabel = initialQualityLabel)
             _progress.value = PlaybackProgress(safeStartPos, entry.track.durationMs.toLong())
+            syncNextExoPlayerItem(_uiState.value.queueSnapshot, generation)
             scheduleLookaheadPrefetch(_uiState.value.queueSnapshot, intentGeneration)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading media item", e)

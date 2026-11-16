@@ -9,13 +9,15 @@ import java.util.concurrent.TimeUnit
  * HTTP/2 and TLS connections across track skips instead of repeating handshakes.
  */
 internal object DeezerHttp {
-    private val pool = ConnectionPool(8, 5, TimeUnit.MINUTES)
+    // Keep-alive under 45s + HTTP/2 ping prevents NAT-dropped half-open sockets during 3-4 min songs.
+    private val pool = ConnectionPool(6, 45, TimeUnit.SECONDS)
 
     val gatewayClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectionPool(pool)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
             .followRedirects(false)
             .followSslRedirects(false)
             .retryOnConnectionFailure(true)
