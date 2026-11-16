@@ -2,9 +2,6 @@ package org.kde.plasmawave.ui.screens
 
 import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -26,12 +23,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -39,12 +42,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import java.io.File
-import kotlin.math.roundToInt
 import kotlin.random.Random
 import org.kde.plasmawave.R
 import org.kde.plasmawave.player.SleepTimerState
@@ -225,11 +225,11 @@ fun HomeScreen(
         )
     }
 
-    val customLogoBitmap = remember(customLogoTimestamp, headerLogoStyle) {
+    val customLogoImage = remember(customLogoTimestamp, headerLogoStyle) {
         if (headerLogoStyle == HeaderLogoStyle.CUSTOM) {
             val file = File(context.filesDir, "custom_header_logo.png")
             if (file.exists()) {
-                BitmapFactory.decodeFile(file.absolutePath)
+                BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
             } else null
         } else null
     }
@@ -292,25 +292,12 @@ fun HomeScreen(
     val density = LocalDensity.current
     val maxCollapseDistancePx = with(density) { collapseRangeDp.toPx() }
 
-    val rawCollapseFraction by remember {
+    val collapseFractionState = remember(listState, maxCollapseDistancePx) {
         derivedStateOf {
             if (listState.firstVisibleItemIndex > 0) 1f
             else (listState.firstVisibleItemScrollOffset / maxCollapseDistancePx).coerceIn(0f, 1f)
         }
     }
-
-    val collapseFraction by animateFloatAsState(
-        targetValue = rawCollapseFraction,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
-        label = "headerCollapseFraction"
-    )
-
-    // Smoothstep easing for balanced horizontal & size transition
-    val smoothFraction = collapseFraction * collapseFraction * (3f - 2f * collapseFraction)
-    val headerHeight = lerp(expandedHeaderHeight, collapsedHeaderHeight, collapseFraction)
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     Box(modifier = modifier.fillMaxSize().background(bgBrush)) {
@@ -622,126 +609,188 @@ fun HomeScreen(
             }
         }
 
-        // Pinned Collapsing Header with balanced, jump-free coordinate interpolation
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter),
-            color = if (collapseFraction > 0.02f) {
-                bg.copy(alpha = (collapseFraction * 0.98f).coerceIn(0f, 0.98f))
-            } else Color.Transparent
-        ) {
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .height(headerHeight)
-            ) {
-                val maxWidthDp = maxWidth
-                val logoSize = lerp(80.dp, 38.dp, smoothFraction)
-                val expandedLogoX = (maxWidthDp - logoSize) / 2
-                val collapsedLogoX = 16.dp
-                val logoXDp = lerp(expandedLogoX, collapsedLogoX, smoothFraction)
+        // Pinned Collapsing Header driven purely on the graphicsLayer/draw phase (0 recompositions during scroll)
+        CollapsingHomeHeader(
+            fraction = { collapseFractionState.value },
+            bg = bg,
+            borderColor = colors.border,
+            statusBarTop = statusBarTop,
+            expandedHeaderHeight = expandedHeaderHeight,
+            collapsedHeaderHeight = collapsedHeaderHeight,
+            headerLogoStyle = headerLogoStyle,
+            customLogoImage = customLogoImage,
+            activeDownloads = active,
+            onDownloadsClick = onDownloadsClick,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
+    }
+}
 
-                val expandedLogoY = 12.dp
-                val collapsedLogoY = (collapsedHeaderHeight - logoSize) / 2
-                val logoYDp = lerp(expandedLogoY, collapsedLogoY, smoothFraction)
+private fun lerpFloat(start: Float, stop: Float, fraction: Float): Float =
+    start + (stop - start) * fraction
 
-                val logoXPx = with(density) { logoXDp.toPx().roundToInt() }
-                val logoYPx = with(density) { logoYDp.toPx().roundToInt() }
+@Composable
+private fun CollapsingHomeHeader(
+    fraction: () -> Float,
+    bg: Color,
+    borderColor: Color,
+    statusBarTop: Dp,
+    expandedHeaderHeight: Dp,
+    collapsedHeaderHeight: Dp,
+    headerLogoStyle: HeaderLogoStyle,
+    customLogoImage: ImageBitmap?,
+    activeDownloads: Int,
+    onDownloadsClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val density = LocalDensity.current
+    var headerWidthPx by remember { mutableIntStateOf(0) }
 
-                // Underneath centered title ("projekt_b-d") when expanded
-                val bottomTitleAlpha = (1f - collapseFraction * 2.2f).coerceIn(0f, 1f)
-                val bottomTitleScale = 0.85f + 0.15f * bottomTitleAlpha
-                val bottomTitleWidthDp = 140.dp
-                val bottomTitleXDp = logoXDp + (logoSize - bottomTitleWidthDp) / 2
-                val bottomTitleYDp = logoYDp + logoSize + 6.dp
-                val bottomTitleXPx = with(density) { bottomTitleXDp.toPx().roundToInt() }
-                val bottomTitleYPx = with(density) { bottomTitleYDp.toPx().roundToInt() }
+    val statusBarTopPx = with(density) { statusBarTop.toPx() }
+    val expandedHeaderPx = with(density) { expandedHeaderHeight.toPx() }
+    val collapsedHeaderPx = with(density) { collapsedHeaderHeight.toPx() }
+    val expandedLogoSize = 80.dp
+    val expandedLogoPx = with(density) { expandedLogoSize.toPx() }
+    val collapsedLogoPx = with(density) { 38.dp.toPx() }
+    val collapsedLogoXPx = with(density) { 16.dp.toPx() }
+    val expandedLogoYPx = with(density) { 12.dp.toPx() }
+    val bottomTitleWidthDp = 140.dp
+    val bottomTitleWidthPx = with(density) { bottomTitleWidthDp.toPx() }
+    val bottomTitleGapPx = with(density) { 6.dp.toPx() }
+    val sideTitleXPx = with(density) { (16.dp + 38.dp + 12.dp).toPx() }
+    val sideSlideOffsetPx = with(density) { 10.dp.toPx() }
+    val downloadTopExpandedPx = with(density) { 10.dp.toPx() }
+    val downloadTopCollapsedPx = with(density) { 6.dp.toPx() }
+    val dividerThicknessPx = with(density) { 0.5.dp.toPx() }
 
-                // Side title ("projekt_b-d") next to compact logo when collapsed
-                val sideTitleAlpha = ((collapseFraction - 0.50f) / 0.50f).coerceIn(0f, 1f)
-                val sideTitleSlidePx = with(density) { ((1f - sideTitleAlpha) * (-10).dp.toPx()) }
-                val sideTitleXDp = collapsedLogoX + 38.dp + 12.dp
-                val sideTitleXPx = with(density) { sideTitleXDp.toPx().roundToInt() }
-
-                // 1. Logo Box
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(logoXPx, logoYPx) }
-                        .size(logoSize),
-                    contentAlignment = Alignment.Center
-                ) {
-                    HeaderLogoView(
-                        style = headerLogoStyle,
-                        customBitmap = customLogoBitmap,
-                        size = logoSize
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .onSizeChanged { headerWidthPx = it.width }
+            .drawBehind {
+                val f = fraction()
+                val headerBottomPx = statusBarTopPx + lerpFloat(expandedHeaderPx, collapsedHeaderPx, f)
+                if (f > 0.02f) {
+                    drawRect(
+                        color = bg.copy(alpha = (f * 0.98f).coerceIn(0f, 0.98f)),
+                        topLeft = Offset.Zero,
+                        size = Size(size.width, headerBottomPx)
                     )
                 }
+                if (f > 0.85f) {
+                    val dividerAlpha = ((f - 0.85f) / 0.15f).coerceIn(0f, 1f)
+                    drawLine(
+                        color = borderColor.copy(alpha = dividerAlpha),
+                        start = Offset(0f, headerBottomPx),
+                        end = Offset(size.width, headerBottomPx),
+                        strokeWidth = dividerThicknessPx
+                    )
+                }
+            }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .height(collapsedHeaderHeight)
+        ) {
+            // 1. Logo Box (static 80.dp; scaled and translated exclusively on GPU)
+            Box(
+                modifier = Modifier
+                    .size(expandedLogoSize)
+                    .graphicsLayer {
+                        val f = fraction()
+                        val s = f * f * (3f - 2f * f)
+                        val w = headerWidthPx.toFloat()
+                        val logoPx = lerpFloat(expandedLogoPx, collapsedLogoPx, s)
+                        val scale = logoPx / expandedLogoPx
+                        val expandedX = if (w > 0f) (w - logoPx) / 2f else 0f
+                        val collapsedY = (collapsedHeaderPx - logoPx) / 2f
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = lerpFloat(expandedX, collapsedLogoXPx, s)
+                        translationY = lerpFloat(expandedLogoYPx, collapsedY, s)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                HeaderLogoView(
+                    style = headerLogoStyle,
+                    customImage = customLogoImage,
+                    size = expandedLogoSize
+                )
+            }
 
-                // 2. Expanded Title below the logo (always kept in composition to avoid layout jumps)
+            // 2. Expanded Title below the logo
+            Text(
+                text = "projekt_b-d",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                ),
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier
+                    .width(bottomTitleWidthDp)
+                    .graphicsLayer {
+                        val f = fraction()
+                        val s = f * f * (3f - 2f * f)
+                        val w = headerWidthPx.toFloat()
+                        val logoPx = lerpFloat(expandedLogoPx, collapsedLogoPx, s)
+                        val expandedX = if (w > 0f) (w - logoPx) / 2f else 0f
+                        val logoX = lerpFloat(expandedX, collapsedLogoXPx, s)
+                        val collapsedY = (collapsedHeaderPx - logoPx) / 2f
+                        val logoY = lerpFloat(expandedLogoYPx, collapsedY, s)
+                        val titleAlpha = (1f - f * 2.2f).coerceIn(0f, 1f)
+                        val titleScale = 0.85f + 0.15f * titleAlpha
+                        alpha = titleAlpha
+                        scaleX = titleScale
+                        scaleY = titleScale
+                        translationX = logoX + (logoPx - bottomTitleWidthPx) / 2f
+                        translationY = logoY + logoPx + bottomTitleGapPx
+                    }
+            )
+
+            // 3. Collapsed Title beside the logo in the top bar
+            Box(
+                modifier = Modifier
+                    .height(collapsedHeaderHeight)
+                    .graphicsLayer {
+                        val f = fraction()
+                        val sideAlpha = ((f - 0.50f) / 0.50f).coerceIn(0f, 1f)
+                        alpha = sideAlpha
+                        translationX = sideTitleXPx + (1f - sideAlpha) * (-sideSlideOffsetPx)
+                    },
+                contentAlignment = Alignment.CenterStart
+            ) {
                 Text(
                     text = "projekt_b-d",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
+                        letterSpacing = 0.4.sp
                     ),
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier
-                        .width(bottomTitleWidthDp)
-                        .offset { IntOffset(bottomTitleXPx, bottomTitleYPx) }
-                        .graphicsLayer {
-                            alpha = bottomTitleAlpha
-                            scaleX = bottomTitleScale
-                            scaleY = bottomTitleScale
-                        }
+                    color = MaterialTheme.colorScheme.onBackground
                 )
+            }
 
-                // 3. Collapsed Title beside the logo in the top bar
-                Box(
-                    modifier = Modifier
-                        .height(collapsedHeaderHeight)
-                        .offset { IntOffset(sideTitleXPx, 0) }
-                        .graphicsLayer {
-                            alpha = sideTitleAlpha
-                            translationX = sideTitleSlidePx
-                        },
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Text(
-                        text = "projekt_b-d",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.4.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-
-                // 4. Top Right Downloads Button
-                val downloadTopPad = lerp(10.dp, 6.dp, smoothFraction)
-                IconButton(
-                    onClick = onDownloadsClick,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = downloadTopPad, end = 12.dp)
-                ) {
-                    if (active > 0) {
-                        BadgedBox(badge = { Badge { Text("$active") } }) {
-                            Icon(Icons.Default.Download, contentDescription = "İndirmeler")
-                        }
-                    } else {
+            // 4. Top Right Downloads Button
+            IconButton(
+                onClick = onDownloadsClick,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 12.dp)
+                    .graphicsLayer {
+                        val f = fraction()
+                        val s = f * f * (3f - 2f * f)
+                        translationY = lerpFloat(downloadTopExpandedPx, downloadTopCollapsedPx, s)
+                    }
+            ) {
+                if (activeDownloads > 0) {
+                    BadgedBox(badge = { Badge { Text("$activeDownloads") } }) {
                         Icon(Icons.Default.Download, contentDescription = "İndirmeler")
                     }
-                }
-
-                if (collapseFraction > 0.85f) {
-                    HorizontalDivider(
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                        thickness = 0.5.dp,
-                        color = colors.border.copy(alpha = ((collapseFraction - 0.85f) / 0.15f).coerceIn(0f, 1f))
-                    )
+                } else {
+                    Icon(Icons.Default.Download, contentDescription = "İndirmeler")
                 }
             }
         }
@@ -751,7 +800,7 @@ fun HomeScreen(
 @Composable
 private fun HeaderLogoView(
     style: HeaderLogoStyle,
-    customBitmap: android.graphics.Bitmap?,
+    customImage: ImageBitmap?,
     size: Dp
 ) {
     val headerTint = if (LocalPlasmaColors.current.legacyUiMode) {
@@ -761,9 +810,9 @@ private fun HeaderLogoView(
     }
     when (style) {
         HeaderLogoStyle.CUSTOM -> {
-            if (customBitmap != null) {
+            if (customImage != null) {
                 Image(
-                    bitmap = customBitmap.asImageBitmap(),
+                    bitmap = customImage,
                     contentDescription = "Özel Logo",
                     modifier = Modifier
                         .size(size)
