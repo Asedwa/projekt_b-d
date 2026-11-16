@@ -8,6 +8,10 @@ Deezer kitaplığını ve çalma listelerini kişiselleştirilebilir bir oynatı
 
 Açılan sayfada **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını seç. Depo özel olduğu için GitHub hesabınla giriş yapman gerekir. APK, uygulamanın debug derlemesidir.
 
+## 0.9.1 sürüm notu
+
+Arka plan stabilitesi iyileştirildi (`WakeLock` ve MQTT bağlantı kesme çökmeleri giderildi); Deezer beğeni ve çalma listeleri için disk önbelleği ile ağ geri dönüşünde otomatik yenileme eklendi. Ayrıca ortak OkHttp bağlantı havuzu, sonraki şarkı için arka plan ön-tamponlama, hızlı geçiş birleştirme ve indirilmiş şarkıların doğrudan diskten oynatılmasıyla şarkı geçiş süreleri hızlandırıldı.
+
 ## 0.9 sürüm notu
 
 Eksik ve yerel parça kapakları için otomatik yedek kapak çözümü ile gömülü ses dosyası kapak okuyucusu eklendi; sade arayüz (`calm` mod) yüzey, kenarlık ve vurgu renkleri iyileştirildi.
