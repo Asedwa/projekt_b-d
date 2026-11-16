@@ -2,6 +2,7 @@ package org.kde.plasmawave.theme
 
 import android.content.Context
 import android.graphics.drawable.BitmapDrawable
+import android.util.LruCache
 import androidx.compose.ui.graphics.Color
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
@@ -10,7 +11,6 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
 
 data class ExtractedArtworkColors(
     val dominant: Color,
@@ -20,15 +20,15 @@ data class ExtractedArtworkColors(
 )
 
 object DynamicThemeHelper {
-    private val cache = ConcurrentHashMap<String, ExtractedArtworkColors>()
+    private val cache = LruCache<String, ExtractedArtworkColors>(64)
 
     suspend fun extractColors(context: Context, url: String?, calmMode: Boolean = true): ExtractedArtworkColors? {
         if (url.isNullOrBlank()) return null
         val cacheKey = "${url}|${if (calmMode) "calm" else "legacy"}"
-        cache[cacheKey]?.let { return it }
+        cache.get(cacheKey)?.let { return it }
 
-        return withContext(Dispatchers.IO) {
-            try {
+        return try {
+            val bitmap = withContext(Dispatchers.IO) {
                 val loader = context.imageLoader
                 val request = ImageRequest.Builder(context)
                     .data(url)
@@ -36,7 +36,10 @@ object DynamicThemeHelper {
                     .allowHardware(false)
                     .build()
                 val result = (loader.execute(request) as? SuccessResult)?.drawable
-                val bitmap = (result as? BitmapDrawable)?.bitmap ?: return@withContext null
+                (result as? BitmapDrawable)?.bitmap
+            } ?: return null
+
+            withContext(Dispatchers.Default) {
                 val palette = Palette.from(bitmap).generate()
 
                 val w = bitmap.width
@@ -169,11 +172,11 @@ object DynamicThemeHelper {
                     backgroundBottom = Color(bottomBgInt),
                     accent = Color(accentInt)
                 )
-                cache[cacheKey] = extracted
+                cache.put(cacheKey, extracted)
                 extracted
-            } catch (_: Exception) {
-                null
             }
+        } catch (_: Exception) {
+            null
         }
     }
 }

@@ -1,9 +1,11 @@
 package org.kde.plasmawave.deezer
 
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
@@ -374,29 +376,24 @@ internal class DeezerGateway(private val arl: String, private val transport: Tra
 
     private class HttpTransport : Transport {
         override fun post(url: String, body: String, cookie: String?): Reply {
-            val connection = URL(url).openConnection() as HttpURLConnection
-            try {
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = 15_000
-                connection.readTimeout = 20_000
-                connection.requestMethod = "POST"
-                connection.doOutput = true
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.setRequestProperty("Accept", "application/json")
-                if (cookie != null) connection.setRequestProperty("Cookie", cookie)
-                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                val code = connection.responseCode
+            val request = Request.Builder()
+                .url(url)
+                .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
+                .header("Accept", "application/json")
+                .apply {
+                    if (cookie != null) header("Cookie", cookie)
+                }
+                .build()
+            DeezerHttp.gatewayClient.newCall(request).execute().use { response ->
+                val code = response.code
                 if (code == 429 || code in 500..599) {
                     throw TransientDeezerException("Deezer bağlantı hatası (HTTP $code)")
                 }
                 if (code !in 200..299) throw DeezerException("Deezer bağlantı hatası (HTTP $code)")
-                val cookies = connection.headerFields.entries.filter { it.key.equals("Set-Cookie", ignoreCase = true) }
-                    .flatMap { it.value ?: emptyList() }
-                val response = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                return Reply(response, cookies)
-            } finally {
-                connection.disconnect()
+                val cookies = response.headers("Set-Cookie")
+                val text = response.body?.string().orEmpty()
+                return Reply(text, cookies)
             }
         }
     }

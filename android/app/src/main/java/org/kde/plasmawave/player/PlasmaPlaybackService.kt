@@ -2,14 +2,17 @@ package org.kde.plasmawave.player
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -41,6 +44,35 @@ internal object PlayerMediaCache {
             }.getOrNull()
         }
     }
+
+    fun buildCacheDataSourceFactory(context: Context): CacheDataSource.Factory? {
+        val simpleCache = get(context) ?: return null
+        val appCtx = context.applicationContext
+        val deezerFactory = DataSource.Factory { DeezerDataSource(DeezerSession.get(appCtx)) }
+        return CacheDataSource.Factory()
+            .setCache(simpleCache)
+            .setUpstreamDataSourceFactory(deezerFactory)
+            .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(simpleCache))
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+    }
+
+    fun createPrefetchWriter(
+        context: Context,
+        cleanTrackId: String,
+        cacheKey: String,
+        maxBytes: Long
+    ): CacheWriter? {
+        val simpleCache = get(context) ?: return null
+        if (simpleCache.getCachedBytes(cacheKey, 0L, maxBytes) >= maxBytes) return null
+        val dataSource = buildCacheDataSourceFactory(context)?.createDataSource() ?: return null
+        val spec = DataSpec.Builder()
+            .setUri(Uri.parse("deezer://track/$cleanTrackId"))
+            .setKey(cacheKey)
+            .setPosition(0L)
+            .setLength(maxBytes)
+            .build()
+        return CacheWriter(dataSource, spec, null, null)
+    }
 }
 
 @UnstableApi
@@ -59,19 +91,11 @@ class PlasmaPlaybackService : MediaSessionService() {
             .build()
 
         val deezerFactory = DataSource.Factory { DeezerDataSource(DeezerSession.get(this)) }
-        val simpleCache = PlayerMediaCache.get(this)
-        val networkOrCachedFactory = if (simpleCache != null) {
-            CacheDataSource.Factory()
-                .setCache(simpleCache)
-                .setUpstreamDataSourceFactory(deezerFactory)
-                .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(simpleCache))
-                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        } else {
-            deezerFactory
-        }
+        val networkOrCachedFactory: DataSource.Factory =
+            PlayerMediaCache.buildCacheDataSourceFactory(this) ?: deezerFactory
         val sources = DefaultDataSource.Factory(this, networkOrCachedFactory)
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(15_000, 60_000, 1_500, 3_000)
+            .setBufferDurationsMs(15_000, 60_000, 350, 1_000)
             .build()
 
         player = ExoPlayer.Builder(this)

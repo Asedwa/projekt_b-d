@@ -40,6 +40,9 @@ internal val EXACT_DEEZER_FORMATS = setOf("FLAC", "MP3_320", "MP3_128")
 internal fun selectResolveFormat(lockedFormat: String?, currentQuality: StreamingQuality): String? =
     lockedFormat?.takeIf { it in EXACT_DEEZER_FORMATS } ?: currentQuality.format
 
+internal fun deezerStreamCacheKey(trackId: String, quality: StreamingQuality): String =
+    "deezer:${trackId.removePrefix("deezer:")}:${quality.name}"
+
 /** Owns the user's session. ARL is encrypted by a non-exportable Android Keystore key. */
 class DeezerSession private constructor(context: Context) {
     companion object {
@@ -140,15 +143,27 @@ class DeezerSession private constructor(context: Context) {
     }
 
     fun currentStreamingQuality(): StreamingQuality {
-        val mobile = try {
+        val mobile = !isOnUnmeteredWifi()
+        return qualityForNetwork(mobile, _wifiQuality.value, _mobileQuality.value)
+    }
+
+    fun isOnUnmeteredWifi(): Boolean {
+        return try {
             val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
-            if (capabilities == null) true else useMobileStreamingQuality(
+            if (capabilities == null) false else !useMobileStreamingQuality(
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
                 connectivity.isActiveNetworkMetered
             )
-        } catch (_: Exception) { true }
-        return qualityForNetwork(mobile, _wifiQuality.value, _mobileQuality.value)
+        } catch (_: Exception) { false }
+    }
+
+    fun cacheKeyFor(trackId: String, quality: StreamingQuality = currentStreamingQuality()): String =
+        deezerStreamCacheKey(trackId, quality)
+
+    internal fun preResolve(trackId: String): DeezerGateway.Media? {
+        if (!hasSavedSession) return null
+        return runCatching { resolve(trackId) }.getOrNull()
     }
 
     fun getResolvedTrackFormat(trackId: String): String? =

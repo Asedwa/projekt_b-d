@@ -113,6 +113,23 @@ class Downloads private constructor(private val context: Context) {
     }
 
     @Synchronized fun find(id: String): SavedDownload? = _items.value.firstOrNull { it.id == id }
+    fun findCompletedTrack(trackId: String): SavedDownload? {
+        val cleanId = DownloadStorage.normalizeTrackId(trackId)
+        if (cleanId.isBlank()) return null
+        val match = _items.value.firstOrNull {
+            it.state == "completed" && !it.uri.isNullOrBlank() && DownloadStorage.normalizeTrackId(it.track.id) == cleanId
+        } ?: return null
+        val uriStr = match.uri ?: return null
+        val exists = runCatching {
+            val parsed = Uri.parse(uriStr)
+            if (parsed.scheme == "file") {
+                parsed.path?.let { File(it).isFile } == true
+            } else {
+                context.contentResolver.openAssetFileDescriptor(parsed, "r")?.use { true } ?: false
+            }
+        }.getOrDefault(false)
+        return if (exists) match else null
+    }
     @Synchronized fun firstPending(): SavedDownload? = _items.value.firstOrNull { it.state == "running" || it.state == "queued" }
     @Synchronized fun nextPending(excludeId: String): SavedDownload? =
         _items.value.firstOrNull { it.id != excludeId && it.state == "queued" }

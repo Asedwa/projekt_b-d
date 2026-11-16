@@ -1031,12 +1031,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         registerNetworkRecoveryCallback()
+        var trackRecordJob: Job? = null
         viewModelScope.launch {
             playbackManager.currentTrackId.collect { id ->
+                trackRecordJob?.cancel()
                 if (id != null) {
-                    playbackManager.uiState.value.currentEntry?.track?.let { track ->
+                    trackRecordJob = viewModelScope.launch {
+                        delay(1_500L)
+                        val ui = playbackManager.uiState.value
+                        val track = ui.currentEntry?.track ?: return@launch
+                        if (track.id != id) return@launch
                         recordTrackPlay(track)
-                        val snap = playbackManager.uiState.value.queueSnapshot
+                        val snap = ui.queueSnapshot
                         val qTracks = snap?.entries?.map { it.track }.orEmpty().ifEmpty { listOf(track) }
                         val qIdx = snap?.currentIndex?.toInt() ?: 0
                         saveResumePlaybackSnapshot(

@@ -3,33 +3,39 @@ package org.kde.plasmawave.deezer
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.datasource.TransferListener
+import okhttp3.Request
+import okhttp3.Response
 import java.io.IOException
 import java.io.InputStream
 
-/** Media3 data source that resolves a fresh account-authorized URL on its loader thread. */
+/**
+ * Media3 data source backed by the shared [DeezerHttp.streamClient] connection pool so CDN
+ * audio streams reuse warm TLS/HTTP2 sockets and avoid per-skip handshake delays.
+ */
 @UnstableApi
-class DeezerDataSource(private val session: DeezerSession) : DataSource {
-    private val upstream = DefaultHttpDataSource.Factory()
-        .setUserAgent("Mozilla/5.0 PlasmaWave")
-        .setConnectTimeoutMs(15_000)
-        .setReadTimeoutMs(20_000)
-        .setAllowCrossProtocolRedirects(true)
-        .createDataSource()
+class DeezerDataSource(private val session: DeezerSession) : BaseDataSource(/* isNetwork = */ true) {
     private var requestedUri: Uri? = null
     private var stripeInput: StripeInput? = null
+    private var activeResponse: Response? = null
+    private var activeInputStream: InputStream? = null
+    private var activeResponseHeaders: Map<String, List<String>> = emptyMap()
     private var activeTrackId: String? = null
     private var activeFormat: String? = null
-
-    override fun addTransferListener(transferListener: TransferListener) = upstream.addTransferListener(transferListener)
+    private var opened = false
 
     override fun open(dataSpec: DataSpec): Long {
         requestedUri = dataSpec.uri
-        if (dataSpec.uri.scheme != "deezer") return upstream.open(dataSpec)
+        transferInitializing(dataSpec)
+        if (dataSpec.uri.scheme != "deezer") {
+            val length = openUpstream(dataSpec)
+            opened = true
+            transferStarted(dataSpec)
+            return length
+        }
+
         val id = dataSpec.uri.lastPathSegment ?: throw IOException("Geçersiz şarkı kimliği")
         // Pin the stream format once playback begins so a mid-song Wi-Fi <-> 4.5G switch
         // never changes byte offsets or triggers HTTP 416 / decoder corruption.
@@ -51,10 +57,10 @@ class DeezerDataSource(private val session: DeezerSession) : DataSource {
                 .setLength(C.LENGTH_UNSET.toLong())
                 .build()
             try {
-                upstreamLength = upstream.open(upstreamSpec)
+                upstreamLength = openUpstream(upstreamSpec)
                 break
             } catch (e: HttpDataSource.InvalidResponseCodeException) {
-                runCatching { upstream.close() }
+                closeUpstream()
                 if (attempt == 0 && (e.responseCode == 403 || e.responseCode == 410)) {
                     attempt++
                     session.invalidateResolvedMedia(id)
@@ -63,7 +69,7 @@ class DeezerDataSource(private val session: DeezerSession) : DataSource {
                 }
                 throw e
             } catch (e: Exception) {
-                runCatching { upstream.close() }
+                closeUpstream()
                 throw e
             }
         }
@@ -71,7 +77,8 @@ class DeezerDataSource(private val session: DeezerSession) : DataSource {
         activeTrackId = id
         activeFormat = media.format
 
-        val available = if (upstreamLength == C.LENGTH_UNSET.toLong()) C.LENGTH_UNSET.toLong() else (upstreamLength - skip).coerceAtLeast(0)
+        val available = if (upstreamLength == C.LENGTH_UNSET.toLong()) C.LENGTH_UNSET.toLong()
+        else (upstreamLength - skip).coerceAtLeast(0)
         val length = when {
             dataSpec.length == C.LENGTH_UNSET.toLong() -> available
             available == C.LENGTH_UNSET.toLong() -> dataSpec.length
@@ -83,10 +90,43 @@ class DeezerDataSource(private val session: DeezerSession) : DataSource {
                 val count = read(one, 0, 1)
                 return if (count == -1) -1 else one[0].toInt() and 0xff
             }
-            override fun read(buffer: ByteArray, offset: Int, length: Int): Int = upstream.read(buffer, offset, length)
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
+                activeInputStream?.read(buffer, offset, length) ?: -1
         }
         stripeInput = StripeInput(input, media.trackId, aligned, skip, length)
+        opened = true
+        transferStarted(dataSpec)
         return length
+    }
+
+    private fun openUpstream(spec: DataSpec): Long {
+        closeUpstream()
+        val requestBuilder = Request.Builder()
+            .url(spec.uri.toString())
+            .header("User-Agent", "Mozilla/5.0 PlasmaWave")
+        spec.httpRequestHeaders.forEach { (k, v) -> requestBuilder.header(k, v) }
+        if (spec.position > 0L) {
+            requestBuilder.header("Range", "bytes=${spec.position}-")
+        }
+        val response = DeezerHttp.streamClient.newCall(requestBuilder.build()).execute()
+        val code = response.code
+        val headers = response.headers.toMultimap()
+        if (code !in 200..299) {
+            val message = response.message
+            response.close()
+            throw HttpDataSource.InvalidResponseCodeException(
+                code, message, null, headers, spec, ByteArray(0)
+            )
+        }
+        val body = response.body ?: run {
+            response.close()
+            throw IOException("Boş ses akışı yanıtı")
+        }
+        activeResponse = response
+        activeResponseHeaders = headers
+        activeInputStream = body.byteStream()
+        val contentLength = body.contentLength()
+        return if (contentLength >= 0L) contentLength else C.LENGTH_UNSET.toLong()
     }
 
     private fun resolveSafe(id: String, lockedFormat: String?, forceRefresh: Boolean): DeezerGateway.Media {
@@ -99,12 +139,35 @@ class DeezerDataSource(private val session: DeezerSession) : DataSource {
         }
     }
 
-    override fun read(buffer: ByteArray, offset: Int, length: Int): Int =
-        stripeInput?.read(buffer, offset, length) ?: upstream.read(buffer, offset, length)
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        val read = stripeInput?.read(buffer, offset, length)
+            ?: activeInputStream?.read(buffer, offset, length)
+            ?: C.RESULT_END_OF_INPUT
+        if (read > 0) bytesTransferred(read)
+        return read
+    }
 
     override fun getUri(): Uri? = requestedUri
-    override fun getResponseHeaders(): Map<String, List<String>> = upstream.responseHeaders
+    override fun getResponseHeaders(): Map<String, List<String>> = activeResponseHeaders
+
     override fun close() {
-        try { upstream.close() } finally { requestedUri = null; stripeInput = null }
+        try {
+            closeUpstream()
+        } finally {
+            requestedUri = null
+            stripeInput = null
+            if (opened) {
+                opened = false
+                transferEnded()
+            }
+        }
+    }
+
+    private fun closeUpstream() {
+        runCatching { activeInputStream?.close() }
+        runCatching { activeResponse?.close() }
+        activeInputStream = null
+        activeResponse = null
+        activeResponseHeaders = emptyMap()
     }
 }

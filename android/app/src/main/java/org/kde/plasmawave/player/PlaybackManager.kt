@@ -14,6 +14,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Tracks
+import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -23,6 +24,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
@@ -41,6 +44,7 @@ import org.kde.plasmawave.PlasmaWaveApp
 import org.kde.plasmawave.deezer.DeezerSession
 import org.kde.plasmawave.deezer.DeezerException
 import org.kde.plasmawave.deezer.StreamingQuality
+import org.kde.plasmawave.download.Downloads
 import java.io.IOException
 import uniffi.plasmawave_core.FfiAdvanceReason
 import uniffi.plasmawave_core.FfiQueueEntry
@@ -125,6 +129,9 @@ class PlaybackManager private constructor(private val context: Context) {
 
     private var progressJob: Job? = null
     private var sleepTimerJob: Job? = null
+    private var prefetchJob: Job? = null
+    @Volatile private var activePrefetchWriter: CacheWriter? = null
+    @Volatile private var intentGeneration = 0L
     private var currentAudioFormat: Format? = null
     private var lastKnownTrackId: String? = null
     private var lastKnownPositionMs: Long = 0L
@@ -189,6 +196,7 @@ class PlaybackManager private constructor(private val context: Context) {
 
     internal fun detachPlayer(player: Player) {
         if (playbackPlayer !== player) return
+        cancelPrefetch()
         player.removeListener(playerListener)
         playbackPlayer = null
         onQueueChanged = null
@@ -347,6 +355,8 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun playTrackList(tracks: List<FfiTrack>, startIndex: Int = 0, startPositionMs: Long = 0L) {
+        val myIntent = ++intentGeneration
+        cancelPrefetch()
         launchQueueOperation {
             try {
                 val (entry, snapshot) = withContext(queueDispatcher) {
@@ -354,6 +364,7 @@ class PlaybackManager private constructor(private val context: Context) {
                     replaced to readSnapshot()
                 }
                 applySnapshot(snapshot)
+                if (intentGeneration != myIntent) return@launchQueueOperation
                 if (entry != null) {
                     prepareAndPlay(entry, startPositionMs)
                 } else {
@@ -376,6 +387,7 @@ class PlaybackManager private constructor(private val context: Context) {
                     readSnapshot()
                 }
                 applySnapshot(snapshot)
+                scheduleLookaheadPrefetch(snapshot, intentGeneration)
             } catch (e: Exception) {
                 Log.e(TAG, "Error on playNext", e)
             }
@@ -390,6 +402,7 @@ class PlaybackManager private constructor(private val context: Context) {
                     readSnapshot()
                 }
                 applySnapshot(snapshot)
+                scheduleLookaheadPrefetch(snapshot, intentGeneration)
             } catch (e: Exception) {
                 Log.e(TAG, "Error on addToQueue", e)
             }
@@ -397,6 +410,8 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun jumpToQueueIndex(entryId: ULong) {
+        val myIntent = ++intentGeneration
+        cancelPrefetch()
         launchQueueOperation {
             try {
                 val (entry, snapshot) = withContext(queueDispatcher) {
@@ -404,6 +419,7 @@ class PlaybackManager private constructor(private val context: Context) {
                     jumped to readSnapshot()
                 }
                 applySnapshot(snapshot)
+                if (intentGeneration != myIntent) return@launchQueueOperation
                 entry?.let { prepareAndPlay(it) }
             } catch (e: Exception) {
                 Log.e(TAG, "Error jumping to entry", e)
@@ -426,6 +442,8 @@ class PlaybackManager private constructor(private val context: Context) {
                         playbackPlayer?.stop()
                         playbackPlayer?.clearMediaItems()
                     }
+                } else {
+                    scheduleLookaheadPrefetch(snapshot, intentGeneration)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error removing queue entry", e)
@@ -434,6 +452,8 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun clearQueue() {
+        intentGeneration++
+        cancelPrefetch()
         launchQueueOperation {
             try {
                 val snapshot = withContext(queueDispatcher) {
@@ -466,6 +486,8 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     fun stopPlayback() {
+        intentGeneration++
+        cancelPrefetch()
         errorRetryJob?.cancel()
         errorRetryJob = null
         lastKnownTrackId = null
@@ -516,38 +538,48 @@ class PlaybackManager private constructor(private val context: Context) {
         _progress.value = _progress.value.copy(positionMs = safePos)
     }
 
-    fun skipNext(): Job = launchQueueOperation {
-        try {
-            val (next, snapshot) = withContext(queueDispatcher) {
-                val advanced = PlasmaWaveApp.core.queueAdvance(FfiAdvanceReason.USER_SKIP)
-                advanced to readSnapshot()
+    fun skipNext(): Job {
+        val myIntent = ++intentGeneration
+        cancelPrefetch()
+        return launchQueueOperation {
+            try {
+                val (next, snapshot) = withContext(queueDispatcher) {
+                    val advanced = PlasmaWaveApp.core.queueAdvance(FfiAdvanceReason.USER_SKIP)
+                    advanced to readSnapshot()
+                }
+                applySnapshot(snapshot)
+                if (intentGeneration != myIntent) return@launchQueueOperation
+                if (next != null) {
+                    prepareAndPlay(next)
+                } else {
+                    playbackPlayer?.stop()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error skipping to next", e)
             }
-            applySnapshot(snapshot)
-            if (next != null) {
-                prepareAndPlay(next)
-            } else {
-                playbackPlayer?.stop()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error skipping to next", e)
         }
     }
 
-    fun skipPrevious(): Job = launchQueueOperation {
-        try {
-            val pos = playbackPlayer?.currentPosition?.toULong() ?: 0uL
-            val (res, snapshot) = withContext(queueDispatcher) {
-                val prev = PlasmaWaveApp.core.queuePrevious(pos)
-                prev to readSnapshot()
+    fun skipPrevious(): Job {
+        val myIntent = ++intentGeneration
+        cancelPrefetch()
+        return launchQueueOperation {
+            try {
+                val pos = playbackPlayer?.currentPosition?.toULong() ?: 0uL
+                val (res, snapshot) = withContext(queueDispatcher) {
+                    val prev = PlasmaWaveApp.core.queuePrevious(pos)
+                    prev to readSnapshot()
+                }
+                applySnapshot(snapshot)
+                if (intentGeneration != myIntent) return@launchQueueOperation
+                if (res.shouldRestartCurrent) {
+                    playbackPlayer?.seekTo(0L)
+                } else {
+                    res.movedEntry?.let { prepareAndPlay(it) }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error skipping previous", e)
             }
-            applySnapshot(snapshot)
-            if (res.shouldRestartCurrent) {
-                playbackPlayer?.seekTo(0L)
-            } else {
-                res.movedEntry?.let { prepareAndPlay(it) }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error skipping previous", e)
         }
     }
 
@@ -668,6 +700,59 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
+    private fun cancelPrefetch() {
+        prefetchJob?.cancel()
+        prefetchJob = null
+        runCatching { activePrefetchWriter?.cancel() }
+        activePrefetchWriter = null
+    }
+
+    private fun scheduleLookaheadPrefetch(snapshot: FfiQueueSnapshot?, expectedIntent: Long) {
+        cancelPrefetch()
+        if (snapshot == null) return
+        val upcoming = selectLookaheadTracks(snapshot, maxCount = 2)
+            .filter { it.provider == "deezer" }
+        if (upcoming.isEmpty()) return
+        val deezerSession = DeezerSession.get(context)
+        if (!deezerSession.hasSavedSession) return
+
+        prefetchJob = scope.launch(Dispatchers.IO) {
+            delay(150L)
+            if (!isActive || intentGeneration != expectedIntent) return@launch
+            val downloads = Downloads.get(context)
+            val streamCandidates = upcoming.filter { downloads.findCompletedTrack(it.id) == null }
+            if (streamCandidates.isEmpty()) return@launch
+
+            // 1. Pre-resolve URLs for the next 2 tracks in parallel
+            coroutineScope {
+                streamCandidates.map { track ->
+                    async {
+                        if (isActive && intentGeneration == expectedIntent) {
+                            deezerSession.preResolve(track.id)
+                        }
+                    }
+                }.forEach { it.await() }
+            }
+
+            if (!isActive || intentGeneration != expectedIntent) return@launch
+            // 2. Pre-buffer the head of the immediate next track into SimpleCache
+            val nextTrack = streamCandidates.first()
+            val cleanId = nextTrack.id.removePrefix("deezer:")
+            val quality = deezerSession.currentStreamingQuality()
+            val cacheKey = deezerSession.cacheKeyFor(cleanId, quality)
+            val maxBytes = if (deezerSession.isOnUnmeteredWifi()) 512L * 1024L else 256L * 1024L
+            val writer = PlayerMediaCache.createPrefetchWriter(context, cleanId, cacheKey, maxBytes) ?: return@launch
+            activePrefetchWriter = writer
+            try {
+                writer.cache()
+            } catch (_: Exception) {
+                // Best-effort prefetch; ignore cancellations or transient network blips
+            } finally {
+                if (activePrefetchWriter === writer) activePrefetchWriter = null
+            }
+        }
+    }
+
     private suspend fun prepareAndPlay(
         entry: FfiQueueEntry,
         startPositionMs: Long = 0L,
@@ -687,13 +772,19 @@ class PlaybackManager private constructor(private val context: Context) {
         }
         val generation = ++playbackGeneration
         val deezerSession = DeezerSession.get(context)
-        val useFullDeezer = entry.track.provider == "deezer" && deezerSession.hasSavedSession
-        // Old downloads may be preview clips: do not prefer them over an account's full stream.
-        val offlinePath = if (useFullDeezer) null else withContext(queueDispatcher) {
+        val completedDownload = if (entry.track.provider == "deezer") {
+            Downloads.get(context).findCompletedTrack(entry.track.id)
+        } else {
+            null
+        }
+        val useFullDeezer = entry.track.provider == "deezer" && deezerSession.hasSavedSession && completedDownload == null
+        // Old Rust preview downloads are ignored when streaming or full Downloads exist.
+        val offlinePath = if (useFullDeezer || completedDownload != null) null else withContext(queueDispatcher) {
             try { PlasmaWaveApp.core.getOfflinePath(entry.track.id) } catch (_: Exception) { null }
         }
         if (playbackPlayer !== player || playbackGeneration != generation) return
         val uriStr = when {
+            completedDownload?.uri != null -> completedDownload.uri
             offlinePath != null -> "file://$offlinePath"
             useFullDeezer -> "deezer://track/${entry.track.id.removePrefix("deezer:")}"
             else -> entry.track.playbackUri ?: run {
@@ -713,15 +804,13 @@ class PlaybackManager private constructor(private val context: Context) {
                 }
                 .build()
 
+            val streamingQuality = if (useFullDeezer) deezerSession.currentStreamingQuality() else StreamingQuality.AUTO
             val mediaItemBuilder = MediaItem.Builder()
                 .setMediaId(entry.track.id)
                 .setUri(uri)
                 .setMediaMetadata(metadata)
             if (useFullDeezer) {
-                val cleanId = entry.track.id.removePrefix("deezer:")
-                val qualityKey = deezerSession.getResolvedTrackFormat(cleanId)
-                    ?: deezerSession.currentStreamingQuality().name
-                mediaItemBuilder.setCustomCacheKey("deezer:$cleanId:$qualityKey")
+                mediaItemBuilder.setCustomCacheKey(deezerSession.cacheKeyFor(entry.track.id, streamingQuality))
             }
             val mediaItem = mediaItemBuilder.build()
 
@@ -738,9 +827,15 @@ class PlaybackManager private constructor(private val context: Context) {
             player.prepare()
             if (playWhenPrepared) player.play()
             currentAudioFormat = null
-            val initialQualityLabel = computeInitialQualityLabel(entry, offlinePath)
+            val initialQualityLabel = computeInitialQualityLabel(
+                entry = entry,
+                offlinePath = offlinePath,
+                downloadedFormat = completedDownload?.quality?.format,
+                streamingQuality = streamingQuality
+            )
             _uiState.value = _uiState.value.copy(currentEntry = entry, audioQualityLabel = initialQualityLabel)
             _progress.value = PlaybackProgress(safeStartPos, entry.track.durationMs.toLong())
+            scheduleLookaheadPrefetch(_uiState.value.queueSnapshot, intentGeneration)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading media item", e)
         }
@@ -818,8 +913,17 @@ class PlaybackManager private constructor(private val context: Context) {
         }
     }
 
-    private fun computeInitialQualityLabel(entry: FfiQueueEntry, offlinePath: String? = null): String {
+    private fun computeInitialQualityLabel(
+        entry: FfiQueueEntry,
+        offlinePath: String? = null,
+        downloadedFormat: String? = null,
+        streamingQuality: StreamingQuality? = null
+    ): String {
         if (entry.track.isPreview) return "MP3 • 128 kb/s • 44,1 kHz"
+
+        if (downloadedFormat != null) {
+            return formatAudioQuality(null, 44100, 0, deezerFormat = downloadedFormat, isPreview = false)
+        }
 
         if (offlinePath != null) {
             val lower = offlinePath.lowercase()
@@ -840,7 +944,7 @@ class PlaybackManager private constructor(private val context: Context) {
         }
 
         if (entry.track.provider == "deezer" && deezerSession.hasSavedSession) {
-            return when (deezerSession.currentStreamingQuality()) {
+            return when (streamingQuality ?: deezerSession.currentStreamingQuality()) {
                 StreamingQuality.FLAC -> "FLAC • 44,1 kHz • Kayıpsız"
                 StreamingQuality.MP3_128 -> "MP3 • 128 kb/s • 44,1 kHz"
                 StreamingQuality.MP3_320 -> "MP3 • 320 kb/s • 44,1 kHz"
@@ -858,6 +962,27 @@ class PlaybackManager private constructor(private val context: Context) {
             else -> "MP3 • 320 kb/s • 44,1 kHz"
         }
     }
+}
+
+internal fun selectLookaheadTracks(snapshot: FfiQueueSnapshot, maxCount: Int = 2): List<FfiTrack> {
+    val entries = snapshot.entries
+    val cur = snapshot.currentIndex?.toInt() ?: return emptyList()
+    if (entries.isEmpty() || cur !in entries.indices) return emptyList()
+    if (snapshot.repeatMode == FfiRepeatMode.ONE) return emptyList()
+    val currentId = entries[cur].track.id
+    val out = ArrayList<FfiTrack>(maxCount)
+    for (offset in 1..maxCount) {
+        val nextIdx = cur + offset
+        val track = when {
+            nextIdx < entries.size -> entries[nextIdx].track
+            snapshot.repeatMode == FfiRepeatMode.ALL && entries.size > 1 -> entries[nextIdx % entries.size].track
+            else -> null
+        } ?: break
+        if (track.id != currentId && out.none { it.id == track.id }) {
+            out.add(track)
+        }
+    }
+    return out
 }
 
 internal fun formatAudioQuality(

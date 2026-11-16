@@ -74,6 +74,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.palette:palette-ktx:1.0.0")
 
