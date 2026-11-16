@@ -910,6 +910,26 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -935,6 +955,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_plasmawave_core_fn_constructor_plasmawavecore_new(`storageDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Pointer
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_add_home_widget(`ptr`: Pointer,`kind`: RustBuffer.ByValue,`insertAt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_add_tracks_to_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`tracks`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_build_user_data_export_json(`ptr`: Pointer,`exportedAtEpochMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -948,6 +970,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_resume_playback_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_create_playlist(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_customize_home_widget(`ptr`: Pointer,`instanceId`: RustBuffer.ByValue,`patch`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_delete_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -999,6 +1023,10 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_favorites(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_home_layout(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_home_widget_catalog(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_listening_stats(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_local_tracks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1045,6 +1073,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_list_user_custom_themes(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_move_home_widget(`ptr`: Pointer,`instanceId`: RustBuffer.ByValue,`toIndex`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_pause_download(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_queue_add(`ptr`: Pointer,`tracks`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1073,12 +1103,20 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_download(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_home_widget(`ptr`: Pointer,`instanceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_pinned_item(`ptr`: Pointer,`pinId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_track_from_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`position`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_rename_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`newName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_reorder_home_widgets(`ptr`: Pointer,`orderedInstanceIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_reset_home_layout(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_restore_home_layout(`ptr`: Pointer,`items`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_resume_download(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_retry_download(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1104,6 +1142,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_deezer_access_token(`ptr`: Pointer,`tokenInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_deezer_user_id(`ptr`: Pointer,`userInput`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_home_widget_kind_enabled(`ptr`: Pointer,`kind`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_mod_enabled(`ptr`: Pointer,`modId`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1241,6 +1281,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_plasmawave_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_tracks_to_playlist(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_build_user_data_export_json(
@@ -1254,6 +1296,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_resume_playback_state(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_create_playlist(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_customize_home_widget(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_playlist(
     ): Short
@@ -1305,6 +1349,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_favorites(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_home_layout(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_home_widget_catalog(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_listening_stats(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_local_tracks(
@@ -1351,6 +1399,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_list_user_custom_themes(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_move_home_widget(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_pause_download(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_queue_add(
@@ -1379,11 +1429,19 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_download(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_home_widget(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_pinned_item(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_track_from_playlist(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_rename_playlist(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_reorder_home_widgets(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_reset_home_layout(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_restore_home_layout(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_resume_download(
     ): Short
@@ -1410,6 +1468,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_deezer_access_token(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_deezer_user_id(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_home_widget_kind_enabled(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_mod_enabled(
     ): Short
@@ -1454,6 +1514,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget() != 2433.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_add_tracks_to_playlist() != 53916.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1473,6 +1536,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_create_playlist() != 7138.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_customize_home_widget() != 19961.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_playlist() != 39966.toShort()) {
@@ -1550,6 +1616,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_favorites() != 10962.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_home_layout() != 64841.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_home_widget_catalog() != 21207.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_listening_stats() != 46615.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1619,6 +1691,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_list_user_custom_themes() != 36673.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_move_home_widget() != 57518.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_pause_download() != 23603.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1661,6 +1736,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_download() != 5406.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_home_widget() != 29361.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_pinned_item() != 8510.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1668,6 +1746,15 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_rename_playlist() != 32449.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_reorder_home_widgets() != 24526.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_reset_home_layout() != 5300.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_restore_home_layout() != 35993.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_resume_download() != 17900.toShort()) {
@@ -1707,6 +1794,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_deezer_user_id() != 12605.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_home_widget_kind_enabled() != 28331.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_mod_enabled() != 19700.toShort()) {
@@ -2131,6 +2221,8 @@ private class JavaLangRefCleanable(
 }
 public interface PlasmaWaveCoreInterface {
     
+    fun `addHomeWidget`(`kind`: kotlin.String, `insertAt`: kotlin.UInt?): List<FfiHomeWidgetItem>
+    
     fun `addTracksToPlaylist`(`playlistId`: kotlin.String, `tracks`: List<FfiTrack>)
     
     fun `buildUserDataExportJson`(`exportedAtEpochMs`: kotlin.ULong): kotlin.String
@@ -2144,6 +2236,8 @@ public interface PlasmaWaveCoreInterface {
     fun `clearResumePlaybackState`()
     
     fun `createPlaylist`(`name`: kotlin.String): FfiPlaylist
+    
+    fun `customizeHomeWidget`(`instanceId`: kotlin.String, `patch`: FfiHomeWidgetPatch): List<FfiHomeWidgetItem>
     
     fun `deletePlaylist`(`playlistId`: kotlin.String)
     
@@ -2195,6 +2289,10 @@ public interface PlasmaWaveCoreInterface {
     
     fun `getFavorites`(): List<FfiTrack>
     
+    fun `getHomeLayout`(): List<FfiHomeWidgetItem>
+    
+    fun `getHomeWidgetCatalog`(): List<FfiHomeWidgetCatalogEntry>
+    
     fun `getListeningStats`(`limit`: kotlin.UInt): List<FfiTrackListeningStat>
     
     fun `getLocalTracks`(): List<FfiTrack>
@@ -2241,6 +2339,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `listUserCustomThemes`(): List<FfiCustomThemeSpec>
     
+    fun `moveHomeWidget`(`instanceId`: kotlin.String, `toIndex`: kotlin.UInt): List<FfiHomeWidgetItem>
+    
     fun `pauseDownload`(`id`: kotlin.Long): FfiDownloadTask
     
     fun `queueAdd`(`tracks`: List<FfiTrack>): List<kotlin.ULong>
@@ -2269,11 +2369,19 @@ public interface PlasmaWaveCoreInterface {
     
     fun `removeDownload`(`id`: kotlin.Long)
     
+    fun `removeHomeWidget`(`instanceId`: kotlin.String): List<FfiHomeWidgetItem>
+    
     fun `removePinnedItem`(`pinId`: kotlin.String): List<FfiPinnedItem>
     
     fun `removeTrackFromPlaylist`(`playlistId`: kotlin.String, `position`: kotlin.UInt)
     
     fun `renamePlaylist`(`playlistId`: kotlin.String, `newName`: kotlin.String)
+    
+    fun `reorderHomeWidgets`(`orderedInstanceIds`: List<kotlin.String>): List<FfiHomeWidgetItem>
+    
+    fun `resetHomeLayout`(): List<FfiHomeWidgetItem>
+    
+    fun `restoreHomeLayout`(`items`: List<FfiHomeWidgetItem>): List<FfiHomeWidgetItem>
     
     fun `resumeDownload`(`id`: kotlin.Long): FfiDownloadTask
     
@@ -2300,6 +2408,8 @@ public interface PlasmaWaveCoreInterface {
     fun `setDeezerAccessToken`(`tokenInput`: kotlin.String): FfiDeezerUser
     
     fun `setDeezerUserId`(`userInput`: kotlin.String): FfiDeezerUser
+    
+    fun `setHomeWidgetKindEnabled`(`kind`: kotlin.String, `enabled`: kotlin.Boolean): List<FfiHomeWidgetItem>
     
     fun `setModEnabled`(`modId`: kotlin.String, `enabled`: kotlin.Boolean)
     
@@ -2417,6 +2527,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     }
 
     
+    @Throws(FfiException::class)override fun `addHomeWidget`(`kind`: kotlin.String, `insertAt`: kotlin.UInt?): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_add_home_widget(
+        it, FfiConverterString.lower(`kind`),FfiConverterOptionalUInt.lower(`insertAt`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(FfiException::class)override fun `addTracksToPlaylist`(`playlistId`: kotlin.String, `tracks`: List<FfiTrack>)
         = 
     callWithPointer {
@@ -2497,6 +2620,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_create_playlist(
         it, FfiConverterString.lower(`name`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `customizeHomeWidget`(`instanceId`: kotlin.String, `patch`: FfiHomeWidgetPatch): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_customize_home_widget(
+        it, FfiConverterString.lower(`instanceId`),FfiConverterTypeFfiHomeWidgetPatch.lower(`patch`),_status)
 }
     }
     )
@@ -2823,6 +2959,31 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
 
     
+    @Throws(FfiException::class)override fun `getHomeLayout`(): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_home_layout(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    override fun `getHomeWidgetCatalog`(): List<FfiHomeWidgetCatalogEntry> {
+            return FfiConverterSequenceTypeFfiHomeWidgetCatalogEntry.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_home_widget_catalog(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(FfiException::class)override fun `getListeningStats`(`limit`: kotlin.UInt): List<FfiTrackListeningStat> {
             return FfiConverterSequenceTypeFfiTrackListeningStat.lift(
     callWithPointer {
@@ -3115,6 +3276,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
 
     
+    @Throws(FfiException::class)override fun `moveHomeWidget`(`instanceId`: kotlin.String, `toIndex`: kotlin.UInt): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_move_home_widget(
+        it, FfiConverterString.lower(`instanceId`),FfiConverterUInt.lower(`toIndex`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(FfiException::class)override fun `pauseDownload`(`id`: kotlin.Long): FfiDownloadTask {
             return FfiConverterTypeFfiDownloadTask.lift(
     callWithPointer {
@@ -3286,6 +3460,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
 
     
+    @Throws(FfiException::class)override fun `removeHomeWidget`(`instanceId`: kotlin.String): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_remove_home_widget(
+        it, FfiConverterString.lower(`instanceId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(FfiException::class)override fun `removePinnedItem`(`pinId`: kotlin.String): List<FfiPinnedItem> {
             return FfiConverterSequenceTypeFfiPinnedItem.lift(
     callWithPointer {
@@ -3320,6 +3507,45 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
 }
     }
     
+    
+
+    
+    @Throws(FfiException::class)override fun `reorderHomeWidgets`(`orderedInstanceIds`: List<kotlin.String>): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_reorder_home_widgets(
+        it, FfiConverterSequenceString.lower(`orderedInstanceIds`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `resetHomeLayout`(): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_reset_home_layout(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `restoreHomeLayout`(`items`: List<FfiHomeWidgetItem>): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_restore_home_layout(
+        it, FfiConverterSequenceTypeFfiHomeWidgetItem.lower(`items`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -3483,6 +3709,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_set_deezer_user_id(
         it, FfiConverterString.lower(`userInput`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `setHomeWidgetKindEnabled`(`kind`: kotlin.String, `enabled`: kotlin.Boolean): List<FfiHomeWidgetItem> {
+            return FfiConverterSequenceTypeFfiHomeWidgetItem.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_set_home_widget_kind_enabled(
+        it, FfiConverterString.lower(`kind`),FfiConverterBoolean.lower(`enabled`),_status)
 }
     }
     )
@@ -3967,6 +4206,202 @@ public object FfiConverterTypeFfiDownloadTask: FfiConverterRustBuffer<FfiDownloa
             FfiConverterOptionalULong.write(value.`totalBytes`, buf)
             FfiConverterOptionalUByte.write(value.`progressPercent`, buf)
             FfiConverterOptionalString.write(value.`error`, buf)
+    }
+}
+
+
+
+data class FfiHomeWidgetCatalogEntry (
+    var `kind`: kotlin.String, 
+    var `category`: kotlin.String, 
+    var `title`: kotlin.String, 
+    var `description`: kotlin.String, 
+    var `defaultSize`: FfiHomeWidgetSize, 
+    var `defaultStyle`: FfiHomeWidgetStyle, 
+    var `defaultMaxItems`: kotlin.UByte, 
+    var `minItems`: kotlin.UByte, 
+    var `maxItemsLimit`: kotlin.UByte, 
+    var `supportsItemCount`: kotlin.Boolean, 
+    var `supportsAccent`: kotlin.Boolean, 
+    var `allowMultiple`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiHomeWidgetCatalogEntry: FfiConverterRustBuffer<FfiHomeWidgetCatalogEntry> {
+    override fun read(buf: ByteBuffer): FfiHomeWidgetCatalogEntry {
+        return FfiHomeWidgetCatalogEntry(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeFfiHomeWidgetSize.read(buf),
+            FfiConverterTypeFfiHomeWidgetStyle.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiHomeWidgetCatalogEntry) = (
+            FfiConverterString.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`category`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterString.allocationSize(value.`description`) +
+            FfiConverterTypeFfiHomeWidgetSize.allocationSize(value.`defaultSize`) +
+            FfiConverterTypeFfiHomeWidgetStyle.allocationSize(value.`defaultStyle`) +
+            FfiConverterUByte.allocationSize(value.`defaultMaxItems`) +
+            FfiConverterUByte.allocationSize(value.`minItems`) +
+            FfiConverterUByte.allocationSize(value.`maxItemsLimit`) +
+            FfiConverterBoolean.allocationSize(value.`supportsItemCount`) +
+            FfiConverterBoolean.allocationSize(value.`supportsAccent`) +
+            FfiConverterBoolean.allocationSize(value.`allowMultiple`)
+    )
+
+    override fun write(value: FfiHomeWidgetCatalogEntry, buf: ByteBuffer) {
+            FfiConverterString.write(value.`kind`, buf)
+            FfiConverterString.write(value.`category`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterString.write(value.`description`, buf)
+            FfiConverterTypeFfiHomeWidgetSize.write(value.`defaultSize`, buf)
+            FfiConverterTypeFfiHomeWidgetStyle.write(value.`defaultStyle`, buf)
+            FfiConverterUByte.write(value.`defaultMaxItems`, buf)
+            FfiConverterUByte.write(value.`minItems`, buf)
+            FfiConverterUByte.write(value.`maxItemsLimit`, buf)
+            FfiConverterBoolean.write(value.`supportsItemCount`, buf)
+            FfiConverterBoolean.write(value.`supportsAccent`, buf)
+            FfiConverterBoolean.write(value.`allowMultiple`, buf)
+    }
+}
+
+
+
+data class FfiHomeWidgetItem (
+    var `instanceId`: kotlin.String, 
+    var `kind`: kotlin.String, 
+    var `enabled`: kotlin.Boolean, 
+    var `order`: kotlin.UInt, 
+    var `size`: FfiHomeWidgetSize, 
+    var `style`: FfiHomeWidgetStyle, 
+    var `maxItems`: kotlin.UByte, 
+    var `showSubtitle`: kotlin.Boolean, 
+    var `customTitle`: kotlin.String?, 
+    var `accentHex`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiHomeWidgetItem: FfiConverterRustBuffer<FfiHomeWidgetItem> {
+    override fun read(buf: ByteBuffer): FfiHomeWidgetItem {
+        return FfiHomeWidgetItem(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterTypeFfiHomeWidgetSize.read(buf),
+            FfiConverterTypeFfiHomeWidgetStyle.read(buf),
+            FfiConverterUByte.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiHomeWidgetItem) = (
+            FfiConverterString.allocationSize(value.`instanceId`) +
+            FfiConverterString.allocationSize(value.`kind`) +
+            FfiConverterBoolean.allocationSize(value.`enabled`) +
+            FfiConverterUInt.allocationSize(value.`order`) +
+            FfiConverterTypeFfiHomeWidgetSize.allocationSize(value.`size`) +
+            FfiConverterTypeFfiHomeWidgetStyle.allocationSize(value.`style`) +
+            FfiConverterUByte.allocationSize(value.`maxItems`) +
+            FfiConverterBoolean.allocationSize(value.`showSubtitle`) +
+            FfiConverterOptionalString.allocationSize(value.`customTitle`) +
+            FfiConverterOptionalString.allocationSize(value.`accentHex`)
+    )
+
+    override fun write(value: FfiHomeWidgetItem, buf: ByteBuffer) {
+            FfiConverterString.write(value.`instanceId`, buf)
+            FfiConverterString.write(value.`kind`, buf)
+            FfiConverterBoolean.write(value.`enabled`, buf)
+            FfiConverterUInt.write(value.`order`, buf)
+            FfiConverterTypeFfiHomeWidgetSize.write(value.`size`, buf)
+            FfiConverterTypeFfiHomeWidgetStyle.write(value.`style`, buf)
+            FfiConverterUByte.write(value.`maxItems`, buf)
+            FfiConverterBoolean.write(value.`showSubtitle`, buf)
+            FfiConverterOptionalString.write(value.`customTitle`, buf)
+            FfiConverterOptionalString.write(value.`accentHex`, buf)
+    }
+}
+
+
+
+data class FfiHomeWidgetPatch (
+    var `enabled`: kotlin.Boolean?, 
+    var `size`: FfiHomeWidgetSize?, 
+    var `style`: FfiHomeWidgetStyle?, 
+    var `maxItems`: kotlin.UByte?, 
+    var `showSubtitle`: kotlin.Boolean?, 
+    var `clearCustomTitle`: kotlin.Boolean, 
+    var `customTitle`: kotlin.String?, 
+    var `clearAccentHex`: kotlin.Boolean, 
+    var `accentHex`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiHomeWidgetPatch: FfiConverterRustBuffer<FfiHomeWidgetPatch> {
+    override fun read(buf: ByteBuffer): FfiHomeWidgetPatch {
+        return FfiHomeWidgetPatch(
+            FfiConverterOptionalBoolean.read(buf),
+            FfiConverterOptionalTypeFfiHomeWidgetSize.read(buf),
+            FfiConverterOptionalTypeFfiHomeWidgetStyle.read(buf),
+            FfiConverterOptionalUByte.read(buf),
+            FfiConverterOptionalBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiHomeWidgetPatch) = (
+            FfiConverterOptionalBoolean.allocationSize(value.`enabled`) +
+            FfiConverterOptionalTypeFfiHomeWidgetSize.allocationSize(value.`size`) +
+            FfiConverterOptionalTypeFfiHomeWidgetStyle.allocationSize(value.`style`) +
+            FfiConverterOptionalUByte.allocationSize(value.`maxItems`) +
+            FfiConverterOptionalBoolean.allocationSize(value.`showSubtitle`) +
+            FfiConverterBoolean.allocationSize(value.`clearCustomTitle`) +
+            FfiConverterOptionalString.allocationSize(value.`customTitle`) +
+            FfiConverterBoolean.allocationSize(value.`clearAccentHex`) +
+            FfiConverterOptionalString.allocationSize(value.`accentHex`)
+    )
+
+    override fun write(value: FfiHomeWidgetPatch, buf: ByteBuffer) {
+            FfiConverterOptionalBoolean.write(value.`enabled`, buf)
+            FfiConverterOptionalTypeFfiHomeWidgetSize.write(value.`size`, buf)
+            FfiConverterOptionalTypeFfiHomeWidgetStyle.write(value.`style`, buf)
+            FfiConverterOptionalUByte.write(value.`maxItems`, buf)
+            FfiConverterOptionalBoolean.write(value.`showSubtitle`, buf)
+            FfiConverterBoolean.write(value.`clearCustomTitle`, buf)
+            FfiConverterOptionalString.write(value.`customTitle`, buf)
+            FfiConverterBoolean.write(value.`clearAccentHex`, buf)
+            FfiConverterOptionalString.write(value.`accentHex`, buf)
     }
 }
 
@@ -4518,7 +4953,8 @@ data class FfiSettings (
     var `collectListeningStats`: kotlin.Boolean, 
     var `collectListeningHistory`: kotlin.Boolean, 
     var `saveResumePosition`: kotlin.Boolean, 
-    var `enabledHomeWidgets`: List<kotlin.String>
+    var `enabledHomeWidgets`: List<kotlin.String>, 
+    var `homeEditHoldSeconds`: kotlin.UByte
 ) {
     
     companion object
@@ -4556,6 +4992,7 @@ public object FfiConverterTypeFfiSettings: FfiConverterRustBuffer<FfiSettings> {
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterSequenceString.read(buf),
+            FfiConverterUByte.read(buf),
         )
     }
 
@@ -4585,7 +5022,8 @@ public object FfiConverterTypeFfiSettings: FfiConverterRustBuffer<FfiSettings> {
             FfiConverterBoolean.allocationSize(value.`collectListeningStats`) +
             FfiConverterBoolean.allocationSize(value.`collectListeningHistory`) +
             FfiConverterBoolean.allocationSize(value.`saveResumePosition`) +
-            FfiConverterSequenceString.allocationSize(value.`enabledHomeWidgets`)
+            FfiConverterSequenceString.allocationSize(value.`enabledHomeWidgets`) +
+            FfiConverterUByte.allocationSize(value.`homeEditHoldSeconds`)
     )
 
     override fun write(value: FfiSettings, buf: ByteBuffer) {
@@ -4615,6 +5053,7 @@ public object FfiConverterTypeFfiSettings: FfiConverterRustBuffer<FfiSettings> {
             FfiConverterBoolean.write(value.`collectListeningHistory`, buf)
             FfiConverterBoolean.write(value.`saveResumePosition`, buf)
             FfiConverterSequenceString.write(value.`enabledHomeWidgets`, buf)
+            FfiConverterUByte.write(value.`homeEditHoldSeconds`, buf)
     }
 }
 
@@ -4890,6 +5329,68 @@ public object FfiConverterTypeFfiError : FfiConverterRustBuffer<FfiException> {
     }
 
 }
+
+
+
+
+enum class FfiHomeWidgetSize {
+    
+    COMPACT,
+    NORMAL,
+    EXPANDED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiHomeWidgetSize: FfiConverterRustBuffer<FfiHomeWidgetSize> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiHomeWidgetSize.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiHomeWidgetSize) = 4UL
+
+    override fun write(value: FfiHomeWidgetSize, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiHomeWidgetStyle {
+    
+    CARD,
+    TINTED,
+    MINIMAL;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiHomeWidgetStyle: FfiConverterRustBuffer<FfiHomeWidgetStyle> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiHomeWidgetStyle.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiHomeWidgetStyle) = 4UL
+
+    override fun write(value: FfiHomeWidgetStyle, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -5349,6 +5850,70 @@ public object FfiConverterOptionalTypeFfiTrack: FfiConverterRustBuffer<FfiTrack?
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeFfiHomeWidgetSize: FfiConverterRustBuffer<FfiHomeWidgetSize?> {
+    override fun read(buf: ByteBuffer): FfiHomeWidgetSize? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFfiHomeWidgetSize.read(buf)
+    }
+
+    override fun allocationSize(value: FfiHomeWidgetSize?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFfiHomeWidgetSize.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FfiHomeWidgetSize?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFfiHomeWidgetSize.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeFfiHomeWidgetStyle: FfiConverterRustBuffer<FfiHomeWidgetStyle?> {
+    override fun read(buf: ByteBuffer): FfiHomeWidgetStyle? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFfiHomeWidgetStyle.read(buf)
+    }
+
+    override fun allocationSize(value: FfiHomeWidgetStyle?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFfiHomeWidgetStyle.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FfiHomeWidgetStyle?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFfiHomeWidgetStyle.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalSequenceTypeFfiPlaylistTrackEntry: FfiConverterRustBuffer<List<FfiPlaylistTrackEntry>?> {
     override fun read(buf: ByteBuffer): List<FfiPlaylistTrackEntry>? {
         if (buf.get().toInt() == 0) {
@@ -5539,6 +6104,62 @@ public object FfiConverterSequenceTypeFfiDownloadTask: FfiConverterRustBuffer<Li
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiDownloadTask.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiHomeWidgetCatalogEntry: FfiConverterRustBuffer<List<FfiHomeWidgetCatalogEntry>> {
+    override fun read(buf: ByteBuffer): List<FfiHomeWidgetCatalogEntry> {
+        val len = buf.getInt()
+        return List<FfiHomeWidgetCatalogEntry>(len) {
+            FfiConverterTypeFfiHomeWidgetCatalogEntry.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiHomeWidgetCatalogEntry>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiHomeWidgetCatalogEntry.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiHomeWidgetCatalogEntry>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiHomeWidgetCatalogEntry.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiHomeWidgetItem: FfiConverterRustBuffer<List<FfiHomeWidgetItem>> {
+    override fun read(buf: ByteBuffer): List<FfiHomeWidgetItem> {
+        val len = buf.getInt()
+        return List<FfiHomeWidgetItem>(len) {
+            FfiConverterTypeFfiHomeWidgetItem.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiHomeWidgetItem>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiHomeWidgetItem.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiHomeWidgetItem>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiHomeWidgetItem.write(it, buf)
         }
     }
 }

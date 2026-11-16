@@ -41,5 +41,17 @@ enum class HomeWidgetType(
         title = "Ruh Haline Göre Anında Miks",
         subtitle = "Enerjik, Gece Sürüşü, Odaklanma ve Rahatlatıcı modlarına göre anında liste başlatır",
         defaultEnabled = false
+    ),
+    RECENT_TRACKS(
+        id = "widget_recent_tracks",
+        title = "Son Dinlenenler Şeridi",
+        subtitle = "Son çaldığın parçaları kapaklarıyla yatay şeritte hızlıca tekrar başlatır",
+        defaultEnabled = false
+    ),
+    LISTENING_SUMMARY(
+        id = "widget_listening_summary",
+        title = "Mini Dinleme Özeti",
+        subtitle = "Toplam dinleme süresi, çalma sayısı ve favori sanatçı özetini kompakt gösterir",
+        defaultEnabled = false
     )
 }

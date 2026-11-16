@@ -59,6 +59,11 @@ import uniffi.plasmawave_core.FfiArtist
 import uniffi.plasmawave_core.FfiCustomThemeSpec
 import uniffi.plasmawave_core.FfiDeezerUser
 import uniffi.plasmawave_core.FfiDownloadTask
+import uniffi.plasmawave_core.FfiHomeWidgetCatalogEntry
+import uniffi.plasmawave_core.FfiHomeWidgetItem
+import uniffi.plasmawave_core.FfiHomeWidgetPatch
+import uniffi.plasmawave_core.FfiHomeWidgetSize
+import uniffi.plasmawave_core.FfiHomeWidgetStyle
 import uniffi.plasmawave_core.FfiLocalTrackInput
 import uniffi.plasmawave_core.FfiModInfo
 import uniffi.plasmawave_core.FfiPlaylist
@@ -226,7 +231,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             collectListeningStats = true,
             collectListeningHistory = true,
             saveResumePosition = true,
-            enabledHomeWidgets = HomeWidgetType.entries.filter { it.defaultEnabled }.map { it.id }
+            enabledHomeWidgets = HomeWidgetType.entries.filter { it.defaultEnabled }.map { it.id },
+            homeEditHoldSeconds = 3u
         )
     }
 
@@ -292,7 +298,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val flowHeroCardEnabled = _flowHeroCardEnabled.asStateFlow()
     fun setFlowHeroCardEnabled(enabled: Boolean) {
         _flowHeroCardEnabled.value = enabled
-        updateCoreSettings { it.copy(flowHeroCardEnabled = enabled) }
+        setHomeWidgetKindEnabled("block_flow_hero", enabled)
     }
 
     private val _flowQuickAccessPinned = MutableStateFlow(initialCoreSettings.flowQuickAccessPinned)
@@ -546,7 +552,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val resumePlaybackEnabled: StateFlow<Boolean> = _resumePlaybackEnabled.asStateFlow()
     fun setResumePlaybackEnabled(enabled: Boolean) {
         _resumePlaybackEnabled.value = enabled
-        updateCoreSettings { it.copy(resumePlaybackEnabled = enabled) }
+        setHomeWidgetKindEnabled("block_resume_playback", enabled)
     }
 
     // 2. Veri ve Gizlilik Ayarları (İsteyen istediği zaman açıp kapatabilir)
@@ -571,18 +577,167 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateCoreSettings { it.copy(saveResumePosition = enabled) }
     }
 
-    // 3. Ana Sayfa Widget'ları
+    // 3. Ana Sayfa Düzeni ve Widget Kişiselleştirme (Rust Çekirdekli)
+    private val homeLayoutMutex = Mutex()
+    private val _homeWidgetCatalog = MutableStateFlow(
+        runCatching { core.getHomeWidgetCatalog() }.getOrDefault(emptyList())
+    )
+    val homeWidgetCatalog: StateFlow<List<FfiHomeWidgetCatalogEntry>> = _homeWidgetCatalog.asStateFlow()
+
+    private val _homeLayout = MutableStateFlow<List<FfiHomeWidgetItem>>(
+        runCatching { core.getHomeLayout() }.getOrDefault(emptyList())
+    )
+    val homeLayout: StateFlow<List<FfiHomeWidgetItem>> = _homeLayout.asStateFlow()
+
+    private var previousHomeLayoutSnapshot: List<FfiHomeWidgetItem>? = null
+    private val _canUndoHomeLayout = MutableStateFlow(false)
+    val canUndoHomeLayout: StateFlow<Boolean> = _canUndoHomeLayout.asStateFlow()
+
+    private val _homeEditHoldSeconds = MutableStateFlow(
+        initialCoreSettings.homeEditHoldSeconds.toInt().coerceIn(3, 10)
+    )
+    val homeEditHoldSeconds: StateFlow<Int> = _homeEditHoldSeconds.asStateFlow()
+
+    fun setHomeEditHoldSeconds(seconds: Int) {
+        val clamped = seconds.coerceIn(3, 10)
+        _homeEditHoldSeconds.value = clamped
+        updateCoreSettings { it.copy(homeEditHoldSeconds = clamped.toUByte()) }
+    }
+
     private val _enabledHomeWidgets = MutableStateFlow<Set<HomeWidgetType>>(
-        HomeWidgetType.entries.filter { it.id in initialCoreSettings.enabledHomeWidgets }.toSet()
+        computeEnabledWidgets(_homeLayout.value, initialCoreSettings.enabledHomeWidgets)
     )
     val enabledHomeWidgets: StateFlow<Set<HomeWidgetType>> = _enabledHomeWidgets.asStateFlow()
 
-    fun setHomeWidgetEnabled(widget: HomeWidgetType, enabled: Boolean) {
-        val next = _enabledHomeWidgets.value.toMutableSet().apply {
-            if (enabled) add(widget) else remove(widget)
+    private fun computeEnabledWidgets(
+        layout: List<FfiHomeWidgetItem>,
+        fallbackIds: List<String>
+    ): Set<HomeWidgetType> {
+        if (layout.isEmpty()) {
+            return HomeWidgetType.entries.filter { it.id in fallbackIds }.toSet()
         }
-        _enabledHomeWidgets.value = next
-        updateCoreSettings { it.copy(enabledHomeWidgets = next.map { w -> w.id }) }
+        val activeKinds = layout.asSequence().filter { it.enabled }.map { it.kind }.toSet()
+        return HomeWidgetType.entries.filter { it.id in activeKinds }.toSet()
+    }
+
+    private fun applyHomeLayoutSnapshot(
+        layout: List<FfiHomeWidgetItem>,
+        recordUndoFrom: List<FfiHomeWidgetItem>? = null
+    ) {
+        if (recordUndoFrom != null && recordUndoFrom != layout) {
+            previousHomeLayoutSnapshot = recordUndoFrom
+            _canUndoHomeLayout.value = true
+        }
+        _homeLayout.value = layout
+        _enabledHomeWidgets.value = computeEnabledWidgets(layout, _settings.value.enabledHomeWidgets)
+        val hasFlow = layout.any { it.enabled && it.kind == "block_flow_hero" }
+        val hasResume = layout.any { it.enabled && it.kind == "block_resume_playback" }
+        _flowHeroCardEnabled.value = hasFlow
+        _resumePlaybackEnabled.value = hasResume
+    }
+
+    private fun mutateHomeLayoutInRust(
+        recordUndo: Boolean = true,
+        optimistic: ((List<FfiHomeWidgetItem>) -> List<FfiHomeWidgetItem>)? = null,
+        rustCall: () -> List<FfiHomeWidgetItem>
+    ) {
+        val before = _homeLayout.value
+        if (optimistic != null) {
+            applyHomeLayoutSnapshot(optimistic(before), recordUndoFrom = if (recordUndo) before else null)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            homeLayoutMutex.withLock {
+                try {
+                    val updated = rustCall()
+                    applyHomeLayoutSnapshot(updated, recordUndoFrom = if (recordUndo && optimistic == null) before else null)
+                    _settings.value = core.getSettings()
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Home layout Rust mutation failed", e)
+                    applyHomeLayoutSnapshot(before, recordUndoFrom = null)
+                    _statusMessage.value = "Ana sayfa düzeni kaydedilemedi"
+                }
+            }
+        }
+    }
+
+    fun setHomeWidgetEnabled(widget: HomeWidgetType, enabled: Boolean) {
+        setHomeWidgetKindEnabled(widget.id, enabled)
+    }
+
+    fun setHomeWidgetKindEnabled(kind: String, enabled: Boolean) {
+        mutateHomeLayoutInRust(recordUndo = true) {
+            core.setHomeWidgetKindEnabled(kind, enabled)
+        }
+    }
+
+    fun addHomeWidget(kind: String, insertAt: Int? = null) {
+        mutateHomeLayoutInRust(recordUndo = true) {
+            core.addHomeWidget(kind, insertAt?.toUInt())
+        }
+    }
+
+    fun removeHomeWidget(instanceId: String) {
+        mutateHomeLayoutInRust(
+            recordUndo = true,
+            optimistic = { list -> list.filterNot { it.instanceId == instanceId } }
+        ) {
+            core.removeHomeWidget(instanceId)
+        }
+    }
+
+    fun moveHomeWidgetStep(instanceId: String, delta: Int) {
+        val current = _homeLayout.value
+        val fromIdx = current.indexOfFirst { it.instanceId == instanceId }
+        if (fromIdx < 0) return
+        val toIdx = (fromIdx + delta).coerceIn(0, (current.size - 1).coerceAtLeast(0))
+        if (toIdx == fromIdx) return
+        mutateHomeLayoutInRust(
+            recordUndo = true,
+            optimistic = { list ->
+                list.toMutableList().apply {
+                    val moved = removeAt(fromIdx)
+                    add(toIdx, moved)
+                }.mapIndexed { idx, item -> item.copy(order = idx.toUInt()) }
+            }
+        ) {
+            core.moveHomeWidget(instanceId, toIdx.toUInt())
+        }
+    }
+
+    fun reorderHomeWidgets(orderedInstanceIds: List<String>) {
+        if (orderedInstanceIds.isEmpty()) return
+        mutateHomeLayoutInRust(
+            recordUndo = true,
+            optimistic = { list ->
+                val byId = list.associateBy { it.instanceId }
+                val reordered = orderedInstanceIds.mapNotNull { byId[it] }
+                val remaining = list.filter { it.instanceId !in orderedInstanceIds }
+                (reordered + remaining).mapIndexed { idx, item -> item.copy(order = idx.toUInt()) }
+            }
+        ) {
+            core.reorderHomeWidgets(orderedInstanceIds)
+        }
+    }
+
+    fun customizeHomeWidget(instanceId: String, patch: FfiHomeWidgetPatch) {
+        mutateHomeLayoutInRust(recordUndo = true) {
+            core.customizeHomeWidget(instanceId, patch)
+        }
+    }
+
+    fun undoHomeLayoutChange() {
+        val snap = previousHomeLayoutSnapshot ?: return
+        previousHomeLayoutSnapshot = null
+        _canUndoHomeLayout.value = false
+        mutateHomeLayoutInRust(recordUndo = false) {
+            core.restoreHomeLayout(snap)
+        }
+    }
+
+    fun resetHomeLayout() {
+        mutateHomeLayoutInRust(recordUndo = true) {
+            core.resetHomeLayout()
+        }
     }
 
     // 4. Dinleme İstatistikleri (Hangi şarkı kaç kere dinlendi, toplam dinleme süresi — Rust SQLite v2)

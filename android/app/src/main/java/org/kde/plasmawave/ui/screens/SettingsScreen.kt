@@ -105,6 +105,7 @@ fun SettingsScreen(
     val saveResumePos by viewModel.saveResumePositionEnabled.collectAsState()
     val resumeCardEnabled by viewModel.resumePlaybackEnabled.collectAsState()
     val enabledWidgets by viewModel.enabledHomeWidgets.collectAsState()
+    val homeEditHoldSeconds by viewModel.homeEditHoldSeconds.collectAsState()
     val trackStats by viewModel.trackListeningStats.collectAsState()
     val totalListeningMs by viewModel.totalListeningTimeMs.collectAsState()
     val highRefresh by viewModel.highRefreshRate.collectAsState()
@@ -534,6 +535,8 @@ fun SettingsScreen(
                                     HomeWidgetType.LUCKY_PICK -> Icons.Default.Casino
                                     HomeWidgetType.SLEEP_TIMER -> Icons.Default.Bedtime
                                     HomeWidgetType.MOOD_MIX -> Icons.Default.AutoAwesome
+                                    HomeWidgetType.RECENT_TRACKS -> Icons.Default.History
+                                    HomeWidgetType.LISTENING_SUMMARY -> Icons.Default.Speed
                                 }
                                 SettingsToggle(
                                     icon = widgetIcon,
@@ -565,6 +568,48 @@ fun SettingsScreen(
                                 checked = saveResumePos,
                                 onChange = viewModel::setSaveResumePositionEnabled
                             )
+                        }
+
+                        PhoneSettingsGroupLabel("DÜZENLEME MODU BASILI TUTMA SÜRESİ")
+                        PhoneSettingsCard {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.TouchApp,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            "Düzenleme Modu Basılı Tutma",
+                                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+                                        )
+                                        Text(
+                                            "Ana sayfada düzenleme modunu açmak için gereken süre (3 – 10 sn)",
+                                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                        )
+                                    }
+                                    Text(
+                                        "$homeEditHoldSeconds sn",
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    )
+                                }
+                                Slider(
+                                    value = homeEditHoldSeconds.toFloat(),
+                                    onValueChange = { viewModel.setHomeEditHoldSeconds(it.toInt().coerceIn(3, 10)) },
+                                    valueRange = 3f..10f,
+                                    steps = 6
+                                )
+                            }
                         }
 
                         PhoneSettingsGroupLabel("ANA SAYFA KARTLARI VE SABİTLEMELER")

@@ -15,7 +15,10 @@ use core_library::{LibraryRepository, LibraryService};
 use core_mods::{ModManager, ModPermission, ModState};
 use core_providers::{AuthorizedDownload, MusicProvider};
 use core_queue::{AdvanceReason, PreviousOutcome, Queue, RepeatMode};
-use core_settings::{Language, Settings, SettingsService};
+use core_settings::{
+    home_widget_catalog, HomeWidgetCatalogEntry, HomeWidgetItem, HomeWidgetPatch, HomeWidgetSize,
+    HomeWidgetStyle, Language, Settings, SettingsService,
+};
 use core_storage::{
     now_epoch_ms, Database, StoredHistoryEntry, StoredPinnedItem, StoredPlaylistRecord,
     StoredPlaylistTrackEntry, StoredResumePlaybackState, StoredTrackListeningStat,
@@ -330,6 +333,7 @@ pub struct FfiSettings {
     pub collect_listening_history: bool,
     pub save_resume_position: bool,
     pub enabled_home_widgets: Vec<String>,
+    pub home_edit_hold_seconds: u8,
 }
 
 impl From<Settings> for FfiSettings {
@@ -361,6 +365,173 @@ impl From<Settings> for FfiSettings {
             collect_listening_history: s.collect_listening_history,
             save_resume_position: s.save_resume_position,
             enabled_home_widgets: s.enabled_home_widgets,
+            home_edit_hold_seconds: s.home_edit_hold_seconds,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiHomeWidgetSize {
+    Compact,
+    Normal,
+    Expanded,
+}
+
+impl From<HomeWidgetSize> for FfiHomeWidgetSize {
+    fn from(v: HomeWidgetSize) -> Self {
+        match v {
+            HomeWidgetSize::Compact => Self::Compact,
+            HomeWidgetSize::Normal => Self::Normal,
+            HomeWidgetSize::Expanded => Self::Expanded,
+        }
+    }
+}
+
+impl From<FfiHomeWidgetSize> for HomeWidgetSize {
+    fn from(v: FfiHomeWidgetSize) -> Self {
+        match v {
+            FfiHomeWidgetSize::Compact => Self::Compact,
+            FfiHomeWidgetSize::Normal => Self::Normal,
+            FfiHomeWidgetSize::Expanded => Self::Expanded,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiHomeWidgetStyle {
+    Card,
+    Tinted,
+    Minimal,
+}
+
+impl From<HomeWidgetStyle> for FfiHomeWidgetStyle {
+    fn from(v: HomeWidgetStyle) -> Self {
+        match v {
+            HomeWidgetStyle::Card => Self::Card,
+            HomeWidgetStyle::Tinted => Self::Tinted,
+            HomeWidgetStyle::Minimal => Self::Minimal,
+        }
+    }
+}
+
+impl From<FfiHomeWidgetStyle> for HomeWidgetStyle {
+    fn from(v: FfiHomeWidgetStyle) -> Self {
+        match v {
+            FfiHomeWidgetStyle::Card => Self::Card,
+            FfiHomeWidgetStyle::Tinted => Self::Tinted,
+            FfiHomeWidgetStyle::Minimal => Self::Minimal,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiHomeWidgetItem {
+    pub instance_id: String,
+    pub kind: String,
+    pub enabled: bool,
+    pub order: u32,
+    pub size: FfiHomeWidgetSize,
+    pub style: FfiHomeWidgetStyle,
+    pub max_items: u8,
+    pub show_subtitle: bool,
+    pub custom_title: Option<String>,
+    pub accent_hex: Option<String>,
+}
+
+impl From<HomeWidgetItem> for FfiHomeWidgetItem {
+    fn from(i: HomeWidgetItem) -> Self {
+        Self {
+            instance_id: i.instance_id,
+            kind: i.kind,
+            enabled: i.enabled,
+            order: i.order,
+            size: i.size.into(),
+            style: i.style.into(),
+            max_items: i.max_items,
+            show_subtitle: i.show_subtitle,
+            custom_title: i.custom_title,
+            accent_hex: i.accent_hex,
+        }
+    }
+}
+
+impl From<FfiHomeWidgetItem> for HomeWidgetItem {
+    fn from(i: FfiHomeWidgetItem) -> Self {
+        Self {
+            instance_id: i.instance_id,
+            kind: i.kind,
+            enabled: i.enabled,
+            order: i.order,
+            size: i.size.into(),
+            style: i.style.into(),
+            max_items: i.max_items,
+            show_subtitle: i.show_subtitle,
+            custom_title: i.custom_title,
+            accent_hex: i.accent_hex,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiHomeWidgetCatalogEntry {
+    pub kind: String,
+    pub category: String,
+    pub title: String,
+    pub description: String,
+    pub default_size: FfiHomeWidgetSize,
+    pub default_style: FfiHomeWidgetStyle,
+    pub default_max_items: u8,
+    pub min_items: u8,
+    pub max_items_limit: u8,
+    pub supports_item_count: bool,
+    pub supports_accent: bool,
+    pub allow_multiple: bool,
+}
+
+impl From<HomeWidgetCatalogEntry> for FfiHomeWidgetCatalogEntry {
+    fn from(e: HomeWidgetCatalogEntry) -> Self {
+        Self {
+            kind: e.kind,
+            category: e.category,
+            title: e.title,
+            description: e.description,
+            default_size: e.default_size.into(),
+            default_style: e.default_style.into(),
+            default_max_items: e.default_max_items,
+            min_items: e.min_items,
+            max_items_limit: e.max_items_limit,
+            supports_item_count: e.supports_item_count,
+            supports_accent: e.supports_accent,
+            allow_multiple: e.allow_multiple,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiHomeWidgetPatch {
+    pub enabled: Option<bool>,
+    pub size: Option<FfiHomeWidgetSize>,
+    pub style: Option<FfiHomeWidgetStyle>,
+    pub max_items: Option<u8>,
+    pub show_subtitle: Option<bool>,
+    pub clear_custom_title: bool,
+    pub custom_title: Option<String>,
+    pub clear_accent_hex: bool,
+    pub accent_hex: Option<String>,
+}
+
+impl From<FfiHomeWidgetPatch> for HomeWidgetPatch {
+    fn from(p: FfiHomeWidgetPatch) -> Self {
+        Self {
+            enabled: p.enabled,
+            size: p.size.map(Into::into),
+            style: p.style.map(Into::into),
+            max_items: p.max_items,
+            show_subtitle: p.show_subtitle,
+            clear_custom_title: p.clear_custom_title,
+            custom_title: p.custom_title,
+            clear_accent_hex: p.clear_accent_hex,
+            accent_hex: p.accent_hex,
         }
     }
 }
@@ -1821,9 +1992,95 @@ impl PlasmaWaveCore {
             s.collect_listening_history = settings.collect_listening_history;
             s.save_resume_position = settings.save_resume_position;
             s.enabled_home_widgets = settings.enabled_home_widgets.clone();
+            s.home_edit_hold_seconds = settings.home_edit_hold_seconds.clamp(3, 10);
         })?;
         *self.active_theme_id.write().unwrap() = updated.theme_id.clone();
         Ok(FfiSettings::from(updated))
+    }
+
+    // ------------------------------------------------------------------------
+    // Home Screen Layout & Widget Customization (Rust Single Source of Truth)
+    // ------------------------------------------------------------------------
+    pub fn get_home_layout(&self) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let items = self.settings_service.load_home_layout()?;
+        Ok(items.into_iter().map(FfiHomeWidgetItem::from).collect())
+    }
+
+    pub fn get_home_widget_catalog(&self) -> Vec<FfiHomeWidgetCatalogEntry> {
+        home_widget_catalog()
+            .into_iter()
+            .map(FfiHomeWidgetCatalogEntry::from)
+            .collect()
+    }
+
+    pub fn add_home_widget(
+        &self,
+        kind: String,
+        insert_at: Option<u32>,
+    ) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let items = self.settings_service.add_home_widget(&kind, insert_at)?;
+        Ok(items.into_iter().map(FfiHomeWidgetItem::from).collect())
+    }
+
+    pub fn remove_home_widget(&self, instance_id: String) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let items = self.settings_service.remove_home_widget(&instance_id)?;
+        Ok(items.into_iter().map(FfiHomeWidgetItem::from).collect())
+    }
+
+    pub fn move_home_widget(
+        &self,
+        instance_id: String,
+        to_index: u32,
+    ) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let items = self.settings_service.move_home_widget(&instance_id, to_index)?;
+        Ok(items.into_iter().map(FfiHomeWidgetItem::from).collect())
+    }
+
+    pub fn reorder_home_widgets(
+        &self,
+        ordered_instance_ids: Vec<String>,
+    ) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let items = self
+            .settings_service
+            .reorder_home_widgets(ordered_instance_ids)?;
+        Ok(items.into_iter().map(FfiHomeWidgetItem::from).collect())
+    }
+
+    pub fn customize_home_widget(
+        &self,
+        instance_id: String,
+        patch: FfiHomeWidgetPatch,
+    ) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let items = self
+            .settings_service
+            .customize_home_widget(&instance_id, patch.into())?;
+        Ok(items.into_iter().map(FfiHomeWidgetItem::from).collect())
+    }
+
+    pub fn set_home_widget_kind_enabled(
+        &self,
+        kind: String,
+        enabled: bool,
+    ) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let items = self
+            .settings_service
+            .set_home_widget_kind_enabled(&kind, enabled)?;
+        Ok(items.into_iter().map(FfiHomeWidgetItem::from).collect())
+    }
+
+    pub fn restore_home_layout(
+        &self,
+        items: Vec<FfiHomeWidgetItem>,
+    ) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let restored = self
+            .settings_service
+            .save_home_layout(items.into_iter().map(HomeWidgetItem::from).collect())?;
+        Ok(restored.into_iter().map(FfiHomeWidgetItem::from).collect())
+    }
+
+    pub fn reset_home_layout(&self) -> FfiResult<Vec<FfiHomeWidgetItem>> {
+        let items = self.settings_service.reset_home_layout()?;
+        Ok(items.into_iter().map(FfiHomeWidgetItem::from).collect())
     }
 
     // ------------------------------------------------------------------------
@@ -2654,5 +2911,37 @@ mod tests {
 
         let exported = core.build_user_data_export_json(1_700_000_100_000).unwrap();
         assert!(exported.contains("Daft Punk"));
+
+        // Home Layout (SQLite-backed Rust customization)
+        let catalog = core.get_home_widget_catalog();
+        assert!(catalog.iter().any(|c| c.kind == "widget_recent_tracks"));
+        let layout = core.get_home_layout().unwrap();
+        assert!(!layout.is_empty());
+        let added = core
+            .add_home_widget("widget_listening_summary".into(), Some(0))
+            .unwrap();
+        assert_eq!(added[0].kind, "widget_listening_summary");
+        let added_id = added[0].instance_id.clone();
+        let patched = core
+            .customize_home_widget(
+                added_id.clone(),
+                FfiHomeWidgetPatch {
+                    enabled: None,
+                    size: Some(FfiHomeWidgetSize::Expanded),
+                    style: Some(FfiHomeWidgetStyle::Minimal),
+                    max_items: None,
+                    show_subtitle: Some(false),
+                    clear_custom_title: false,
+                    custom_title: Some("Özetim".into()),
+                    clear_accent_hex: false,
+                    accent_hex: Some("#3DAEE9".into()),
+                },
+            )
+            .unwrap();
+        assert_eq!(patched[0].custom_title.as_deref(), Some("Özetim"));
+        let reloaded = core.get_home_layout().unwrap();
+        assert_eq!(reloaded[0].instance_id, added_id);
+        let reset = core.reset_home_layout().unwrap();
+        assert!(reset.iter().all(|i| i.instance_id != added_id));
     }
 }

@@ -2,11 +2,18 @@ package org.kde.plasmawave.ui.screens
 
 import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -16,6 +23,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -33,10 +41,12 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import java.io.File
 import kotlin.random.Random
 import org.kde.plasmawave.R
@@ -61,12 +72,23 @@ import org.kde.plasmawave.ui.QuickCardStyle
 import org.kde.plasmawave.ui.ResumePlaybackState
 import org.kde.plasmawave.ui.SearchCategory
 import org.kde.plasmawave.ui.TrackListeningStat
+import org.kde.plasmawave.ui.components.AddHomeWidgetBottomSheet
 import org.kde.plasmawave.ui.components.ArtworkImage
+import org.kde.plasmawave.ui.components.CustomizeHomeWidgetBottomSheet
 import org.kde.plasmawave.ui.components.HeaderLogoStyle
+import org.kde.plasmawave.ui.components.HomeEditHoldIndicatorPill
+import org.kde.plasmawave.ui.components.HomeEditToolbar
+import org.kde.plasmawave.ui.components.HomeEditableItemShell
 import org.kde.plasmawave.ui.components.HomeFeedType
 import org.kde.plasmawave.ui.components.HomeWidgetType
 import org.kde.plasmawave.ui.components.ListeningStatsDialog
 import org.kde.plasmawave.ui.components.TrackListItem
+import org.kde.plasmawave.ui.components.defaultTitleForHomeKind
+import org.kde.plasmawave.ui.components.homeEditHoldTrigger
+import org.kde.plasmawave.ui.components.resolveHomeWidgetVisuals
+import uniffi.plasmawave_core.FfiHomeWidgetItem
+import uniffi.plasmawave_core.FfiHomeWidgetSize
+import uniffi.plasmawave_core.FfiHomeWidgetStyle
 import uniffi.plasmawave_core.FfiPlaylist
 import uniffi.plasmawave_core.FfiTrack
 
@@ -91,6 +113,7 @@ private const val CALM_TOP_GRADIENT_END_STOP = 0.35f
 private const val CALM_SPECIAL_TILE_ALPHA = 0.14f
 private const val CALM_RESUME_CARD_PRIMARY_MIX = 0.12f
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     viewModel: MainViewModel,
@@ -102,16 +125,13 @@ fun HomeScreen(
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
     val deezerUser by viewModel.deezerUser.collectAsState()
     val flowLoading by viewModel.flowLoading.collectAsState()
-    val flowHeroCardEnabled by viewModel.flowHeroCardEnabled.collectAsState()
     val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
     val downloadsQuickAccessPinned by viewModel.downloadsQuickAccessPinned.collectAsState()
     val downloadedTracks by viewModel.downloadedTracks.collectAsState()
     val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
     val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
     val homeFeedTypes by viewModel.homeFeedTypes.collectAsState()
-    val resumePlaybackEnabled by viewModel.resumePlaybackEnabled.collectAsState()
     val resumeState by viewModel.resumePlaybackState.collectAsState()
-    val enabledWidgets by viewModel.enabledHomeWidgets.collectAsState()
     val trackStats by viewModel.trackListeningStats.collectAsState()
     val totalListeningMs by viewModel.totalListeningTimeMs.collectAsState()
     val activeTheme by viewModel.activeTheme.collectAsState()
@@ -124,11 +144,46 @@ fun HomeScreen(
     val localPlaylists by viewModel.playlists.collectAsState()
     val downloads by viewModel.fullDownloads.collectAsState()
     val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
+    val rustHomeLayout by viewModel.homeLayout.collectAsState()
+    val homeWidgetCatalog by viewModel.homeWidgetCatalog.collectAsState()
+    val canUndoHomeLayout by viewModel.canUndoHomeLayout.collectAsState()
+    val homeEditHoldSeconds by viewModel.homeEditHoldSeconds.collectAsState()
+    val holdDurationMs = (homeEditHoldSeconds.coerceIn(3, 10) * 1000L)
     val colors = LocalPlasmaColors.current
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
 
     var showStatsDialog by remember { mutableStateOf(false) }
     var selectedQuickArtist by remember { mutableStateOf<String?>(null) }
+    var isEditMode by remember { mutableStateOf(false) }
+    var holdProgress by remember { mutableStateOf<Float?>(null) }
+    var showAddWidgetSheet by remember { mutableStateOf(false) }
+    var customizingInstanceId by remember { mutableStateOf<String?>(null) }
+    var showResetLayoutConfirm by remember { mutableStateOf(false) }
+
+    var isDraggingWidget by remember { mutableStateOf(false) }
+    var draggingInstanceId by remember { mutableStateOf<String?>(null) }
+    var dragDeltaY by remember { mutableFloatStateOf(0f) }
+    var displayedLayout by remember { mutableStateOf(rustHomeLayout.filter { it.enabled }) }
+
+    LaunchedEffect(rustHomeLayout, isDraggingWidget) {
+        if (!isDraggingWidget) {
+            displayedLayout = rustHomeLayout.filter { it.enabled }
+        }
+    }
+
+    BackHandler(enabled = isEditMode) {
+        isEditMode = false
+        showAddWidgetSheet = false
+        customizingInstanceId = null
+    }
+
+    fun enterEditMode() {
+        if (!isEditMode) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            isEditMode = true
+        }
+    }
 
     if (showStatsDialog) {
         ListeningStatsDialog(
@@ -300,141 +355,476 @@ fun HomeScreen(
     }
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
+    val quickCardStyle by viewModel.quickCardStyle.collectAsState()
+    val quickCardScale by viewModel.quickCardScale.collectAsState()
+    val quickIconScale by viewModel.quickIconScale.collectAsState()
+    val quickCardShape by viewModel.quickCardShape.collectAsState()
+    val quickCardLayout by viewModel.quickCardLayout.collectAsState()
+    val quickCardContentMode by viewModel.quickCardContentMode.collectAsState()
+
+    val activeCustomizerItem = customizingInstanceId?.let { targetId ->
+        rustHomeLayout.find { it.instanceId == targetId }
+    }
+    if (showAddWidgetSheet) {
+        AddHomeWidgetBottomSheet(
+            catalog = homeWidgetCatalog,
+            activeLayout = rustHomeLayout,
+            onAddKind = { kind ->
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                viewModel.addHomeWidget(kind)
+            },
+            onDismiss = { showAddWidgetSheet = false }
+        )
+    }
+    if (activeCustomizerItem != null) {
+        val entry = homeWidgetCatalog.find { it.kind == activeCustomizerItem.kind }
+        CustomizeHomeWidgetBottomSheet(
+            item = activeCustomizerItem,
+            catalogEntry = entry,
+            onApplyPatch = { patch -> viewModel.customizeHomeWidget(activeCustomizerItem.instanceId, patch) },
+            onDismiss = { customizingInstanceId = null }
+        )
+    }
+    if (showResetLayoutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetLayoutConfirm = false },
+            title = { Text("Ana Sayfayı Sıfırla", fontWeight = FontWeight.Bold) },
+            text = { Text("Tüm widget sırası, eklenen kartlar ve özel stiller varsayılan düzene döndürülecek.") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.resetHomeLayout()
+                    showResetLayoutConfirm = false
+                }) { Text("Sıfırla") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetLayoutConfirm = false }) { Text("İptal") }
+            }
+        )
+    }
+
     Box(modifier = modifier.fillMaxSize().background(bgBrush)) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = statusBarTop + collapsedHeaderHeight, bottom = 80.dp)
+            contentPadding = PaddingValues(top = statusBarTop + collapsedHeaderHeight, bottom = 96.dp)
         ) {
             // Item 0: Dedicated collapse range spacer so firstVisibleItemIndex stays 0 throughout 0..collapseRangeDp
             item(key = "header_collapse_spacer") {
-                Spacer(Modifier.fillMaxWidth().height(collapseRangeDp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(collapseRangeDp)
+                        .homeEditHoldTrigger(
+                            enabled = !isEditMode,
+                            holdDurationMs = holdDurationMs,
+                            onHoldProgress = { holdProgress = it },
+                            onTriggered = { enterEditMode() }
+                        )
+                )
             }
 
-            if (deezerUser != null && flowHeroCardEnabled) {
-                item(key = "flow_hero_card") {
-                    DeezerFlowHeroCard(
-                        isLoading = flowLoading,
-                        onStartFlow = { viewModel.startFlow() },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+            itemsIndexed(
+                items = displayedLayout,
+                key = { _, item -> item.instanceId },
+                contentType = { _, item -> item.kind }
+            ) { idx, layoutItem ->
+                val isVisibleOutsideEdit = when (layoutItem.kind) {
+                    "block_flow_hero" -> deezerUser != null
+                    "block_resume_playback" -> resumeState != null
+                    "widget_quick_artist", "widget_lucky_pick", "widget_mood_mix" -> allKnownTracks.isNotEmpty()
+                    "widget_recent_tracks" -> recentTracks.isNotEmpty()
+                    else -> true
+                }
+                if (!isEditMode && !isVisibleOutsideEdit) {
+                    return@itemsIndexed
+                }
+
+                HomeEditableItemShell(
+                    item = layoutItem,
+                    title = defaultTitleForHomeKind(layoutItem.kind),
+                    indexInLayout = idx,
+                    totalCount = displayedLayout.size,
+                    isEditMode = isEditMode,
+                    holdDurationMs = holdDurationMs,
+                    allowHoldOnShell = layoutItem.kind != "block_feed",
+                    listState = listState,
+                    isDraggingThis = draggingInstanceId == layoutItem.instanceId,
+                    dragOffsetY = if (draggingInstanceId == layoutItem.instanceId) dragDeltaY else 0f,
+                    onHoldProgress = { holdProgress = it },
+                    onEnterEditMode = { enterEditMode() },
+                    onDragStart = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        isDraggingWidget = true
+                        draggingInstanceId = layoutItem.instanceId
+                        dragDeltaY = 0f
+                    },
+                    onDragDeltaY = { dy ->
+                        val activeId = draggingInstanceId ?: return@HomeEditableItemShell
+                        dragDeltaY += dy
+                        val visible = listState.layoutInfo.visibleItemsInfo
+                        val curInfo = visible.find { it.key == activeId } ?: return@HomeEditableItemShell
+                        val curIdx = displayedLayout.indexOfFirst { it.instanceId == activeId }
+                        if (curIdx < 0) return@HomeEditableItemShell
+                        val curCenter = curInfo.offset + curInfo.size / 2f + dragDeltaY
+
+                        if (dragDeltaY > 0f && curIdx < displayedLayout.lastIndex) {
+                            val nextId = displayedLayout[curIdx + 1].instanceId
+                            val nextInfo = visible.find { it.key == nextId }
+                            if (nextInfo != null && curCenter > nextInfo.offset + nextInfo.size * 0.5f) {
+                                displayedLayout = displayedLayout.toMutableList().apply {
+                                    val moved = removeAt(curIdx)
+                                    add(curIdx + 1, moved)
+                                }
+                                dragDeltaY -= nextInfo.size.toFloat()
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        } else if (dragDeltaY < 0f && curIdx > 0) {
+                            val prevId = displayedLayout[curIdx - 1].instanceId
+                            val prevInfo = visible.find { it.key == prevId }
+                            if (prevInfo != null && curCenter < prevInfo.offset + prevInfo.size * 0.5f) {
+                                displayedLayout = displayedLayout.toMutableList().apply {
+                                    val moved = removeAt(curIdx)
+                                    add(curIdx - 1, moved)
+                                }
+                                dragDeltaY += prevInfo.size.toFloat()
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        }
+                    },
+                    onDragEnd = {
+                        val finalOrder = displayedLayout.map { it.instanceId }
+                        draggingInstanceId = null
+                        dragDeltaY = 0f
+                        isDraggingWidget = false
+                        viewModel.reorderHomeWidgets(finalOrder)
+                    },
+                    onMoveUp = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.moveHomeWidgetStep(layoutItem.instanceId, -1)
+                    },
+                    onMoveDown = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.moveHomeWidgetStep(layoutItem.instanceId, 1)
+                    },
+                    onCustomize = { customizingInstanceId = layoutItem.instanceId },
+                    onRemove = {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.removeHomeWidget(layoutItem.instanceId)
+                    },
+                    modifier = if (isDraggingWidget) Modifier else Modifier.animateItem()
+                ) {
+                    RenderHomeLayoutItem(
+                        item = layoutItem,
+                        isEditMode = isEditMode,
+                        viewModel = viewModel,
+                        deezerLoggedIn = deezerUser != null,
+                        flowLoading = flowLoading,
+                        resumeState = resumeState,
+                        quick = quick,
+                        pinnedIds = pinnedIds,
+                        quickCardStyle = quickCardStyle,
+                        quickCardScale = quickCardScale,
+                        quickIconScale = quickIconScale,
+                        quickCardShape = quickCardShape,
+                        quickCardLayout = quickCardLayout,
+                        quickCardContentMode = quickCardContentMode,
+                        trackStats = trackStats,
+                        totalListeningFormatted = viewModel.formatDurationTr(totalListeningMs),
+                        allKnownTracks = allKnownTracks,
+                        recentTracks = recentTracks,
+                        mostPlayedTracks = mostPlayedTracks,
+                        deezerFavorites = deezerFavorites,
+                        favorites = favorites,
+                        homeFeedTypes = homeFeedTypes,
+                        likedPlaylist = likedPlaylist,
+                        currentTrackId = currentTrackId,
+                        activeThemeId = activeTheme.id,
+                        userCustomThemes = userCustomThemes,
+                        sleepTimerState = sleepTimerState,
+                        onPlaylistClick = onPlaylistClick,
+                        onOpenFullStats = { showStatsDialog = true },
+                        onArtistClick = { selectedQuickArtist = it },
+                        onRemoveBlock = { viewModel.removeHomeWidget(layoutItem.instanceId) }
                     )
-                    Spacer(Modifier.height(10.dp))
                 }
             }
 
-            if (resumePlaybackEnabled && resumeState != null) {
-                item(key = "resume_playback_card") {
-                    ResumePlaybackCard(
-                        state = resumeState!!,
-                        onResume = { viewModel.resumeSavedPlayback() },
-                        onHideCard = { viewModel.setResumePlaybackEnabled(false) },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
-                    Spacer(Modifier.height(10.dp))
+            if (!isEditMode && displayedLayout.isEmpty()) {
+                item(key = "home_empty_recovery") {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = colors.card),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 24.dp)
+                            .combinedClickable(
+                                onClick = { enterEditMode() },
+                                onLongClick = { enterEditMode() }
+                            )
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(20.dp).fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Widgets, contentDescription = null, tint = primary, modifier = Modifier.size(32.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("Ana Sayfan Boş", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                            Text(
+                                "Widget eklemek ve düzenlemek için dokun veya basılı tut",
+                                style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
                 }
             }
 
-            item(key = "quick_access_header") {
-                Spacer(Modifier.height(4.dp))
+            if (isEditMode) {
+                item(key = "edit_mode_footer_add") {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { showAddWidgetSheet = true },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Yeni Widget veya Bölüm Ekle", fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+        }
+
+        // Pinned Collapsing Header driven purely on the graphicsLayer/draw phase (0 recompositions during scroll)
+        if (!isEditMode) {
+            CollapsingHomeHeader(
+                fraction = { collapseFractionState.value },
+                bg = bg,
+                borderColor = colors.border,
+                statusBarTop = statusBarTop,
+                expandedHeaderHeight = expandedHeaderHeight,
+                collapsedHeaderHeight = collapsedHeaderHeight,
+                headerLogoStyle = headerLogoStyle,
+                customLogoImage = customLogoImage,
+                activeDownloads = active,
+                onDownloadsClick = onDownloadsClick,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+        }
+
+        AnimatedVisibility(
+            visible = isEditMode,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 4.dp)
+                .zIndex(20f)
+        ) {
+            HomeEditToolbar(
+                canUndo = canUndoHomeLayout,
+                onAddWidgetClick = { showAddWidgetSheet = true },
+                onUndoClick = { viewModel.undoHomeLayoutChange() },
+                onResetClick = { showResetLayoutConfirm = true },
+                onDoneClick = { isEditMode = false }
+            )
+        }
+
+        val activeHoldProgress = holdProgress
+        if (!isEditMode && activeHoldProgress != null) {
+            HomeEditHoldIndicatorPill(
+                progress = activeHoldProgress,
+                holdSeconds = homeEditHoldSeconds,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 6.dp)
+                    .zIndex(25f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RenderHomeLayoutItem(
+    item: FfiHomeWidgetItem,
+    isEditMode: Boolean,
+    viewModel: MainViewModel,
+    deezerLoggedIn: Boolean,
+    flowLoading: Boolean,
+    resumeState: ResumePlaybackState?,
+    quick: List<PinnedItem>,
+    pinnedIds: Set<String>,
+    quickCardStyle: QuickCardStyle,
+    quickCardScale: Float,
+    quickIconScale: Float,
+    quickCardShape: QuickCardShape,
+    quickCardLayout: QuickCardLayout,
+    quickCardContentMode: QuickCardContentMode,
+    trackStats: List<TrackListeningStat>,
+    totalListeningFormatted: String,
+    allKnownTracks: List<FfiTrack>,
+    recentTracks: List<FfiTrack>,
+    mostPlayedTracks: List<FfiTrack>,
+    deezerFavorites: List<FfiTrack>,
+    favorites: List<FfiTrack>,
+    homeFeedTypes: Set<HomeFeedType>,
+    likedPlaylist: FfiPlaylist?,
+    currentTrackId: String?,
+    activeThemeId: String,
+    userCustomThemes: List<CustomThemeSpec>,
+    sleepTimerState: SleepTimerState,
+    onPlaylistClick: (FfiPlaylist) -> Unit,
+    onOpenFullStats: () -> Unit,
+    onArtistClick: (String) -> Unit,
+    onRemoveBlock: () -> Unit
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    val outerPad = if (isEditMode) PaddingValues(horizontal = 8.dp, vertical = 4.dp) else PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+
+    when (item.kind) {
+        "block_flow_hero" -> {
+            if (deezerLoggedIn) {
+                DeezerFlowHeroCard(
+                    isLoading = flowLoading,
+                    onStartFlow = { viewModel.startFlow() },
+                    widgetItem = item,
+                    modifier = Modifier.padding(outerPad)
+                )
+            } else if (isEditMode) {
+                EditModeEmptyPlaceholder(
+                    title = item.customTitle ?: "Deezer Flow",
+                    message = "Deezer hesabı bağlandığında burada görünecek",
+                    modifier = Modifier.padding(outerPad)
+                )
+            }
+        }
+        "block_resume_playback" -> {
+            if (resumeState != null) {
+                ResumePlaybackCard(
+                    state = resumeState,
+                    onResume = { viewModel.resumeSavedPlayback() },
+                    onHideCard = onRemoveBlock,
+                    widgetItem = item,
+                    modifier = Modifier.padding(outerPad)
+                )
+            } else if (isEditMode) {
+                EditModeEmptyPlaceholder(
+                    title = item.customTitle ?: "Kaldığın Yerden Devam Et",
+                    message = "Bir şarkı çaldığında kaldığın yer burada gösterilir",
+                    modifier = Modifier.padding(outerPad)
+                )
+            }
+        }
+        "block_quick_access" -> {
+            val limitedQuick = remember(quick, item.maxItems) {
+                quick.take(item.maxItems.toInt().coerceAtLeast(1))
+            }
+            val blockTitle = item.customTitle?.takeIf { it.isNotBlank() } ?: "Hızlı erişim"
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = if (isEditMode) 4.dp else 6.dp)
+            ) {
                 Text(
-                    "Hızlı erişim",
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    blockTitle,
+                    modifier = Modifier.padding(horizontal = if (isEditMode) 12.dp else 16.dp),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
-                if (colors.legacyUiMode) {
+                if (item.showSubtitle && colors.legacyUiMode) {
                     Text(
                         "Sevdiğin şarkılar ve sabitlediklerin",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = if (isEditMode) 12.dp else 16.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.textSecondary
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-            }
-            if (quick.isNotEmpty()) item(key = "quick_access_grid") {
-                val quickCardStyle by viewModel.quickCardStyle.collectAsState()
-                val quickCardScale by viewModel.quickCardScale.collectAsState()
-                val quickIconScale by viewModel.quickIconScale.collectAsState()
-                val quickCardShape by viewModel.quickCardShape.collectAsState()
-                val quickCardLayout by viewModel.quickCardLayout.collectAsState()
-                val quickCardContentMode by viewModel.quickCardContentMode.collectAsState()
-                val effectiveLayout = if (quickCardContentMode == QuickCardContentMode.IMAGE_ONLY) {
-                    QuickCardLayout.SQUARE_GRID
-                } else {
-                    quickCardLayout
-                }
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val isLandscape = maxWidth > 600.dp
-                    val availableWidth = (maxWidth - 32.dp).coerceAtLeast(160.dp)
-                    if (effectiveLayout == QuickCardLayout.COMPACT_HORIZONTAL) {
-                        val columns = when {
-                            isLandscape -> if (quickCardScale <= 0.8f) 4 else 3
-                            quickCardScale <= 0.78f -> 3
-                            quickCardScale >= 1.18f -> 1
-                            else -> 2
-                        }
-                        val cardHeight = (58.dp * quickCardScale).coerceIn(44.dp, 76.dp)
-                        val rows = quick.chunked(columns)
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            rows.forEach { row ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    row.forEach { pin ->
-                                        QuickCard(
-                                            pin = pin,
-                                            pinned = pin.id in pinnedIds,
-                                            viewModel = viewModel,
-                                            onPlaylistClick = onPlaylistClick,
-                                            size = cardHeight,
-                                            cardStyle = quickCardStyle,
-                                            iconScale = quickIconScale,
-                                            cardShape = quickCardShape,
-                                            cardLayout = effectiveLayout,
-                                            contentMode = quickCardContentMode,
-                                            columnsCount = columns,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-                                    repeat(columns - row.size) {
-                                        Spacer(Modifier.weight(1f))
+                if (limitedQuick.isNotEmpty()) {
+                    val effectiveLayout = if (quickCardContentMode == QuickCardContentMode.IMAGE_ONLY) {
+                        QuickCardLayout.SQUARE_GRID
+                    } else {
+                        quickCardLayout
+                    }
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val isLandscape = maxWidth > 600.dp
+                        val hPad = if (isEditMode) 12.dp else 16.dp
+                        val availableWidth = (maxWidth - hPad * 2).coerceAtLeast(160.dp)
+                        if (effectiveLayout == QuickCardLayout.COMPACT_HORIZONTAL) {
+                            val columns = when {
+                                isLandscape -> if (quickCardScale <= 0.8f) 4 else 3
+                                quickCardScale <= 0.78f -> 3
+                                quickCardScale >= 1.18f -> 1
+                                else -> 2
+                            }
+                            val cardHeight = (58.dp * quickCardScale).coerceIn(44.dp, 76.dp)
+                            val rows = limitedQuick.chunked(columns)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = hPad),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                rows.forEach { row ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        row.forEach { pin ->
+                                            QuickCard(
+                                                pin = pin,
+                                                pinned = pin.id in pinnedIds,
+                                                viewModel = viewModel,
+                                                onPlaylistClick = onPlaylistClick,
+                                                size = cardHeight,
+                                                cardStyle = quickCardStyle,
+                                                iconScale = quickIconScale,
+                                                cardShape = quickCardShape,
+                                                cardLayout = effectiveLayout,
+                                                contentMode = quickCardContentMode,
+                                                columnsCount = columns,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        repeat(columns - row.size) {
+                                            Spacer(Modifier.weight(1f))
+                                        }
                                     }
                                 }
                             }
-                        }
-                    } else {
-                        val baseCardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
-                        val cardSize = baseCardSize * quickCardScale
-                        val columns = ((availableWidth + 8.dp) / (cardSize + 8.dp)).toInt().coerceIn(2, 6)
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(quick.chunked(columns * 3), key = { page -> page.first().id }) { page ->
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    page.chunked(columns).forEach { row ->
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            row.forEach { pin ->
-                                                QuickCard(
-                                                    pin = pin,
-                                                    pinned = pin.id in pinnedIds,
-                                                    viewModel = viewModel,
-                                                    onPlaylistClick = onPlaylistClick,
-                                                    size = cardSize,
-                                                    cardStyle = quickCardStyle,
-                                                    iconScale = quickIconScale,
-                                                    cardShape = quickCardShape,
-                                                    cardLayout = effectiveLayout,
-                                                    contentMode = quickCardContentMode,
-                                                    columnsCount = columns
-                                                )
+                        } else {
+                            val baseCardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
+                            val cardSize = baseCardSize * quickCardScale
+                            val columns = ((availableWidth + 8.dp) / (cardSize + 8.dp)).toInt().coerceIn(2, 6)
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = hPad),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                items(limitedQuick.chunked(columns * 3), key = { page -> page.first().id }) { page ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        page.chunked(columns).forEach { row ->
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                row.forEach { pin ->
+                                                    QuickCard(
+                                                        pin = pin,
+                                                        pinned = pin.id in pinnedIds,
+                                                        viewModel = viewModel,
+                                                        onPlaylistClick = onPlaylistClick,
+                                                        size = cardSize,
+                                                        cardStyle = quickCardStyle,
+                                                        iconScale = quickIconScale,
+                                                        cardShape = quickCardShape,
+                                                        cardLayout = effectiveLayout,
+                                                        contentMode = quickCardContentMode,
+                                                        columnsCount = columns
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -442,124 +832,156 @@ fun HomeScreen(
                             }
                         }
                     }
+                } else {
+                    Text(
+                        "Şarkı veya listelerin menüsünden ana sayfaya sabitleyebilirsin.",
+                        color = colors.textSecondary,
+                        modifier = Modifier.padding(horizontal = if (isEditMode) 12.dp else 16.dp, vertical = 12.dp)
+                    )
                 }
-            } else item(key = "quick_access_empty") {
-                Text(
-                    "Şarkı veya listelerin menüsünden ana sayfaya sabitleyebilirsin.",
-                    color = colors.textSecondary,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)
+            }
+        }
+        "widget_stats" -> {
+            StatsHomeWidgetCard(
+                stats = trackStats,
+                totalListeningFormatted = totalListeningFormatted,
+                onOpenFullStats = onOpenFullStats,
+                onPlayTrack = { idx ->
+                    val tracks = trackStats.map { it.track }
+                    if (tracks.isNotEmpty()) {
+                        viewModel.playbackManager.playTrackList(tracks, idx)
+                    }
+                },
+                widgetItem = item,
+                modifier = Modifier.padding(outerPad)
+            )
+        }
+        "widget_quick_artist" -> {
+            if (allKnownTracks.isNotEmpty()) {
+                QuickArtistWidgetCard(
+                    viewModel = viewModel,
+                    allTracks = allKnownTracks,
+                    stats = trackStats,
+                    onArtistClick = onArtistClick,
+                    widgetItem = item,
+                    modifier = Modifier.padding(outerPad)
+                )
+            } else if (isEditMode) {
+                EditModeEmptyPlaceholder(
+                    title = item.customTitle ?: "Hızlıca Sanatçıya Git",
+                    message = "Kitaplığında şarkı olduğunda sanatçılar burada sıralanır",
+                    modifier = Modifier.padding(outerPad)
                 )
             }
-
-            if (enabledWidgets.isNotEmpty()) {
-                item(key = "home_widgets_spacer") {
-                    Spacer(Modifier.height(14.dp))
-                }
+        }
+        "widget_quick_theme" -> {
+            QuickThemeWidgetCard(
+                activeThemeId = activeThemeId,
+                customThemes = userCustomThemes,
+                onSelectTheme = { viewModel.setTheme(it) },
+                widgetItem = item,
+                modifier = Modifier.padding(outerPad)
+            )
+        }
+        "widget_lucky_pick" -> {
+            if (allKnownTracks.isNotEmpty()) {
+                LuckyPickWidgetCard(
+                    tracks = allKnownTracks,
+                    onPlayTrack = { track ->
+                        viewModel.playbackManager.playTrackList(listOf(track) + allKnownTracks.shuffled().take(19), 0)
+                    },
+                    widgetItem = item,
+                    modifier = Modifier.padding(outerPad)
+                )
+            } else if (isEditMode) {
+                EditModeEmptyPlaceholder(
+                    title = item.customTitle ?: "Şanslı Şarkı Seçici",
+                    message = "Kitaplığından rastgele şarkı önerisi burada görünür",
+                    modifier = Modifier.padding(outerPad)
+                )
             }
-
-            if (HomeWidgetType.STATS in enabledWidgets) {
-                item(key = "widget_stats") {
-                    StatsHomeWidgetCard(
-                        stats = trackStats,
-                        totalListeningFormatted = viewModel.formatDurationTr(totalListeningMs),
-                        onOpenFullStats = { showStatsDialog = true },
-                        onPlayTrack = { idx ->
-                            val tracks = trackStats.map { it.track }
-                            if (tracks.isNotEmpty()) {
-                                viewModel.playbackManager.playTrackList(tracks, idx)
-                            }
-                        },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
-                }
+        }
+        "widget_sleep_timer" -> {
+            SleepTimerWidgetCard(
+                sleepTimerState = sleepTimerState,
+                onSetMinutes = { viewModel.playbackManager.startSleepTimerMinutes(it) },
+                onSetEndOfTrack = { viewModel.playbackManager.startSleepTimerEndOfTrack() },
+                onCancel = { viewModel.playbackManager.cancelSleepTimer() },
+                widgetItem = item,
+                modifier = Modifier.padding(outerPad)
+            )
+        }
+        "widget_mood_mix" -> {
+            if (allKnownTracks.isNotEmpty()) {
+                MoodMixWidgetCard(
+                    viewModel = viewModel,
+                    tracks = allKnownTracks,
+                    onStartMix = { moodTracks ->
+                        if (moodTracks.isNotEmpty()) {
+                            viewModel.playbackManager.playTrackList(moodTracks, 0)
+                        }
+                    },
+                    widgetItem = item,
+                    modifier = Modifier.padding(outerPad)
+                )
+            } else if (isEditMode) {
+                EditModeEmptyPlaceholder(
+                    title = item.customTitle ?: "Ruh Haline Göre Anında Miks",
+                    message = "Şarkılar yüklendiğinde anında miks butonları aktif olur",
+                    modifier = Modifier.padding(outerPad)
+                )
             }
-
-            if (HomeWidgetType.QUICK_ARTIST in enabledWidgets && allKnownTracks.isNotEmpty()) {
-                item(key = "widget_quick_artist") {
-                    QuickArtistWidgetCard(
-                        viewModel = viewModel,
-                        allTracks = allKnownTracks,
-                        stats = trackStats,
-                        onArtistClick = { artistName -> selectedQuickArtist = artistName },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
-                }
+        }
+        "widget_recent_tracks" -> {
+            if (recentTracks.isNotEmpty()) {
+                RecentTracksWidgetCard(
+                    tracks = recentTracks,
+                    onPlayTrack = { idx -> viewModel.playbackManager.playTrackList(recentTracks, idx) },
+                    widgetItem = item,
+                    modifier = Modifier.padding(outerPad)
+                )
+            } else if (isEditMode) {
+                EditModeEmptyPlaceholder(
+                    title = item.customTitle ?: "Son Dinlenenler Şeridi",
+                    message = "Son çaldığın parçalar burada listelenecek",
+                    modifier = Modifier.padding(outerPad)
+                )
             }
+        }
+        "widget_listening_summary" -> {
+            ListeningSummaryWidgetCard(
+                stats = trackStats,
+                totalListeningFormatted = totalListeningFormatted,
+                onOpenFullStats = onOpenFullStats,
+                widgetItem = item,
+                modifier = Modifier.padding(outerPad)
+            )
+        }
+        "block_feed" -> {
+            val feedLimit = item.maxItems.toInt().coerceIn(3, 20)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                HomeFeedType.entries.filter { it in homeFeedTypes }.forEach { feedType ->
+                    val feedTracks = when (feedType) {
+                        HomeFeedType.FOR_YOU -> if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites
+                        HomeFeedType.RECENTLY_PLAYED -> if (recentTracks.isNotEmpty()) recentTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
+                        HomeFeedType.MOST_PLAYED -> if (mostPlayedTracks.isNotEmpty()) mostPlayedTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
+                    }
 
-            if (HomeWidgetType.QUICK_THEME in enabledWidgets) {
-                item(key = "widget_quick_theme") {
-                    QuickThemeWidgetCard(
-                        activeThemeId = activeTheme.id,
-                        customThemes = userCustomThemes,
-                        onSelectTheme = { viewModel.setTheme(it) },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
-                }
-            }
-
-            if (HomeWidgetType.LUCKY_PICK in enabledWidgets && allKnownTracks.isNotEmpty()) {
-                item(key = "widget_lucky_pick") {
-                    LuckyPickWidgetCard(
-                        tracks = allKnownTracks,
-                        onPlayTrack = { track ->
-                            viewModel.playbackManager.playTrackList(listOf(track) + allKnownTracks.shuffled().take(19), 0)
-                        },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
-                }
-            }
-
-            if (HomeWidgetType.SLEEP_TIMER in enabledWidgets) {
-                item(key = "widget_sleep_timer") {
-                    SleepTimerWidgetCard(
-                        sleepTimerState = sleepTimerState,
-                        onSetMinutes = { viewModel.playbackManager.startSleepTimerMinutes(it) },
-                        onSetEndOfTrack = { viewModel.playbackManager.startSleepTimerEndOfTrack() },
-                        onCancel = { viewModel.playbackManager.cancelSleepTimer() },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
-                }
-            }
-
-            if (HomeWidgetType.MOOD_MIX in enabledWidgets && allKnownTracks.isNotEmpty()) {
-                item(key = "widget_mood_mix") {
-                    MoodMixWidgetCard(
-                        viewModel = viewModel,
-                        tracks = allKnownTracks,
-                        onStartMix = { moodTracks ->
-                            if (moodTracks.isNotEmpty()) {
-                                viewModel.playbackManager.playTrackList(moodTracks, 0)
-                            }
-                        },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
-                }
-            }
-
-            // Customizable Feeds (Senin İçin / Son Çalınanlar / En Çok Dinlenenler)
-            HomeFeedType.entries.filter { it in homeFeedTypes }.forEach { feedType ->
-                val feedTracks = when (feedType) {
-                    HomeFeedType.FOR_YOU -> if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites
-                    HomeFeedType.RECENTLY_PLAYED -> if (recentTracks.isNotEmpty()) recentTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
-                    HomeFeedType.MOST_PLAYED -> if (mostPlayedTracks.isNotEmpty()) mostPlayedTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
-                }
-
-                if (feedTracks.isNotEmpty()) {
-                    item(key = "feed_header_${feedType.name}") {
-                        Spacer(Modifier.height(28.dp))
+                    if (feedTracks.isNotEmpty()) {
+                        Spacer(Modifier.height(if (isEditMode) 8.dp else 18.dp))
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
+                                .padding(horizontal = if (isEditMode) 12.dp else 16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    feedType.title,
+                                    if (feedType == HomeFeedType.FOR_YOU && !item.customTitle.isNullOrBlank()) item.customTitle!! else feedType.title,
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
-                                if (colors.legacyUiMode) {
+                                if (item.showSubtitle && colors.legacyUiMode) {
                                     Text(
                                         feedType.subtitle,
                                         color = colors.textSecondary,
@@ -569,60 +991,61 @@ fun HomeScreen(
                             }
                             if (likedPlaylist != null && feedType == HomeFeedType.FOR_YOU) {
                                 TextButton(onClick = { onPlaylistClick(likedPlaylist) }) {
-                                    Text(
-                                        "Tümünü gör",
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                                    Text("Tümünü gör", color = primary)
                                 }
                             }
                         }
+                        val previewSlice = if (item.size == FfiHomeWidgetSize.COMPACT) feedTracks.take(3.coerceAtMost(feedLimit)) else feedTracks.take(feedLimit)
+                        previewSlice.forEachIndexed { index, track ->
+                            TrackListItem(
+                                track,
+                                isPlaying = currentTrackId == track.id,
+                                onClick = { viewModel.playbackManager.playTrackList(feedTracks, index) },
+                                onLongClick = { viewModel.openTrackMenu(track) }
+                            )
+                        }
                     }
-                    itemsIndexed(feedTracks.take(6), key = { _, it -> "feed:${feedType.name}:${it.id}" }) { index, track ->
+                }
+
+                if (favorites.isNotEmpty() && HomeFeedType.FOR_YOU in homeFeedTypes && deezerFavorites.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Bu cihazda beğendiklerin",
+                        modifier = Modifier.padding(horizontal = if (isEditMode) 12.dp else 16.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    val localSlice = if (item.size == FfiHomeWidgetSize.COMPACT) favorites.take(3) else favorites.take(5.coerceAtMost(feedLimit))
+                    localSlice.forEachIndexed { index, track ->
                         TrackListItem(
                             track,
                             isPlaying = currentTrackId == track.id,
-                            onClick = { viewModel.playbackManager.playTrackList(feedTracks, index) },
+                            onClick = { viewModel.playbackManager.playTrackList(favorites, index) },
                             onLongClick = { viewModel.openTrackMenu(track) }
                         )
                     }
                 }
             }
-
-            if (favorites.isNotEmpty() && HomeFeedType.FOR_YOU in homeFeedTypes && deezerFavorites.isNotEmpty()) {
-                item(key = "local_fav_header") {
-                    Spacer(Modifier.height(24.dp))
-                    Text(
-                        "Bu cihazda beğendiklerin",
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                itemsIndexed(favorites.take(5), key = { _, it -> "localfav:${it.id}" }) { index, track ->
-                    TrackListItem(
-                        track,
-                        isPlaying = currentTrackId == track.id,
-                        onClick = { viewModel.playbackManager.playTrackList(favorites, index) },
-                        onLongClick = { viewModel.openTrackMenu(track) }
-                    )
-                }
-            }
         }
+    }
+}
 
-        // Pinned Collapsing Header driven purely on the graphicsLayer/draw phase (0 recompositions during scroll)
-        CollapsingHomeHeader(
-            fraction = { collapseFractionState.value },
-            bg = bg,
-            borderColor = colors.border,
-            statusBarTop = statusBarTop,
-            expandedHeaderHeight = expandedHeaderHeight,
-            collapsedHeaderHeight = collapsedHeaderHeight,
-            headerLogoStyle = headerLogoStyle,
-            customLogoImage = customLogoImage,
-            activeDownloads = active,
-            onDownloadsClick = onDownloadsClick,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
+@Composable
+private fun EditModeEmptyPlaceholder(
+    title: String,
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colors.card.copy(alpha = 0.6f)),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+            Text(message, style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary))
+        }
     }
 }
 
@@ -1185,15 +1608,20 @@ private fun QuickCard(
 private fun DeezerFlowHeroCard(
     isLoading: Boolean,
     onStartFlow: () -> Unit,
+    widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
-    val flowGradient = remember {
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
+    val isExpanded = widgetItem.size == FfiHomeWidgetSize.EXPANDED
+    val flowGradient = remember(visuals.accentColor) {
         Brush.horizontalGradient(
             colors = listOf(
                 Color(0xFF8B5CF6),
-                Color(0xFFEC4899),
+                visuals.accentColor,
                 Color(0xFFF97316)
             )
         )
@@ -1202,19 +1630,20 @@ private fun DeezerFlowHeroCard(
         onClick = onStartFlow,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = if (legacyUi) Color(0xFF1E1B2E) else colors.card,
+        color = if (legacyUi && widgetItem.style != FfiHomeWidgetStyle.MINIMAL) Color(0xFF1E1B2E) else visuals.containerColor,
+        border = visuals.borderStroke,
         tonalElevation = 0.dp
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
-                    if (legacyUi) {
+                    if (legacyUi && widgetItem.style != FfiHomeWidgetStyle.MINIMAL) {
                         Modifier.background(
                             Brush.linearGradient(
                                 colors = listOf(
                                     Color(0xFF8B5CF6).copy(alpha = 0.28f),
-                                    Color(0xFFEC4899).copy(alpha = 0.16f),
+                                    visuals.accentColor.copy(alpha = 0.18f),
                                     Color.Transparent
                                 )
                             )
@@ -1223,7 +1652,14 @@ private fun DeezerFlowHeroCard(
                         Modifier
                     }
                 )
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .padding(
+                    horizontal = if (isCompact) 12.dp else 16.dp,
+                    vertical = when {
+                        isCompact -> 10.dp
+                        isExpanded -> 18.dp
+                        else -> 14.dp
+                    }
+                )
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1234,10 +1670,11 @@ private fun DeezerFlowHeroCard(
                     modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val iconBoxSize = if (isCompact) 38.dp else if (isExpanded) 52.dp else 44.dp
                     if (legacyUi) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(iconBoxSize)
                                 .background(flowGradient, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
@@ -1245,13 +1682,13 @@ private fun DeezerFlowHeroCard(
                                 Icons.Default.AllInclusive,
                                 contentDescription = "Flow",
                                 tint = Color.White,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(if (isCompact) 22.dp else 28.dp)
                             )
                         }
                     } else {
                         Box(
                             modifier = Modifier
-                                .size(44.dp)
+                                .size(iconBoxSize)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(colors.cardPressed),
                             contentAlignment = Alignment.Center
@@ -1259,8 +1696,8 @@ private fun DeezerFlowHeroCard(
                             Icon(
                                 Icons.Default.AllInclusive,
                                 contentDescription = "Flow",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(24.dp)
+                                tint = visuals.accentColor,
+                                modifier = Modifier.size(if (isCompact) 20.dp else 24.dp)
                             )
                         }
                     }
@@ -1268,7 +1705,7 @@ private fun DeezerFlowHeroCard(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "Deezer Flow",
+                                widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Deezer Flow",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                                 color = if (legacyUi) Color.White else MaterialTheme.colorScheme.onSurface
                             )
@@ -1276,23 +1713,23 @@ private fun DeezerFlowHeroCard(
                                 Spacer(Modifier.width(6.dp))
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
-                                    color = Color(0xFFEC4899).copy(alpha = 0.25f)
+                                    color = visuals.accentColor.copy(alpha = 0.25f)
                                 ) {
                                     Text(
                                         "AI AKIŞ",
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
-                                        color = Color(0xFFF472B6),
+                                        color = visuals.accentColor,
                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                     )
                                 }
                             }
                         }
-                        if (legacyUi) {
+                        if (widgetItem.showSubtitle && (legacyUi || isExpanded)) {
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 "Zevkine göre sonsuz müzik akışı",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.70f)
+                                color = if (legacyUi) Color.White.copy(alpha = 0.70f) else colors.textSecondary
                             )
                         }
                     }
@@ -1300,7 +1737,7 @@ private fun DeezerFlowHeroCard(
                 Spacer(Modifier.width(12.dp))
                 FilledIconButton(
                     onClick = onStartFlow,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(if (isCompact) 36.dp else 40.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = if (legacyUi) Color.White else colors.cardPressed,
                         contentColor = if (legacyUi) Color(0xFF1E1B2E) else MaterialTheme.colorScheme.onSurface
@@ -1309,7 +1746,7 @@ private fun DeezerFlowHeroCard(
                     if (isLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = if (legacyUi) Color(0xFF8B5CF6) else MaterialTheme.colorScheme.onSurface,
+                            color = if (legacyUi) visuals.accentColor else MaterialTheme.colorScheme.onSurface,
                             strokeWidth = 2.dp
                         )
                     } else {
@@ -1326,16 +1763,19 @@ private fun ResumePlaybackCard(
     state: ResumePlaybackState,
     onResume: () -> Unit,
     onHideCard: () -> Unit,
+    widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
     val safeDur = state.durationMs.coerceAtLeast(1L)
     val fraction = (state.positionMs.toFloat() / safeDur.toFloat()).coerceIn(0f, 1f)
 
-    val calmResumeContainer = remember(colors.card, primary) {
-        primary.copy(alpha = CALM_RESUME_CARD_PRIMARY_MIX).compositeOver(colors.card)
+    val calmResumeContainer = remember(colors.card, visuals.accentColor) {
+        visuals.accentColor.copy(alpha = CALM_RESUME_CARD_PRIMARY_MIX).compositeOver(colors.card)
     }
 
     Card(
@@ -1343,53 +1783,55 @@ private fun ResumePlaybackCard(
             .fillMaxWidth()
             .clickable { onResume() },
         colors = CardDefaults.cardColors(
-            containerColor = if (legacyUi) colors.card else calmResumeContainer
+            containerColor = if (legacyUi || widgetItem.style != FfiHomeWidgetStyle.CARD) visuals.containerColor else calmResumeContainer
         ),
         shape = RoundedCornerShape(16.dp),
-        border = if (legacyUi) BorderStroke(1.dp, primary.copy(alpha = 0.4f)) else null
+        border = visuals.borderStroke ?: if (legacyUi) BorderStroke(1.dp, visuals.accentColor.copy(alpha = 0.4f)) else null
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    Icons.Default.Restore,
-                    contentDescription = null,
-                    tint = if (legacyUi) primary else colors.textSecondary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    if (legacyUi) "KALDIĞIN YERDEN DEVAM ET" else "Kaldığın yerden devam et",
-                    style = if (legacyUi) {
-                        MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = primary,
-                            letterSpacing = 0.5.sp
-                        )
-                    } else {
-                        MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Medium,
-                            color = colors.textSecondary
-                        )
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = onHideCard,
-                    modifier = Modifier.size(24.dp)
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
+            if (!isCompact || widgetItem.showSubtitle) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Kartı Gizle",
-                        tint = colors.textSecondary,
+                        Icons.Default.Restore,
+                        contentDescription = null,
+                        tint = if (legacyUi) visuals.accentColor else colors.textSecondary,
                         modifier = Modifier.size(16.dp)
                     )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        widgetItem.customTitle?.takeIf { it.isNotBlank() }
+                            ?: if (legacyUi) "KALDIĞIN YERDEN DEVAM ET" else "Kaldığın yerden devam et",
+                        style = if (legacyUi) {
+                            MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = visuals.accentColor,
+                                letterSpacing = 0.5.sp
+                            )
+                        } else {
+                            MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Medium,
+                                color = colors.textSecondary
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = onHideCard,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Kartı Gizle",
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
+                Spacer(Modifier.height(8.dp))
             }
-
-            Spacer(Modifier.height(8.dp))
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1397,7 +1839,7 @@ private fun ResumePlaybackCard(
             ) {
                 ArtworkImage(
                     url = state.track.artworkUrl,
-                    modifier = Modifier.size(54.dp),
+                    modifier = Modifier.size(if (isCompact) 44.dp else 54.dp),
                     fallback = Icons.Default.MusicNote,
                     shape = RoundedCornerShape(10.dp),
                     fallbackTitle = state.track.title,
@@ -1425,7 +1867,7 @@ private fun ResumePlaybackCard(
                                 .weight(1f)
                                 .height(5.dp)
                                 .clip(RoundedCornerShape(50)),
-                            color = primary,
+                            color = visuals.accentColor,
                             trackColor = colors.border
                         )
                         Spacer(Modifier.width(8.dp))
@@ -1442,7 +1884,7 @@ private fun ResumePlaybackCard(
                 Button(
                     onClick = onResume,
                     shape = RoundedCornerShape(10.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    contentPadding = PaddingValues(horizontal = if (isCompact) 10.dp else 12.dp, vertical = 8.dp)
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
@@ -1459,19 +1901,25 @@ private fun StatsHomeWidgetCard(
     totalListeningFormatted: String,
     onOpenFullStats: () -> Unit,
     onPlayTrack: (Int) -> Unit,
+    widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
+    val isExpanded = widgetItem.size == FfiHomeWidgetSize.EXPANDED
     val totalPlays = remember(stats) { stats.sumOf { it.playCount } }
+    val itemLimit = if (isCompact) widgetItem.maxItems.toInt().coerceAtMost(2) else widgetItem.maxItems.toInt().coerceIn(1, 10)
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = colors.card),
+        colors = CardDefaults.cardColors(containerColor = visuals.containerColor),
+        border = visuals.borderStroke,
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -1479,64 +1927,68 @@ private fun StatsHomeWidgetCard(
                 if (legacyUi) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(if (isCompact) 30.dp else 36.dp)
                             .clip(CircleShape)
-                            .background(primary.copy(alpha = 0.16f)),
+                            .background(visuals.accentColor.copy(alpha = 0.16f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.BarChart, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.BarChart, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(if (isCompact) 17.dp else 20.dp))
                     }
                 } else {
-                    Icon(Icons.Default.BarChart, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.BarChart, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Şarkı ve Dinleme İstatistikleri",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                        widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Şarkı ve Dinleme İstatistikleri",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    if (legacyUi) {
-                        Text(
-                            "Toplam: $totalListeningFormatted • $totalPlays dinlenme (${stats.size} şarkı)",
-                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
-                        )
-                    } else if (totalPlays > 0) {
-                        Text(
-                            "$totalListeningFormatted • $totalPlays dinlenme",
-                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
-                        )
+                    if (widgetItem.showSubtitle) {
+                        if (legacyUi) {
+                            Text(
+                                "Toplam: $totalListeningFormatted • $totalPlays dinlenme (${stats.size} şarkı)",
+                                style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                            )
+                        } else if (totalPlays > 0) {
+                            Text(
+                                "$totalListeningFormatted • $totalPlays dinlenme",
+                                style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                            )
+                        }
                     }
                 }
                 TextButton(onClick = onOpenFullStats) {
                     Text(
                         "Tümünü gör",
-                        color = primary
+                        color = visuals.accentColor
                     )
                 }
             }
 
             if (stats.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                stats.take(3).forEachIndexed { idx, s ->
+                Spacer(Modifier.height(if (isCompact) 4.dp else 8.dp))
+                stats.take(itemLimit).forEachIndexed { idx, s ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .clickable { onPlayTrack(idx) }
-                            .padding(vertical = 5.dp, horizontal = 4.dp)
+                            .padding(vertical = if (isCompact) 3.dp else if (isExpanded) 6.dp else 5.dp, horizontal = 4.dp)
                     ) {
                         Text(
                             "#${idx + 1}",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = if (legacyUi) primary else colors.textSecondary
+                                color = if (legacyUi) visuals.accentColor else colors.textSecondary
                             ),
                             modifier = Modifier.width(24.dp)
                         )
                         ArtworkImage(
                             url = s.track.artworkUrl,
-                            modifier = Modifier.size(36.dp),
+                            modifier = Modifier.size(if (isCompact) 30.dp else if (isExpanded) 42.dp else 36.dp),
                             fallback = Icons.Default.MusicNote,
                             shape = RoundedCornerShape(6.dp),
                             fallbackTitle = s.track.title,
@@ -1550,23 +2002,25 @@ private fun StatsHomeWidgetCard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                s.track.artist,
-                                style = MaterialTheme.typography.labelSmall.copy(color = colors.textSecondary),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            if (!isCompact || isExpanded) {
+                                Text(
+                                    s.track.artist,
+                                    style = MaterialTheme.typography.labelSmall.copy(color = colors.textSecondary),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(if (legacyUi) primary.copy(alpha = 0.16f) else colors.cardPressed)
+                                .background(if (legacyUi) visuals.accentColor.copy(alpha = 0.16f) else colors.cardPressed)
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 "${s.playCount} kez",
                                 style = MaterialTheme.typography.labelSmall.copy(
-                                    color = if (legacyUi) primary else colors.textSecondary,
+                                    color = if (legacyUi) visuals.accentColor else colors.textSecondary,
                                     fontWeight = if (legacyUi) FontWeight.Bold else FontWeight.Medium
                                 )
                             )
@@ -1584,14 +2038,19 @@ private fun QuickArtistWidgetCard(
     allTracks: List<FfiTrack>,
     stats: List<TrackListeningStat>,
     onArtistClick: (String) -> Unit,
+    widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
+    val isExpanded = widgetItem.size == FfiHomeWidgetSize.EXPANDED
+    val artistLimit = widgetItem.maxItems.toInt().coerceIn(4, 20)
 
-    val artists = remember(allTracks, stats) {
-        viewModel.getQuickArtists(limit = 12, fallbackTracks = allTracks).map { item ->
+    val artists = remember(allTracks, stats, artistLimit) {
+        viewModel.getQuickArtists(limit = artistLimit, fallbackTracks = allTracks).map { item ->
             val primaryArtist = item.artist.split(",").first().trim().ifEmpty { item.artist }
             Triple(primaryArtist, item.sampleTrack.artworkUrl, item.playCount.toInt())
         }.distinctBy { it.first }
@@ -1599,31 +2058,32 @@ private fun QuickArtistWidgetCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = colors.card),
+        colors = CardDefaults.cardColors(containerColor = visuals.containerColor),
+        border = visuals.borderStroke,
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (legacyUi) {
                     Box(
                         modifier = Modifier
                             .size(34.dp)
                             .clip(CircleShape)
-                            .background(primary.copy(alpha = 0.16f)),
+                            .background(visuals.accentColor.copy(alpha = 0.16f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.PersonSearch, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.PersonSearch, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(18.dp))
                     }
                 } else {
-                    Icon(Icons.Default.PersonSearch, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.PersonSearch, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
-                        "Hızlıca Sanatçıya Git",
+                        widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Hızlıca Sanatçıya Git",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    if (legacyUi) {
+                    if (widgetItem.showSubtitle && (legacyUi || isExpanded)) {
                         Text(
                             "Sanatçıya dokunarak şarkılarını anında çalın veya arayın",
                             style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
@@ -1632,14 +2092,19 @@ private fun QuickArtistWidgetCard(
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(if (isCompact) 8.dp else 12.dp))
 
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val avatarSize = when (widgetItem.size) {
+                FfiHomeWidgetSize.COMPACT -> 46.dp
+                FfiHomeWidgetSize.NORMAL -> 58.dp
+                FfiHomeWidgetSize.EXPANDED -> 70.dp
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(if (isCompact) 8.dp else 12.dp)) {
                 items(artists, key = { it.first }) { (artistName, artUrl, _) ->
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
-                            .width(76.dp)
+                            .width(avatarSize + 18.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .clickable { onArtistClick(artistName) }
                             .padding(4.dp)
@@ -1647,9 +2112,9 @@ private fun QuickArtistWidgetCard(
                         ArtworkImage(
                             url = artUrl,
                             modifier = Modifier
-                                .size(58.dp)
+                                .size(avatarSize)
                                 .clip(CircleShape)
-                                .then(if (legacyUi) Modifier.border(1.5.dp, primary.copy(alpha = 0.6f), CircleShape) else Modifier),
+                                .then(if (legacyUi) Modifier.border(1.5.dp, visuals.accentColor.copy(alpha = 0.6f), CircleShape) else Modifier),
                             fallback = Icons.Default.Person,
                             shape = CircleShape
                         )
@@ -1673,39 +2138,43 @@ private fun QuickThemeWidgetCard(
     activeThemeId: String,
     customThemes: List<CustomThemeSpec>,
     onSelectTheme: (String) -> Unit,
+    widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = colors.card),
+        colors = CardDefaults.cardColors(containerColor = visuals.containerColor),
+        border = visuals.borderStroke,
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (legacyUi) {
                     Box(
                         modifier = Modifier
                             .size(34.dp)
                             .clip(CircleShape)
-                            .background(primary.copy(alpha = 0.16f)),
+                            .background(visuals.accentColor.copy(alpha = 0.16f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Palette, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Palette, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(18.dp))
                     }
                 } else {
-                    Icon(Icons.Default.Palette, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Palette, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
-                        "Hızlıca Tema Değiştir",
+                        widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Hızlıca Tema Değiştir",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    if (legacyUi) {
+                    if (widgetItem.showSubtitle && legacyUi && !isCompact) {
                         Text(
                             "Tek dokunuşla temalarınız arasında geçiş yapın",
                             style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
@@ -1714,7 +2183,7 @@ private fun QuickThemeWidgetCard(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(if (isCompact) 8.dp else 10.dp))
 
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item(key = "theme_breeze") {
@@ -1796,11 +2265,14 @@ private fun QuickThemeWidgetCard(
 private fun LuckyPickWidgetCard(
     tracks: List<FfiTrack>,
     onPlayTrack: (FfiTrack) -> Unit,
+    widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
     var currentIndex by remember(tracks.size) {
         mutableIntStateOf(if (tracks.isNotEmpty()) Random.nextInt(tracks.size) else 0)
     }
@@ -1808,10 +2280,11 @@ private fun LuckyPickWidgetCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = colors.card),
+        colors = CardDefaults.cardColors(containerColor = visuals.containerColor),
+        border = visuals.borderStroke,
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -1827,15 +2300,15 @@ private fun LuckyPickWidgetCard(
                         Icon(Icons.Default.Casino, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp))
                     }
                 } else {
-                    Icon(Icons.Default.Casino, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Casino, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Şanslı Şarkı Seçici",
+                        widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Şanslı Şarkı Seçici",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    if (legacyUi) {
+                    if (widgetItem.showSubtitle && legacyUi && !isCompact) {
                         Text(
                             "Kitaplığından senin için rastgele seçilen parça",
                             style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
@@ -1855,17 +2328,17 @@ private fun LuckyPickWidgetCard(
                         Icons.Default.Refresh,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
-                        tint = if (legacyUi) primary else colors.textSecondary
+                        tint = if (legacyUi) visuals.accentColor else colors.textSecondary
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         "Başka seç",
-                        color = if (legacyUi) primary else colors.textSecondary
+                        color = if (legacyUi) visuals.accentColor else colors.textSecondary
                     )
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(if (isCompact) 4.dp else 8.dp))
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1874,11 +2347,11 @@ private fun LuckyPickWidgetCard(
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.background.copy(alpha = 0.45f))
                     .clickable { onPlayTrack(chosenTrack) }
-                    .padding(10.dp)
+                    .padding(if (isCompact) 8.dp else 10.dp)
             ) {
                 ArtworkImage(
                     url = chosenTrack.artworkUrl,
-                    modifier = Modifier.size(46.dp),
+                    modifier = Modifier.size(if (isCompact) 38.dp else 46.dp),
                     fallback = Icons.Default.MusicNote,
                     shape = RoundedCornerShape(8.dp),
                     fallbackTitle = chosenTrack.title,
@@ -1903,7 +2376,7 @@ private fun LuckyPickWidgetCard(
                     onClick = { onPlayTrack(chosenTrack) },
                     modifier = Modifier.size(38.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = if (legacyUi) primary else colors.cardPressed,
+                        containerColor = if (legacyUi) visuals.accentColor else colors.cardPressed,
                         contentColor = if (legacyUi) Color.White else MaterialTheme.colorScheme.onSurface
                     )
                 ) {
@@ -1920,24 +2393,28 @@ private fun SleepTimerWidgetCard(
     onSetMinutes: (Int) -> Unit,
     onSetEndOfTrack: () -> Unit,
     onCancel: () -> Unit,
+    widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
 
     val statusText = when (sleepTimerState) {
-        is SleepTimerState.Off -> if (legacyUi) "Kapalı • Süre seçerek otomatik duraklatmayı başlatın" else null
+        is SleepTimerState.Off -> if (legacyUi && widgetItem.showSubtitle && !isCompact) "Kapalı • Süre seçerek otomatik duraklatmayı başlatın" else null
         is SleepTimerState.EndOfTrack -> "Aktif • Çalan şarkı bittiğinde duracak"
         is SleepTimerState.Countdown -> "Aktif • Kalan süre: ${formatClockMs(sleepTimerState.remainingMs)}"
     }
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = colors.card),
+        colors = CardDefaults.cardColors(containerColor = visuals.containerColor),
+        border = visuals.borderStroke,
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (legacyUi) {
                     Box(
@@ -1950,19 +2427,19 @@ private fun SleepTimerWidgetCard(
                         Icon(Icons.Default.Bedtime, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
                     }
                 } else {
-                    Icon(Icons.Default.Bedtime, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Bedtime, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Hızlı Uyku Zamanlayıcısı",
+                        widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Hızlı Uyku Zamanlayıcısı",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                     if (statusText != null) {
                         Text(
                             statusText,
                             style = MaterialTheme.typography.bodySmall.copy(
-                                color = if (sleepTimerState is SleepTimerState.Off || !legacyUi) colors.textSecondary else primary
+                                color = if (sleepTimerState is SleepTimerState.Off || !legacyUi) colors.textSecondary else visuals.accentColor
                             )
                         )
                     }
@@ -1974,7 +2451,7 @@ private fun SleepTimerWidgetCard(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(if (isCompact) 6.dp else 10.dp))
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2008,11 +2485,14 @@ private fun MoodMixWidgetCard(
     viewModel: MainViewModel,
     tracks: List<FfiTrack>,
     onStartMix: (List<FfiTrack>) -> Unit,
+    widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
 
     val moods = listOf(
         Triple(if (legacyUi) "Enerjik ⚡" else "Enerjik", Color(0xFFF59E0B), "enerjik"),
@@ -2023,31 +2503,32 @@ private fun MoodMixWidgetCard(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = colors.card),
+        colors = CardDefaults.cardColors(containerColor = visuals.containerColor),
+        border = visuals.borderStroke,
         shape = RoundedCornerShape(16.dp)
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (legacyUi) {
                     Box(
                         modifier = Modifier
                             .size(34.dp)
                             .clip(CircleShape)
-                            .background(primary.copy(alpha = 0.16f)),
+                            .background(visuals.accentColor.copy(alpha = 0.16f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(18.dp))
                     }
                 } else {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(
-                        "Ruh Haline Göre Anında Miks",
+                        widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Ruh Haline Göre Anında Miks",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
-                    if (legacyUi) {
+                    if (widgetItem.showSubtitle && legacyUi && !isCompact) {
                         Text(
                             "Modunu seç, şarkıların hemen çalmaya başlasın",
                             style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
@@ -2056,7 +2537,7 @@ private fun MoodMixWidgetCard(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(if (isCompact) 6.dp else 10.dp))
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2074,11 +2555,166 @@ private fun MoodMixWidgetCard(
                             contentColor = if (legacyUi) color else MaterialTheme.colorScheme.onSurface
                         ),
                         shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = if (isCompact) 7.dp else 10.dp)
                     ) {
                         Text(
                             title,
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentTracksWidgetCard(
+    tracks: List<FfiTrack>,
+    onPlayTrack: (Int) -> Unit,
+    widgetItem: FfiHomeWidgetItem,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
+    val isExpanded = widgetItem.size == FfiHomeWidgetSize.EXPANDED
+    val sliced = remember(tracks, widgetItem.maxItems) {
+        tracks.take(widgetItem.maxItems.toInt().coerceIn(3, 20))
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = visuals.containerColor),
+        border = visuals.borderStroke,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.History, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Son Dinlenenler Şeridi",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                    )
+                    if (widgetItem.showSubtitle && !isCompact) {
+                        Text(
+                            "Son çaldığın parçalara anında geri dön",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(if (isCompact) 8.dp else 12.dp))
+
+            val coverSize = if (isCompact) 72.dp else if (isExpanded) 112.dp else 92.dp
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                itemsIndexed(sliced, key = { idx, t -> "recent_w:${t.id}:$idx" }) { index, track ->
+                    Column(
+                        modifier = Modifier
+                            .width(coverSize)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onPlayTrack(index) }
+                    ) {
+                        ArtworkImage(
+                            url = track.artworkUrl,
+                            modifier = Modifier.size(coverSize),
+                            fallback = Icons.Default.MusicNote,
+                            shape = RoundedCornerShape(10.dp),
+                            fallbackTitle = track.title,
+                            fallbackArtist = track.artist
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            track.title,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (!isCompact) {
+                            Text(
+                                track.artist,
+                                style = MaterialTheme.typography.labelSmall.copy(color = colors.textSecondary),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ListeningSummaryWidgetCard(
+    stats: List<TrackListeningStat>,
+    totalListeningFormatted: String,
+    onOpenFullStats: () -> Unit,
+    widgetItem: FfiHomeWidgetItem,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)
+    val isCompact = widgetItem.size == FfiHomeWidgetSize.COMPACT
+    val totalPlays = remember(stats) { stats.sumOf { it.playCount } }
+    val topArtist = remember(stats) { stats.firstOrNull()?.track?.artist ?: "—" }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onOpenFullStats() },
+        colors = CardDefaults.cardColors(containerColor = visuals.containerColor),
+        border = visuals.borderStroke,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(if (isCompact) 10.dp else 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Speed, contentDescription = null, tint = visuals.accentColor, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    widgetItem.customTitle?.takeIf { it.isNotBlank() } ?: "Mini Dinleme Özeti",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(16.dp))
+            }
+
+            Spacer(Modifier.height(if (isCompact) 6.dp else 10.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                listOf(
+                    "Süre" to totalListeningFormatted,
+                    "Dinleme" to "$totalPlays",
+                    "Favori" to topArtist
+                ).forEach { (label, value) ->
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(colors.cardPressed.copy(alpha = 0.55f))
+                            .padding(horizontal = 8.dp, vertical = if (isCompact) 6.dp else 8.dp)
+                    ) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelSmall.copy(color = colors.textSecondary),
+                            maxLines = 1
+                        )
+                        Text(
+                            value,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = visuals.accentColor
+                            ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )

@@ -108,6 +108,7 @@ fun CustomizationScreen(
     val homeFeedTypes by viewModel.homeFeedTypes.collectAsState()
     val resumePlaybackEnabled by viewModel.resumePlaybackEnabled.collectAsState()
     val enabledHomeWidgets by viewModel.enabledHomeWidgets.collectAsState()
+    val homeEditHoldSeconds by viewModel.homeEditHoldSeconds.collectAsState()
     val quickCardStyle by viewModel.quickCardStyle.collectAsState()
     val quickCardScale by viewModel.quickCardScale.collectAsState()
     val quickIconScale by viewModel.quickIconScale.collectAsState()
@@ -1500,6 +1501,60 @@ fun CustomizationScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
+                    text = sectionHeading("DÜZENLEME MODU BASILI TUTMA SÜRESİ", colors.legacyUiMode),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = colors.textSecondary
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = colors.card),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(primary.copy(alpha = 0.14f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.TouchApp, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Basılı Tutma Süresi",
+                                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                                )
+                                Text(
+                                    text = "Ana sayfa düzenleme moduna geçmek için en az 3 sn, en fazla 10 sn",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                            }
+                            Text(
+                                text = "$homeEditHoldSeconds sn",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    color = primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Slider(
+                            value = homeEditHoldSeconds.toFloat(),
+                            onValueChange = { viewModel.setHomeEditHoldSeconds(it.toInt().coerceIn(3, 10)) },
+                            valueRange = 3f..10f,
+                            steps = 6
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
                     text = sectionHeading("ANA SAYFA WİDGET'LARI", colors.legacyUiMode),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontWeight = FontWeight.Bold,
@@ -1508,7 +1563,7 @@ fun CustomizationScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Ana sayfaya eklemek veya kaldırmak istediğiniz widget'ları seçin:",
+                    text = "Ana sayfada eklemek/kaldırmak istediğiniz widget'ları seçin (ayrıca Ana Sayfa'da herhangi bir karta basılı tutarak sürükle-bırak ve stil düzenlemesi yapabilirsiniz):",
                     style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1528,6 +1583,8 @@ fun CustomizationScreen(
                                 HomeWidgetType.LUCKY_PICK -> Icons.Default.Casino
                                 HomeWidgetType.SLEEP_TIMER -> Icons.Default.Bedtime
                                 HomeWidgetType.MOOD_MIX -> Icons.Default.AutoAwesome
+                                HomeWidgetType.RECENT_TRACKS -> Icons.Default.History
+                                HomeWidgetType.LISTENING_SUMMARY -> Icons.Default.Speed
                             }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,

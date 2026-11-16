@@ -10,6 +10,12 @@ use std::sync::{Arc, Mutex};
 use core_domain::{DomainError, DomainResult};
 use serde::{Deserialize, Serialize};
 
+pub mod home_layout;
+pub use home_layout::{
+    canonical_home_widget_kind, default_home_layout_from_settings, home_widget_catalog,
+    HomeWidgetCatalogEntry, HomeWidgetItem, HomeWidgetPatch, HomeWidgetSize, HomeWidgetStyle,
+};
+
 pub trait KeyValueStore: Send + Sync {
     fn get(&self, key: &str) -> DomainResult<Option<String>>;
     fn set(&self, key: &str, value: &str) -> DomainResult<()>;
@@ -48,12 +54,10 @@ pub const DEFAULT_THEME_ID: &str = "org.kde.breeze-dark";
 
 pub fn default_home_widgets() -> Vec<String> {
     vec![
-        "stats".into(),
-        "quick_artist".into(),
-        "quick_theme".into(),
-        "lucky_pick".into(),
-        "sleep_timer".into(),
-        "mood_mix".into(),
+        "widget_stats".into(),
+        "widget_quick_artist".into(),
+        "widget_quick_theme".into(),
+        "widget_lucky_pick".into(),
     ]
 }
 
@@ -90,6 +94,7 @@ pub struct Settings {
     pub collect_listening_history: bool,
     pub save_resume_position: bool,
     pub enabled_home_widgets: Vec<String>,
+    pub home_edit_hold_seconds: u8,
 }
 
 impl Default for Settings {
@@ -121,6 +126,7 @@ impl Default for Settings {
             collect_listening_history: true,
             save_resume_position: true,
             enabled_home_widgets: default_home_widgets(),
+            home_edit_hold_seconds: 3,
         }
     }
 }
@@ -152,6 +158,7 @@ mod keys {
     pub const COLLECT_HISTORY: &str = "privacy.collect_listening_history";
     pub const SAVE_RESUME_POS: &str = "privacy.save_resume_position";
     pub const ENABLED_HOME_WIDGETS: &str = "ui.enabled_home_widgets";
+    pub const HOME_EDIT_HOLD_SECONDS: &str = "ui.home_edit_hold_seconds";
 }
 
 #[derive(Clone)]
@@ -280,6 +287,12 @@ impl SettingsService {
                 d.save_resume_position,
             ),
             enabled_home_widgets,
+            home_edit_hold_seconds: self
+                .store
+                .get(keys::HOME_EDIT_HOLD_SECONDS)?
+                .and_then(|v| v.parse::<u8>().ok())
+                .map(|s| s.clamp(3, 10))
+                .unwrap_or(d.home_edit_hold_seconds),
         })
     }
 
@@ -371,6 +384,10 @@ impl SettingsService {
         let widgets_json =
             serde_json::to_string(&s.enabled_home_widgets).unwrap_or_else(|_| "[]".into());
         self.store.set(keys::ENABLED_HOME_WIDGETS, &widgets_json)?;
+        self.store.set(
+            keys::HOME_EDIT_HOLD_SECONDS,
+            &s.home_edit_hold_seconds.clamp(3, 10).to_string(),
+        )?;
         Ok(())
     }
 
