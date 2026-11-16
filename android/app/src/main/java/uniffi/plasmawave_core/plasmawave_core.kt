@@ -930,6 +930,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -973,6 +975,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_customize_home_widget(`ptr`: Pointer,`instanceId`: RustBuffer.ByValue,`patch`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_delete_cached_playlist_entries(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_delete_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_delete_user_custom_theme(`ptr`: Pointer,`themeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1299,6 +1303,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_customize_home_widget(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_cached_playlist_entries(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_playlist(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_user_custom_theme(
@@ -1539,6 +1545,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_customize_home_widget() != 19961.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_cached_playlist_entries() != 14944.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_playlist() != 39966.toShort()) {
@@ -2239,6 +2248,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `customizeHomeWidget`(`instanceId`: kotlin.String, `patch`: FfiHomeWidgetPatch): List<FfiHomeWidgetItem>
     
+    fun `deleteCachedPlaylistEntries`(`playlistId`: kotlin.String)
+    
     fun `deletePlaylist`(`playlistId`: kotlin.String)
     
     fun `deleteUserCustomTheme`(`themeId`: kotlin.String): FfiTheme
@@ -2637,6 +2648,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     }
     )
     }
+    
+
+    
+    @Throws(FfiException::class)override fun `deleteCachedPlaylistEntries`(`playlistId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_delete_cached_playlist_entries(
+        it, FfiConverterString.lower(`playlistId`),_status)
+}
+    }
+    
     
 
     

@@ -2397,6 +2397,11 @@ impl PlasmaWaveCore {
         Ok(out)
     }
 
+    pub fn delete_cached_playlist_entries(&self, playlist_id: String) -> FfiResult<()> {
+        self.database.delete_cached_playlist_entries(&playlist_id)?;
+        Ok(())
+    }
+
     // ------------------------------------------------------------------------
     // Rust Sorting & Home Widget Algorithms
     // ------------------------------------------------------------------------

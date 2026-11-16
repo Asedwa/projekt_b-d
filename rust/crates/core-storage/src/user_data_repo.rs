@@ -726,6 +726,16 @@ impl Database {
         }
         Ok(out)
     }
+
+    pub fn delete_cached_playlist_entries(&self, playlist_id: &str) -> DomainResult<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM playlist_entries_cache WHERE playlist_id = ?1;",
+            params![playlist_id],
+        )
+        .map_err(|e| DomainError::Storage(format!("delete_cached_playlist_entries: {e}")))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
