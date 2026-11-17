@@ -60,6 +60,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import java.io.File
 import kotlin.random.Random
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import org.kde.plasmawave.R
 import org.kde.plasmawave.player.SleepTimerState
 import org.kde.plasmawave.theme.LocalPlasmaColors
@@ -135,18 +137,21 @@ fun HomeScreen(
     val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
     val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
     val homeFeedTypes by viewModel.homeFeedTypes.collectAsState()
-    val resumeState by viewModel.resumePlaybackState.collectAsState()
-    val trackStats by viewModel.trackListeningStats.collectAsState()
-    val totalListeningMs by viewModel.totalListeningTimeMs.collectAsState()
+    val hasResumeState by remember {
+        viewModel.resumePlaybackState.map { it != null }.distinctUntilChanged()
+    }.collectAsState(initial = viewModel.resumePlaybackState.value != null)
     val activeTheme by viewModel.activeTheme.collectAsState()
     val userCustomThemes by viewModel.userCustomThemes.collectAsState()
-    val sleepTimerState by viewModel.playbackManager.sleepTimerState.collectAsState()
     val recentTracks by viewModel.recentTracks.collectAsState()
     val mostPlayedTracks by viewModel.mostPlayedTracks.collectAsState()
     val pins by viewModel.pins.collectAsState()
     val deezerPlaylists by viewModel.deezerPlaylists.collectAsState()
     val localPlaylists by viewModel.playlists.collectAsState()
-    val downloads by viewModel.fullDownloads.collectAsState()
+    val activeDownloads by remember {
+        viewModel.fullDownloads
+            .map { list -> list.count { it.state == "queued" || it.state == "running" } }
+            .distinctUntilChanged()
+    }.collectAsState(initial = viewModel.fullDownloads.value.count { it.state == "queued" || it.state == "running" })
     val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
     val rustHomeLayout by viewModel.homeLayout.collectAsState()
     val homeWidgetCatalog by viewModel.homeWidgetCatalog.collectAsState()
@@ -293,10 +298,13 @@ fun HomeScreen(
         } else null
     }
 
-    val likedPlaylist = if (deezerUser != null || deezerFavorites.isNotEmpty()) FfiPlaylist(
-        DEEZER_FAVORITES_ID, "Sevdiğim Şarkılar", null, false,
-        deezerFavorites.size.toUInt(), null, "real"
-    ) else null
+    val isDeezerConnected = deezerUser != null
+    val likedPlaylist = remember(isDeezerConnected, deezerFavorites.size) {
+        if (isDeezerConnected || deezerFavorites.isNotEmpty()) FfiPlaylist(
+            DEEZER_FAVORITES_ID, "Sevdiğim Şarkılar", null, false,
+            deezerFavorites.size.toUInt(), null, "real"
+        ) else null
+    }
 
     val downloadedPlaylist = remember(downloadedTracks) {
         FfiPlaylist(
@@ -310,17 +318,16 @@ fun HomeScreen(
         )
     }
 
-    val quick = remember(pins, likedPlaylist, downloadedPlaylist, downloadsQuickAccessPinned, deezerPlaylists, localPlaylists, flowQuickAccessPinned, deezerUser) {
+    val quick = remember(pins, likedPlaylist, downloadedPlaylist, downloadsQuickAccessPinned, deezerPlaylists, localPlaylists, flowQuickAccessPinned, isDeezerConnected) {
         val currentPlaylists = (deezerPlaylists.map { it.playlist } + localPlaylists).associateBy { it.id }
         val refreshed = pins.map { pin ->
             if (pin is PinnedItem.Playlist) PinnedItem.Playlist(currentPlaylists[pin.playlist.id] ?: pin.playlist) else pin
         }
-        val flowItem = if (flowQuickAccessPinned && deezerUser != null) listOf(PinnedItem.Flow) else emptyList()
+        val flowItem = if (flowQuickAccessPinned && isDeezerConnected) listOf(PinnedItem.Flow) else emptyList()
         val downloadsItem = if (downloadsQuickAccessPinned) listOf(PinnedItem.Playlist(downloadedPlaylist)) else emptyList()
         val likedItem = listOfNotNull(likedPlaylist?.let { PinnedItem.Playlist(it) })
         (flowItem + downloadsItem + likedItem + refreshed).distinctBy { it.id }
     }
-    val active = downloads.count { it.state == "queued" || it.state == "running" }
     val pinnedIds = remember(pins, flowQuickAccessPinned, downloadsQuickAccessPinned) {
         val set = pins.mapTo(HashSet(pins.size.coerceAtLeast(1) + 2)) { it.id }
         if (flowQuickAccessPinned) set.add(PinnedItem.Flow.id)
@@ -365,9 +372,6 @@ fun HomeScreen(
     val quickCardShape by viewModel.quickCardShape.collectAsState()
     val quickCardLayout by viewModel.quickCardLayout.collectAsState()
     val quickCardContentMode by viewModel.quickCardContentMode.collectAsState()
-    val totalListeningFormatted = remember(totalListeningMs) {
-        viewModel.formatDurationTr(totalListeningMs)
-    }
 
     val activeCustomizerItem = customizingInstanceId?.let { targetId ->
         rustHomeLayout.find { it.instanceId == targetId }
@@ -459,7 +463,6 @@ fun HomeScreen(
                         viewModel = viewModel,
                         deezerLoggedIn = deezerUser != null,
                         flowLoading = flowLoading,
-                        resumeState = resumeState,
                         quick = quick,
                         pinnedIds = pinnedIds,
                         quickCardStyle = quickCardStyle,
@@ -468,8 +471,6 @@ fun HomeScreen(
                         quickCardShape = quickCardShape,
                         quickCardLayout = quickCardLayout,
                         quickCardContentMode = quickCardContentMode,
-                        trackStats = trackStats,
-                        totalListeningFormatted = totalListeningFormatted,
                         allKnownTracks = allKnownTracks,
                         recentTracks = recentTracks,
                         mostPlayedTracks = mostPlayedTracks,
@@ -480,7 +481,6 @@ fun HomeScreen(
                         currentTrackId = currentTrackId,
                         activeThemeId = activeTheme.id,
                         userCustomThemes = userCustomThemes,
-                        sleepTimerState = sleepTimerState,
                         onPlaylistClick = onPlaylistClick,
                         onOpenFullStats = { showStatsDialog = true },
                         onArtistClick = { selectedQuickArtist = it }
@@ -490,7 +490,7 @@ fun HomeScreen(
                 displayedLayout.forEachIndexed { idx, layoutItem ->
                     val isVisibleOutsideEdit = when (layoutItem.kind) {
                         "block_flow_hero" -> deezerUser != null
-                        "block_resume_playback" -> resumeState != null
+                        "block_resume_playback" -> hasResumeState
                         "widget_quick_artist", "widget_lucky_pick", "widget_mood_mix" -> allKnownTracks.isNotEmpty()
                         "widget_recent_tracks" -> recentTracks.isNotEmpty()
                         else -> true
@@ -540,7 +540,6 @@ fun HomeScreen(
                                 viewModel = viewModel,
                                 deezerLoggedIn = deezerUser != null,
                                 flowLoading = flowLoading,
-                                resumeState = resumeState,
                                 quick = quick,
                                 pinnedIds = pinnedIds,
                                 quickCardStyle = quickCardStyle,
@@ -549,8 +548,6 @@ fun HomeScreen(
                                 quickCardShape = quickCardShape,
                                 quickCardLayout = quickCardLayout,
                                 quickCardContentMode = quickCardContentMode,
-                                trackStats = trackStats,
-                                totalListeningFormatted = totalListeningFormatted,
                                 allKnownTracks = allKnownTracks,
                                 recentTracks = recentTracks,
                                 mostPlayedTracks = mostPlayedTracks,
@@ -561,7 +558,6 @@ fun HomeScreen(
                                 currentTrackId = currentTrackId,
                                 activeThemeId = activeTheme.id,
                                 userCustomThemes = userCustomThemes,
-                                sleepTimerState = sleepTimerState,
                                 onPlaylistClick = onPlaylistClick,
                                 onOpenFullStats = { showStatsDialog = true },
                                 onArtistClick = { selectedQuickArtist = it }
@@ -631,7 +627,7 @@ fun HomeScreen(
                 collapsedHeaderHeight = collapsedHeaderHeight,
                 headerLogoStyle = headerLogoStyle,
                 customLogoImage = customLogoImage,
-                activeDownloads = active,
+                activeDownloads = activeDownloads,
                 onDownloadsClick = onDownloadsClick,
                 modifier = Modifier.align(Alignment.TopCenter)
             )
@@ -691,7 +687,6 @@ private fun LazyItemScope.HomeLayoutShellItem(
     viewModel: MainViewModel,
     deezerLoggedIn: Boolean,
     flowLoading: Boolean,
-    resumeState: ResumePlaybackState?,
     quick: List<PinnedItem>,
     pinnedIds: Set<String>,
     quickCardStyle: QuickCardStyle,
@@ -700,8 +695,6 @@ private fun LazyItemScope.HomeLayoutShellItem(
     quickCardShape: QuickCardShape,
     quickCardLayout: QuickCardLayout,
     quickCardContentMode: QuickCardContentMode,
-    trackStats: List<TrackListeningStat>,
-    totalListeningFormatted: String,
     allKnownTracks: List<FfiTrack>,
     recentTracks: List<FfiTrack>,
     mostPlayedTracks: List<FfiTrack>,
@@ -712,7 +705,6 @@ private fun LazyItemScope.HomeLayoutShellItem(
     currentTrackId: String?,
     activeThemeId: String,
     userCustomThemes: List<CustomThemeSpec>,
-    sleepTimerState: SleepTimerState,
     onPlaylistClick: (FfiPlaylist) -> Unit,
     onOpenFullStats: () -> Unit,
     onArtistClick: (String) -> Unit
@@ -809,7 +801,6 @@ private fun LazyItemScope.HomeLayoutShellItem(
             viewModel = viewModel,
             deezerLoggedIn = deezerLoggedIn,
             flowLoading = flowLoading,
-            resumeState = resumeState,
             quick = quick,
             pinnedIds = pinnedIds,
             quickCardStyle = quickCardStyle,
@@ -818,8 +809,6 @@ private fun LazyItemScope.HomeLayoutShellItem(
             quickCardShape = quickCardShape,
             quickCardLayout = quickCardLayout,
             quickCardContentMode = quickCardContentMode,
-            trackStats = trackStats,
-            totalListeningFormatted = totalListeningFormatted,
             allKnownTracks = allKnownTracks,
             recentTracks = recentTracks,
             mostPlayedTracks = mostPlayedTracks,
@@ -830,7 +819,6 @@ private fun LazyItemScope.HomeLayoutShellItem(
             currentTrackId = currentTrackId,
             activeThemeId = activeThemeId,
             userCustomThemes = userCustomThemes,
-            sleepTimerState = sleepTimerState,
             onPlaylistClick = onPlaylistClick,
             onOpenFullStats = onOpenFullStats,
             onArtistClick = onArtistClick,
@@ -1003,7 +991,6 @@ private fun RenderHomeLayoutItem(
     viewModel: MainViewModel,
     deezerLoggedIn: Boolean,
     flowLoading: Boolean,
-    resumeState: ResumePlaybackState?,
     quick: List<PinnedItem>,
     pinnedIds: Set<String>,
     quickCardStyle: QuickCardStyle,
@@ -1012,8 +999,6 @@ private fun RenderHomeLayoutItem(
     quickCardShape: QuickCardShape,
     quickCardLayout: QuickCardLayout,
     quickCardContentMode: QuickCardContentMode,
-    trackStats: List<TrackListeningStat>,
-    totalListeningFormatted: String,
     allKnownTracks: List<FfiTrack>,
     recentTracks: List<FfiTrack>,
     mostPlayedTracks: List<FfiTrack>,
@@ -1024,7 +1009,6 @@ private fun RenderHomeLayoutItem(
     currentTrackId: String?,
     activeThemeId: String,
     userCustomThemes: List<CustomThemeSpec>,
-    sleepTimerState: SleepTimerState,
     onPlaylistClick: (FfiPlaylist) -> Unit,
     onOpenFullStats: () -> Unit,
     onArtistClick: (String) -> Unit,
@@ -1052,21 +1036,13 @@ private fun RenderHomeLayoutItem(
             }
         }
         "block_resume_playback" -> {
-            if (resumeState != null) {
-                ResumePlaybackCard(
-                    state = resumeState,
-                    onResume = { viewModel.resumeSavedPlayback() },
-                    onHideCard = onRemoveBlock,
-                    widgetItem = item,
-                    modifier = Modifier.padding(outerPad)
-                )
-            } else if (isEditMode) {
-                EditModeEmptyPlaceholder(
-                    title = item.customTitle ?: "Kaldığın Yerden Devam Et",
-                    message = "Bir şarkı çaldığında kaldığın yer burada gösterilir",
-                    modifier = Modifier.padding(outerPad)
-                )
-            }
+            ResumePlaybackWidgetHost(
+                viewModel = viewModel,
+                isEditMode = isEditMode,
+                widgetItem = item,
+                onHideCard = onRemoveBlock,
+                modifier = Modifier.padding(outerPad)
+            )
         }
         "block_quick_access" -> {
             val limitedQuick = remember(quick, item.maxItems) {
@@ -1190,15 +1166,8 @@ private fun RenderHomeLayoutItem(
         }
         "widget_stats" -> {
             StatsHomeWidgetCard(
-                stats = trackStats,
-                totalListeningFormatted = totalListeningFormatted,
+                viewModel = viewModel,
                 onOpenFullStats = onOpenFullStats,
-                onPlayTrack = { idx ->
-                    val tracks = trackStats.map { it.track }
-                    if (tracks.isNotEmpty()) {
-                        viewModel.playbackManager.playTrackList(tracks, idx)
-                    }
-                },
                 widgetItem = item,
                 modifier = Modifier.padding(outerPad)
             )
@@ -1208,7 +1177,6 @@ private fun RenderHomeLayoutItem(
                 QuickArtistWidgetCard(
                     viewModel = viewModel,
                     allTracks = allKnownTracks,
-                    stats = trackStats,
                     onArtistClick = onArtistClick,
                     widgetItem = item,
                     modifier = Modifier.padding(outerPad)
@@ -1250,10 +1218,7 @@ private fun RenderHomeLayoutItem(
         }
         "widget_sleep_timer" -> {
             SleepTimerWidgetCard(
-                sleepTimerState = sleepTimerState,
-                onSetMinutes = { viewModel.playbackManager.startSleepTimerMinutes(it) },
-                onSetEndOfTrack = { viewModel.playbackManager.startSleepTimerEndOfTrack() },
-                onCancel = { viewModel.playbackManager.cancelSleepTimer() },
+                viewModel = viewModel,
                 widgetItem = item,
                 modifier = Modifier.padding(outerPad)
             )
@@ -1297,8 +1262,7 @@ private fun RenderHomeLayoutItem(
         }
         "widget_listening_summary" -> {
             ListeningSummaryWidgetCard(
-                stats = trackStats,
-                totalListeningFormatted = totalListeningFormatted,
+                viewModel = viewModel,
                 onOpenFullStats = onOpenFullStats,
                 widgetItem = item,
                 modifier = Modifier.padding(outerPad)
@@ -2069,6 +2033,32 @@ private fun DeezerFlowHeroCard(
 }
 
 @Composable
+private fun ResumePlaybackWidgetHost(
+    viewModel: MainViewModel,
+    isEditMode: Boolean,
+    widgetItem: FfiHomeWidgetItem,
+    onHideCard: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val resumeState = viewModel.resumePlaybackState.collectAsState().value
+    if (resumeState != null) {
+        ResumePlaybackCard(
+            state = resumeState,
+            onResume = { viewModel.resumeSavedPlayback() },
+            onHideCard = onHideCard,
+            widgetItem = widgetItem,
+            modifier = modifier
+        )
+    } else if (isEditMode) {
+        EditModeEmptyPlaceholder(
+            title = widgetItem.customTitle ?: "Kaldığın Yerden Devam Et",
+            message = "Bir şarkı çaldığında kaldığın yer burada gösterilir",
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
 private fun ResumePlaybackCard(
     state: ResumePlaybackState,
     onResume: () -> Unit,
@@ -2207,13 +2197,16 @@ private fun ResumePlaybackCard(
 
 @Composable
 private fun StatsHomeWidgetCard(
-    stats: List<TrackListeningStat>,
-    totalListeningFormatted: String,
+    viewModel: MainViewModel,
     onOpenFullStats: () -> Unit,
-    onPlayTrack: (Int) -> Unit,
     widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
+    val stats by viewModel.trackListeningStats.collectAsState()
+    val totalListeningMs by viewModel.totalListeningTimeMs.collectAsState()
+    val totalListeningFormatted = remember(totalListeningMs) {
+        viewModel.formatDurationTr(totalListeningMs)
+    }
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
@@ -2285,7 +2278,12 @@ private fun StatsHomeWidgetCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable { onPlayTrack(idx) }
+                            .clickable {
+                                val tracks = stats.map { it.track }
+                                if (tracks.isNotEmpty()) {
+                                    viewModel.playbackManager.playTrackList(tracks, idx)
+                                }
+                            }
                             .padding(vertical = if (isCompact) 3.dp else if (isExpanded) 6.dp else 5.dp, horizontal = 4.dp)
                     ) {
                         Text(
@@ -2342,15 +2340,21 @@ private fun StatsHomeWidgetCard(
     }
 }
 
+private fun mapQuickArtistItems(items: List<uniffi.plasmawave_core.FfiQuickArtistItem>): List<Triple<String, String?, Int>> =
+    items.map { item ->
+        val primaryArtist = item.artist.split(",").first().trim().ifEmpty { item.artist }
+        Triple(primaryArtist, item.sampleTrack.artworkUrl, item.playCount.toInt())
+    }.distinctBy { it.first }
+
 @Composable
 private fun QuickArtistWidgetCard(
     viewModel: MainViewModel,
     allTracks: List<FfiTrack>,
-    stats: List<TrackListeningStat>,
     onArtistClick: (String) -> Unit,
     widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
+    val stats by viewModel.trackListeningStats.collectAsState()
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
@@ -2359,11 +2363,16 @@ private fun QuickArtistWidgetCard(
     val isExpanded = widgetItem.size == FfiHomeWidgetSize.EXPANDED
     val artistLimit = widgetItem.maxItems.toInt().coerceIn(4, 20)
 
-    val artists = remember(allTracks, stats, artistLimit) {
-        viewModel.getQuickArtists(limit = artistLimit, fallbackTracks = allTracks).map { item ->
-            val primaryArtist = item.artist.split(",").first().trim().ifEmpty { item.artist }
-            Triple(primaryArtist, item.sampleTrack.artworkUrl, item.playCount.toInt())
-        }.distinctBy { it.first }
+    var artists by remember(artistLimit) {
+        mutableStateOf(mapQuickArtistItems(viewModel.getCachedQuickArtists(artistLimit)))
+    }
+    LaunchedEffect(allTracks, stats, artistLimit) {
+        val mapped = mapQuickArtistItems(
+            viewModel.loadQuickArtists(limit = artistLimit, fallbackTracks = allTracks)
+        )
+        if (mapped != artists) {
+            artists = mapped
+        }
     }
 
     Card(
@@ -2699,13 +2708,11 @@ private fun LuckyPickWidgetCard(
 
 @Composable
 private fun SleepTimerWidgetCard(
-    sleepTimerState: SleepTimerState,
-    onSetMinutes: (Int) -> Unit,
-    onSetEndOfTrack: () -> Unit,
-    onCancel: () -> Unit,
+    viewModel: MainViewModel,
     widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
+    val sleepTimerState = viewModel.playbackManager.sleepTimerState.collectAsState().value
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val legacyUi = colors.legacyUiMode
@@ -2755,7 +2762,7 @@ private fun SleepTimerWidgetCard(
                     }
                 }
                 if (sleepTimerState !is SleepTimerState.Off) {
-                    TextButton(onClick = onCancel) {
+                    TextButton(onClick = { viewModel.playbackManager.cancelSleepTimer() }) {
                         Text("Kapat", color = if (legacyUi) Color(0xFFEF4444) else colors.textSecondary)
                     }
                 }
@@ -2769,7 +2776,7 @@ private fun SleepTimerWidgetCard(
             ) {
                 listOf(15, 30, 45).forEach { mins ->
                     OutlinedButton(
-                        onClick = { onSetMinutes(mins) },
+                        onClick = { viewModel.playbackManager.startSleepTimerMinutes(mins) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = PaddingValues(vertical = 6.dp)
@@ -2778,7 +2785,7 @@ private fun SleepTimerWidgetCard(
                     }
                 }
                 OutlinedButton(
-                    onClick = onSetEndOfTrack,
+                    onClick = { viewModel.playbackManager.startSleepTimerEndOfTrack() },
                     modifier = Modifier.weight(1.2f),
                     shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(vertical = 6.dp)
@@ -2963,12 +2970,16 @@ private fun RecentTracksWidgetCard(
 
 @Composable
 private fun ListeningSummaryWidgetCard(
-    stats: List<TrackListeningStat>,
-    totalListeningFormatted: String,
+    viewModel: MainViewModel,
     onOpenFullStats: () -> Unit,
     widgetItem: FfiHomeWidgetItem,
     modifier: Modifier = Modifier
 ) {
+    val stats by viewModel.trackListeningStats.collectAsState()
+    val totalListeningMs by viewModel.totalListeningTimeMs.collectAsState()
+    val totalListeningFormatted = remember(totalListeningMs) {
+        viewModel.formatDurationTr(totalListeningMs)
+    }
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val visuals = resolveHomeWidgetVisuals(widgetItem, colors, primary)

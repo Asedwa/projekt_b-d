@@ -1051,9 +1051,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _trackListeningStats.value = emptyList()
             _totalListeningTimeMs.value = 0L
             _resumePlaybackState.value = null
+            quickArtistsCache.clear()
             _statusMessage.value = "Toplanan tüm dinleme istatistikleri ve geçmiş verileri silindi"
         }
     }
+
+    private val quickArtistsCache = ConcurrentHashMap<Int, List<FfiQuickArtistItem>>()
+
+    fun getCachedQuickArtists(limit: Int = 12): List<FfiQuickArtistItem> {
+        val safeLimit = limit.coerceAtLeast(1)
+        quickArtistsCache[safeLimit]?.let { return it }
+        return quickArtistsCache.values.firstOrNull()?.take(safeLimit) ?: emptyList()
+    }
+
+    suspend fun loadQuickArtists(limit: Int = 12, fallbackTracks: List<FfiTrack> = emptyList()): List<FfiQuickArtistItem> =
+        withContext(Dispatchers.IO) {
+            val safeLimit = limit.coerceAtLeast(1)
+            runCatching { core.getQuickArtists(safeLimit.toUInt(), fallbackTracks) }
+                .onSuccess { quickArtistsCache[safeLimit] = it }
+                .getOrElse { getCachedQuickArtists(safeLimit) }
+        }
 
     fun getQuickArtists(limit: Int = 12, fallbackTracks: List<FfiTrack> = emptyList()): List<FfiQuickArtistItem> =
         runCatching { core.getQuickArtists(limit.coerceAtLeast(1).toUInt(), fallbackTracks) }
@@ -1328,6 +1345,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             refreshFavorites()
             refreshLocalTracks()
             refreshDownloads()
+            loadQuickArtists(12, emptyList())
             if (!deezerSession.hasSavedSession) {
                 try {
                     DeezerWebCookies.readArl()?.let { connectDeezerArl(it) }
