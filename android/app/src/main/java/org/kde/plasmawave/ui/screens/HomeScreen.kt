@@ -16,6 +16,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -60,6 +63,7 @@ import kotlin.random.Random
 import org.kde.plasmawave.R
 import org.kde.plasmawave.player.SleepTimerState
 import org.kde.plasmawave.theme.LocalPlasmaColors
+import org.kde.plasmawave.theme.PlasmaCustomColors
 import org.kde.plasmawave.ui.CustomThemeSpec
 import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.LOCAL_DOWNLOADS_ID
@@ -361,6 +365,9 @@ fun HomeScreen(
     val quickCardShape by viewModel.quickCardShape.collectAsState()
     val quickCardLayout by viewModel.quickCardLayout.collectAsState()
     val quickCardContentMode by viewModel.quickCardContentMode.collectAsState()
+    val totalListeningFormatted = remember(totalListeningMs) {
+        viewModel.formatDurationTr(totalListeningMs)
+    }
 
     val activeCustomizerItem = customizingInstanceId?.let { targetId ->
         rustHomeLayout.find { it.instanceId == targetId }
@@ -423,99 +430,32 @@ fun HomeScreen(
                 )
             }
 
-            itemsIndexed(
-                items = displayedLayout,
-                key = { _, item -> item.instanceId },
-                contentType = { _, item -> item.kind }
-            ) { idx, layoutItem ->
-                val isVisibleOutsideEdit = when (layoutItem.kind) {
-                    "block_flow_hero" -> deezerUser != null
-                    "block_resume_playback" -> resumeState != null
-                    "widget_quick_artist", "widget_lucky_pick", "widget_mood_mix" -> allKnownTracks.isNotEmpty()
-                    "widget_recent_tracks" -> recentTracks.isNotEmpty()
-                    else -> true
-                }
-                if (!isEditMode && !isVisibleOutsideEdit) {
-                    return@itemsIndexed
-                }
-
-                HomeEditableItemShell(
-                    item = layoutItem,
-                    title = defaultTitleForHomeKind(layoutItem.kind),
-                    indexInLayout = idx,
-                    totalCount = displayedLayout.size,
-                    isEditMode = isEditMode,
-                    holdDurationMs = holdDurationMs,
-                    allowHoldOnShell = layoutItem.kind != "block_feed",
-                    listState = listState,
-                    isDraggingThis = draggingInstanceId == layoutItem.instanceId,
-                    dragOffsetY = if (draggingInstanceId == layoutItem.instanceId) dragDeltaY else 0f,
-                    onHoldProgress = { holdProgress = it },
-                    onEnterEditMode = { enterEditMode() },
-                    onDragStart = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        isDraggingWidget = true
-                        draggingInstanceId = layoutItem.instanceId
-                        dragDeltaY = 0f
-                    },
-                    onDragDeltaY = { dy ->
-                        val activeId = draggingInstanceId ?: return@HomeEditableItemShell
-                        dragDeltaY += dy
-                        val visible = listState.layoutInfo.visibleItemsInfo
-                        val curInfo = visible.find { it.key == activeId } ?: return@HomeEditableItemShell
-                        val curIdx = displayedLayout.indexOfFirst { it.instanceId == activeId }
-                        if (curIdx < 0) return@HomeEditableItemShell
-                        val curCenter = curInfo.offset + curInfo.size / 2f + dragDeltaY
-
-                        if (dragDeltaY > 0f && curIdx < displayedLayout.lastIndex) {
-                            val nextId = displayedLayout[curIdx + 1].instanceId
-                            val nextInfo = visible.find { it.key == nextId }
-                            if (nextInfo != null && curCenter > nextInfo.offset + nextInfo.size * 0.5f) {
-                                displayedLayout = displayedLayout.toMutableList().apply {
-                                    val moved = removeAt(curIdx)
-                                    add(curIdx + 1, moved)
-                                }
-                                dragDeltaY -= nextInfo.size.toFloat()
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                        } else if (dragDeltaY < 0f && curIdx > 0) {
-                            val prevId = displayedLayout[curIdx - 1].instanceId
-                            val prevInfo = visible.find { it.key == prevId }
-                            if (prevInfo != null && curCenter < prevInfo.offset + prevInfo.size * 0.5f) {
-                                displayedLayout = displayedLayout.toMutableList().apply {
-                                    val moved = removeAt(curIdx)
-                                    add(curIdx - 1, moved)
-                                }
-                                dragDeltaY += prevInfo.size.toFloat()
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                        }
-                    },
-                    onDragEnd = {
-                        val finalOrder = displayedLayout.map { it.instanceId }
-                        draggingInstanceId = null
-                        dragDeltaY = 0f
-                        isDraggingWidget = false
-                        viewModel.reorderHomeWidgets(finalOrder)
-                    },
-                    onMoveUp = {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.moveHomeWidgetStep(layoutItem.instanceId, -1)
-                    },
-                    onMoveDown = {
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.moveHomeWidgetStep(layoutItem.instanceId, 1)
-                    },
-                    onCustomize = { customizingInstanceId = layoutItem.instanceId },
-                    onRemove = {
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.removeHomeWidget(layoutItem.instanceId)
-                    },
-                    modifier = if (isDraggingWidget) Modifier else Modifier.animateItem()
-                ) {
-                    RenderHomeLayoutItem(
-                        item = layoutItem,
-                        isEditMode = isEditMode,
+            if (isEditMode) {
+                itemsIndexed(
+                    items = displayedLayout,
+                    key = { _, item -> item.instanceId },
+                    contentType = { _, item -> item.kind }
+                ) { idx, layoutItem ->
+                    HomeLayoutShellItem(
+                        idx = idx,
+                        layoutItem = layoutItem,
+                        getDisplayedLayout = { displayedLayout },
+                        onUpdateDisplayedLayout = { displayedLayout = it },
+                        isEditMode = true,
+                        holdDurationMs = holdDurationMs,
+                        listState = listState,
+                        isDraggingWidget = isDraggingWidget,
+                        getDraggingInstanceId = { draggingInstanceId },
+                        getDragDeltaY = { dragDeltaY },
+                        onSetDragging = { dragging, id, delta ->
+                            isDraggingWidget = dragging
+                            draggingInstanceId = id
+                            dragDeltaY = delta
+                        },
+                        onSetDragDeltaY = { dragDeltaY = it },
+                        onHoldProgress = { holdProgress = it },
+                        onEnterEditMode = { enterEditMode() },
+                        onCustomize = { customizingInstanceId = layoutItem.instanceId },
                         viewModel = viewModel,
                         deezerLoggedIn = deezerUser != null,
                         flowLoading = flowLoading,
@@ -529,7 +469,7 @@ fun HomeScreen(
                         quickCardLayout = quickCardLayout,
                         quickCardContentMode = quickCardContentMode,
                         trackStats = trackStats,
-                        totalListeningFormatted = viewModel.formatDurationTr(totalListeningMs),
+                        totalListeningFormatted = totalListeningFormatted,
                         allKnownTracks = allKnownTracks,
                         recentTracks = recentTracks,
                         mostPlayedTracks = mostPlayedTracks,
@@ -543,9 +483,91 @@ fun HomeScreen(
                         sleepTimerState = sleepTimerState,
                         onPlaylistClick = onPlaylistClick,
                         onOpenFullStats = { showStatsDialog = true },
-                        onArtistClick = { selectedQuickArtist = it },
-                        onRemoveBlock = { viewModel.removeHomeWidget(layoutItem.instanceId) }
+                        onArtistClick = { selectedQuickArtist = it }
                     )
+                }
+            } else {
+                displayedLayout.forEachIndexed { idx, layoutItem ->
+                    val isVisibleOutsideEdit = when (layoutItem.kind) {
+                        "block_flow_hero" -> deezerUser != null
+                        "block_resume_playback" -> resumeState != null
+                        "widget_quick_artist", "widget_lucky_pick", "widget_mood_mix" -> allKnownTracks.isNotEmpty()
+                        "widget_recent_tracks" -> recentTracks.isNotEmpty()
+                        else -> true
+                    }
+                    if (!isVisibleOutsideEdit) return@forEachIndexed
+
+                    if (layoutItem.kind == "block_feed") {
+                        val feedSections = buildHomeFeedSections(
+                            item = layoutItem,
+                            isEditMode = false,
+                            showSubtitleLegacyOnly = colors.legacyUiMode,
+                            homeFeedTypes = homeFeedTypes,
+                            deezerFavorites = deezerFavorites,
+                            favorites = favorites,
+                            recentTracks = recentTracks,
+                            mostPlayedTracks = mostPlayedTracks,
+                            likedPlaylist = likedPlaylist
+                        )
+                        homeFeedLazyItems(
+                            instanceId = layoutItem.instanceId,
+                            sections = feedSections,
+                            currentTrackId = currentTrackId,
+                            primary = primary,
+                            colors = colors,
+                            onPlaylistClick = onPlaylistClick,
+                            onPlayTracks = viewModel.playbackManager::playTrackList,
+                            onTrackMenu = viewModel::openTrackMenu
+                        )
+                    } else {
+                        item(key = layoutItem.instanceId, contentType = layoutItem.kind) {
+                            HomeLayoutShellItem(
+                                idx = idx,
+                                layoutItem = layoutItem,
+                                getDisplayedLayout = { displayedLayout },
+                                onUpdateDisplayedLayout = { displayedLayout = it },
+                                isEditMode = false,
+                                holdDurationMs = holdDurationMs,
+                                listState = listState,
+                                isDraggingWidget = false,
+                                getDraggingInstanceId = { null },
+                                getDragDeltaY = { 0f },
+                                onSetDragging = { _, _, _ -> },
+                                onSetDragDeltaY = {},
+                                onHoldProgress = { holdProgress = it },
+                                onEnterEditMode = { enterEditMode() },
+                                onCustomize = {},
+                                viewModel = viewModel,
+                                deezerLoggedIn = deezerUser != null,
+                                flowLoading = flowLoading,
+                                resumeState = resumeState,
+                                quick = quick,
+                                pinnedIds = pinnedIds,
+                                quickCardStyle = quickCardStyle,
+                                quickCardScale = quickCardScale,
+                                quickIconScale = quickIconScale,
+                                quickCardShape = quickCardShape,
+                                quickCardLayout = quickCardLayout,
+                                quickCardContentMode = quickCardContentMode,
+                                trackStats = trackStats,
+                                totalListeningFormatted = totalListeningFormatted,
+                                allKnownTracks = allKnownTracks,
+                                recentTracks = recentTracks,
+                                mostPlayedTracks = mostPlayedTracks,
+                                deezerFavorites = deezerFavorites,
+                                favorites = favorites,
+                                homeFeedTypes = homeFeedTypes,
+                                likedPlaylist = likedPlaylist,
+                                currentTrackId = currentTrackId,
+                                activeThemeId = activeTheme.id,
+                                userCustomThemes = userCustomThemes,
+                                sleepTimerState = sleepTimerState,
+                                onPlaylistClick = onPlaylistClick,
+                                onOpenFullStats = { showStatsDialog = true },
+                                onArtistClick = { selectedQuickArtist = it }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -644,6 +666,331 @@ fun HomeScreen(
                     .statusBarsPadding()
                     .padding(top = 6.dp)
                     .zIndex(25f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LazyItemScope.HomeLayoutShellItem(
+    idx: Int,
+    layoutItem: FfiHomeWidgetItem,
+    getDisplayedLayout: () -> List<FfiHomeWidgetItem>,
+    onUpdateDisplayedLayout: (List<FfiHomeWidgetItem>) -> Unit,
+    isEditMode: Boolean,
+    holdDurationMs: Long,
+    listState: LazyListState,
+    isDraggingWidget: Boolean,
+    getDraggingInstanceId: () -> String?,
+    getDragDeltaY: () -> Float,
+    onSetDragging: (Boolean, String?, Float) -> Unit,
+    onSetDragDeltaY: (Float) -> Unit,
+    onHoldProgress: (Float?) -> Unit,
+    onEnterEditMode: () -> Unit,
+    onCustomize: () -> Unit,
+    viewModel: MainViewModel,
+    deezerLoggedIn: Boolean,
+    flowLoading: Boolean,
+    resumeState: ResumePlaybackState?,
+    quick: List<PinnedItem>,
+    pinnedIds: Set<String>,
+    quickCardStyle: QuickCardStyle,
+    quickCardScale: Float,
+    quickIconScale: Float,
+    quickCardShape: QuickCardShape,
+    quickCardLayout: QuickCardLayout,
+    quickCardContentMode: QuickCardContentMode,
+    trackStats: List<TrackListeningStat>,
+    totalListeningFormatted: String,
+    allKnownTracks: List<FfiTrack>,
+    recentTracks: List<FfiTrack>,
+    mostPlayedTracks: List<FfiTrack>,
+    deezerFavorites: List<FfiTrack>,
+    favorites: List<FfiTrack>,
+    homeFeedTypes: Set<HomeFeedType>,
+    likedPlaylist: FfiPlaylist?,
+    currentTrackId: String?,
+    activeThemeId: String,
+    userCustomThemes: List<CustomThemeSpec>,
+    sleepTimerState: SleepTimerState,
+    onPlaylistClick: (FfiPlaylist) -> Unit,
+    onOpenFullStats: () -> Unit,
+    onArtistClick: (String) -> Unit
+) {
+    val haptics = LocalHapticFeedback.current
+    val currentDisplayedLayout = getDisplayedLayout()
+    val currentDraggingId = getDraggingInstanceId()
+    val isDraggingThis = currentDraggingId == layoutItem.instanceId
+    HomeEditableItemShell(
+        item = layoutItem,
+        title = defaultTitleForHomeKind(layoutItem.kind),
+        indexInLayout = idx,
+        totalCount = currentDisplayedLayout.size,
+        isEditMode = isEditMode,
+        holdDurationMs = holdDurationMs,
+        allowHoldOnShell = layoutItem.kind != "block_feed",
+        listState = listState,
+        isDraggingThis = isDraggingThis,
+        dragOffsetY = if (isDraggingThis) getDragDeltaY() else 0f,
+        onHoldProgress = onHoldProgress,
+        onEnterEditMode = onEnterEditMode,
+        onDragStart = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSetDragging(true, layoutItem.instanceId, 0f)
+        },
+        onDragDeltaY = { dy ->
+            val activeId = getDraggingInstanceId() ?: return@HomeEditableItemShell
+            val liveLayout = getDisplayedLayout()
+            var nextDeltaY = getDragDeltaY() + dy
+            val visible = listState.layoutInfo.visibleItemsInfo
+            val curInfo = visible.find { it.key == activeId } ?: run {
+                onSetDragDeltaY(nextDeltaY)
+                return@HomeEditableItemShell
+            }
+            val curIdx = liveLayout.indexOfFirst { it.instanceId == activeId }
+            if (curIdx < 0) {
+                onSetDragDeltaY(nextDeltaY)
+                return@HomeEditableItemShell
+            }
+            val curCenter = curInfo.offset + curInfo.size / 2f + nextDeltaY
+
+            if (nextDeltaY > 0f && curIdx < liveLayout.lastIndex) {
+                val nextId = liveLayout[curIdx + 1].instanceId
+                val nextInfo = visible.find { it.key == nextId }
+                if (nextInfo != null && curCenter > nextInfo.offset + nextInfo.size * 0.5f) {
+                    onUpdateDisplayedLayout(
+                        liveLayout.toMutableList().apply {
+                            val moved = removeAt(curIdx)
+                            add(curIdx + 1, moved)
+                        }
+                    )
+                    nextDeltaY -= nextInfo.size.toFloat()
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
+            } else if (nextDeltaY < 0f && curIdx > 0) {
+                val prevId = liveLayout[curIdx - 1].instanceId
+                val prevInfo = visible.find { it.key == prevId }
+                if (prevInfo != null && curCenter < prevInfo.offset + prevInfo.size * 0.5f) {
+                    onUpdateDisplayedLayout(
+                        liveLayout.toMutableList().apply {
+                            val moved = removeAt(curIdx)
+                            add(curIdx - 1, moved)
+                        }
+                    )
+                    nextDeltaY += prevInfo.size.toFloat()
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
+            }
+            onSetDragDeltaY(nextDeltaY)
+        },
+        onDragEnd = {
+            val finalOrder = getDisplayedLayout().map { it.instanceId }
+            onSetDragging(false, null, 0f)
+            viewModel.reorderHomeWidgets(finalOrder)
+        },
+        onMoveUp = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            viewModel.moveHomeWidgetStep(layoutItem.instanceId, -1)
+        },
+        onMoveDown = {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            viewModel.moveHomeWidgetStep(layoutItem.instanceId, 1)
+        },
+        onCustomize = onCustomize,
+        onRemove = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            viewModel.removeHomeWidget(layoutItem.instanceId)
+        },
+        modifier = if (isDraggingWidget) Modifier else Modifier.animateItem()
+    ) {
+        RenderHomeLayoutItem(
+            item = layoutItem,
+            isEditMode = isEditMode,
+            viewModel = viewModel,
+            deezerLoggedIn = deezerLoggedIn,
+            flowLoading = flowLoading,
+            resumeState = resumeState,
+            quick = quick,
+            pinnedIds = pinnedIds,
+            quickCardStyle = quickCardStyle,
+            quickCardScale = quickCardScale,
+            quickIconScale = quickIconScale,
+            quickCardShape = quickCardShape,
+            quickCardLayout = quickCardLayout,
+            quickCardContentMode = quickCardContentMode,
+            trackStats = trackStats,
+            totalListeningFormatted = totalListeningFormatted,
+            allKnownTracks = allKnownTracks,
+            recentTracks = recentTracks,
+            mostPlayedTracks = mostPlayedTracks,
+            deezerFavorites = deezerFavorites,
+            favorites = favorites,
+            homeFeedTypes = homeFeedTypes,
+            likedPlaylist = likedPlaylist,
+            currentTrackId = currentTrackId,
+            activeThemeId = activeThemeId,
+            userCustomThemes = userCustomThemes,
+            sleepTimerState = sleepTimerState,
+            onPlaylistClick = onPlaylistClick,
+            onOpenFullStats = onOpenFullStats,
+            onArtistClick = onArtistClick,
+            onRemoveBlock = { viewModel.removeHomeWidget(layoutItem.instanceId) }
+        )
+    }
+}
+
+private data class HomeFeedSectionData(
+    val keySuffix: String,
+    val title: String,
+    val subtitle: String?,
+    val showAllPlaylist: FfiPlaylist?,
+    val allTracks: List<FfiTrack>,
+    val visibleTracks: List<FfiTrack>,
+    val topSpacing: Dp,
+    val isSecondaryHeader: Boolean = false
+)
+
+private fun buildHomeFeedSections(
+    item: FfiHomeWidgetItem,
+    isEditMode: Boolean,
+    showSubtitleLegacyOnly: Boolean,
+    homeFeedTypes: Set<HomeFeedType>,
+    deezerFavorites: List<FfiTrack>,
+    favorites: List<FfiTrack>,
+    recentTracks: List<FfiTrack>,
+    mostPlayedTracks: List<FfiTrack>,
+    likedPlaylist: FfiPlaylist?
+): List<HomeFeedSectionData> {
+    val feedLimit = item.maxItems.toInt().coerceIn(3, 20)
+    val sections = mutableListOf<HomeFeedSectionData>()
+
+    HomeFeedType.entries.filter { it in homeFeedTypes }.forEach { feedType ->
+        val feedTracks = when (feedType) {
+            HomeFeedType.FOR_YOU -> if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites
+            HomeFeedType.RECENTLY_PLAYED -> if (recentTracks.isNotEmpty()) recentTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
+            HomeFeedType.MOST_PLAYED -> if (mostPlayedTracks.isNotEmpty()) mostPlayedTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
+        }
+        if (feedTracks.isNotEmpty()) {
+            val previewSlice = if (item.size == FfiHomeWidgetSize.COMPACT) {
+                feedTracks.take(3.coerceAtMost(feedLimit))
+            } else {
+                feedTracks.take(feedLimit)
+            }
+            sections.add(
+                HomeFeedSectionData(
+                    keySuffix = feedType.name,
+                    title = if (feedType == HomeFeedType.FOR_YOU && !item.customTitle.isNullOrBlank()) item.customTitle!! else feedType.title,
+                    subtitle = if (item.showSubtitle && showSubtitleLegacyOnly) feedType.subtitle else null,
+                    showAllPlaylist = if (likedPlaylist != null && feedType == HomeFeedType.FOR_YOU) likedPlaylist else null,
+                    allTracks = feedTracks,
+                    visibleTracks = previewSlice,
+                    topSpacing = if (isEditMode) 8.dp else 18.dp
+                )
+            )
+        }
+    }
+
+    if (favorites.isNotEmpty() && HomeFeedType.FOR_YOU in homeFeedTypes && deezerFavorites.isNotEmpty()) {
+        val localSlice = if (item.size == FfiHomeWidgetSize.COMPACT) {
+            favorites.take(3)
+        } else {
+            favorites.take(5.coerceAtMost(feedLimit))
+        }
+        sections.add(
+            HomeFeedSectionData(
+                keySuffix = "local_favorites",
+                title = "Bu cihazda beğendiklerin",
+                subtitle = null,
+                showAllPlaylist = null,
+                allTracks = favorites,
+                visibleTracks = localSlice,
+                topSpacing = 16.dp,
+                isSecondaryHeader = true
+            )
+        )
+    }
+    return sections
+}
+
+@Composable
+private fun HomeFeedSectionHeader(
+    section: HomeFeedSectionData,
+    horizontalPadding: Dp,
+    primary: Color,
+    colors: PlasmaCustomColors,
+    onPlaylistClick: (FfiPlaylist) -> Unit
+) {
+    Spacer(Modifier.height(section.topSpacing))
+    if (section.isSecondaryHeader) {
+        Text(
+            section.title,
+            modifier = Modifier.padding(horizontal = horizontalPadding),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+    } else {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    section.title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                if (section.subtitle != null) {
+                    Text(
+                        section.subtitle,
+                        color = colors.textSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            if (section.showAllPlaylist != null) {
+                TextButton(onClick = { onPlaylistClick(section.showAllPlaylist) }) {
+                    Text("Tümünü gör", color = primary)
+                }
+            }
+        }
+    }
+}
+
+private fun LazyListScope.homeFeedLazyItems(
+    instanceId: String,
+    sections: List<HomeFeedSectionData>,
+    currentTrackId: String?,
+    primary: Color,
+    colors: PlasmaCustomColors,
+    onPlaylistClick: (FfiPlaylist) -> Unit,
+    onPlayTracks: (List<FfiTrack>, Int) -> Unit,
+    onTrackMenu: (FfiTrack) -> Unit
+) {
+    sections.forEach { section ->
+        item(
+            key = "feed_header_${instanceId}_${section.keySuffix}",
+            contentType = if (section.isSecondaryHeader) "feed_secondary_header" else "feed_header"
+        ) {
+            HomeFeedSectionHeader(
+                section = section,
+                horizontalPadding = 16.dp,
+                primary = primary,
+                colors = colors,
+                onPlaylistClick = onPlaylistClick
+            )
+        }
+        itemsIndexed(
+            items = section.visibleTracks,
+            key = { index, track -> "feed_track_${instanceId}_${section.keySuffix}_${track.id}_$index" },
+            contentType = { _, _ -> "feed_track_item" }
+        ) { index, track ->
+            TrackListItem(
+                track = track,
+                isPlaying = currentTrackId == track.id,
+                onClick = { onPlayTracks(section.allTracks, index) },
+                onLongClick = { onTrackMenu(track) }
             )
         }
     }
@@ -958,69 +1305,32 @@ private fun RenderHomeLayoutItem(
             )
         }
         "block_feed" -> {
-            val feedLimit = item.maxItems.toInt().coerceIn(3, 20)
+            val sections = buildHomeFeedSections(
+                item = item,
+                isEditMode = isEditMode,
+                showSubtitleLegacyOnly = colors.legacyUiMode,
+                homeFeedTypes = homeFeedTypes,
+                deezerFavorites = deezerFavorites,
+                favorites = favorites,
+                recentTracks = recentTracks,
+                mostPlayedTracks = mostPlayedTracks,
+                likedPlaylist = likedPlaylist
+            )
+            val hPad = if (isEditMode) 12.dp else 16.dp
             Column(modifier = Modifier.fillMaxWidth()) {
-                HomeFeedType.entries.filter { it in homeFeedTypes }.forEach { feedType ->
-                    val feedTracks = when (feedType) {
-                        HomeFeedType.FOR_YOU -> if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites
-                        HomeFeedType.RECENTLY_PLAYED -> if (recentTracks.isNotEmpty()) recentTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
-                        HomeFeedType.MOST_PLAYED -> if (mostPlayedTracks.isNotEmpty()) mostPlayedTracks else (if (deezerFavorites.isNotEmpty()) deezerFavorites else favorites)
-                    }
-
-                    if (feedTracks.isNotEmpty()) {
-                        Spacer(Modifier.height(if (isEditMode) 8.dp else 18.dp))
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = if (isEditMode) 12.dp else 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    if (feedType == HomeFeedType.FOR_YOU && !item.customTitle.isNullOrBlank()) item.customTitle!! else feedType.title,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                if (item.showSubtitle && colors.legacyUiMode) {
-                                    Text(
-                                        feedType.subtitle,
-                                        color = colors.textSecondary,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                            }
-                            if (likedPlaylist != null && feedType == HomeFeedType.FOR_YOU) {
-                                TextButton(onClick = { onPlaylistClick(likedPlaylist) }) {
-                                    Text("Tümünü gör", color = primary)
-                                }
-                            }
-                        }
-                        val previewSlice = if (item.size == FfiHomeWidgetSize.COMPACT) feedTracks.take(3.coerceAtMost(feedLimit)) else feedTracks.take(feedLimit)
-                        previewSlice.forEachIndexed { index, track ->
-                            TrackListItem(
-                                track,
-                                isPlaying = currentTrackId == track.id,
-                                onClick = { viewModel.playbackManager.playTrackList(feedTracks, index) },
-                                onLongClick = { viewModel.openTrackMenu(track) }
-                            )
-                        }
-                    }
-                }
-
-                if (favorites.isNotEmpty() && HomeFeedType.FOR_YOU in homeFeedTypes && deezerFavorites.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "Bu cihazda beğendiklerin",
-                        modifier = Modifier.padding(horizontal = if (isEditMode) 12.dp else 16.dp),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                sections.forEach { section ->
+                    HomeFeedSectionHeader(
+                        section = section,
+                        horizontalPadding = hPad,
+                        primary = primary,
+                        colors = colors,
+                        onPlaylistClick = onPlaylistClick
                     )
-                    val localSlice = if (item.size == FfiHomeWidgetSize.COMPACT) favorites.take(3) else favorites.take(5.coerceAtMost(feedLimit))
-                    localSlice.forEachIndexed { index, track ->
+                    section.visibleTracks.forEachIndexed { index, track ->
                         TrackListItem(
                             track,
                             isPlaying = currentTrackId == track.id,
-                            onClick = { viewModel.playbackManager.playTrackList(favorites, index) },
+                            onClick = { viewModel.playbackManager.playTrackList(section.allTracks, index) },
                             onLongClick = { viewModel.openTrackMenu(track) }
                         )
                     }
