@@ -115,6 +115,10 @@ enum class QuickCardContentMode(val title: String) {
     IMAGE_ONLY("Sadece Fotoğraf")
 }
 
+private val QUICK_SHAPE_ROUNDED = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+private val QUICK_SHAPE_SQUIRCLE = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+private val QUICK_SHAPE_SHARP = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+
 enum class QuickCardShape(val title: String) {
     ROUNDED("Yuvarlak Köşe"),
     SQUIRCLE("Yumuşak Kare"),
@@ -122,10 +126,10 @@ enum class QuickCardShape(val title: String) {
     SHARP("Keskin Köşe");
 
     fun toComposeShape(): androidx.compose.ui.graphics.Shape = when (this) {
-        ROUNDED -> androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
-        SQUIRCLE -> androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+        ROUNDED -> QUICK_SHAPE_ROUNDED
+        SQUIRCLE -> QUICK_SHAPE_SQUIRCLE
         CIRCLE -> androidx.compose.foundation.shape.CircleShape
-        SHARP -> androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+        SHARP -> QUICK_SHAPE_SHARP
     }
 }
 

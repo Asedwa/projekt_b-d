@@ -140,7 +140,9 @@ fun HomeScreen(
     val flowLoading by viewModel.flowLoading.collectAsState()
     val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
     val downloadsQuickAccessPinned by viewModel.downloadsQuickAccessPinned.collectAsState()
-    val downloadedTracks by viewModel.downloadedTracks.collectAsState()
+    val downloadedTrackCount by remember {
+        viewModel.downloadedTracks.map { it.size }.distinctUntilChanged()
+    }.collectAsState(initial = viewModel.downloadedTracks.value.size)
     val headerLogoStyle by viewModel.headerLogoStyle.collectAsState()
     val customLogoTimestamp by viewModel.customHeaderLogoTimestamp.collectAsState()
     val homeFeedTypes by viewModel.homeFeedTypes.collectAsState()
@@ -330,13 +332,13 @@ fun HomeScreen(
         ) else null
     }
 
-    val downloadedPlaylist = remember(downloadedTracks) {
+    val downloadedPlaylist = remember(downloadedTrackCount) {
         FfiPlaylist(
             id = LOCAL_DOWNLOADS_ID,
             name = "İndirilen Müzikler",
             description = "Cihaza indirilen çevrimdışı şarkılar",
             isLocal = true,
-            trackCount = downloadedTracks.size.toUInt(),
+            trackCount = downloadedTrackCount.toUInt(),
             artworkUrl = null,
             origin = "real"
         )
@@ -1128,7 +1130,7 @@ private fun RenderHomeLayoutItem(
                                 else -> 2
                             }
                             val cardHeight = (58.dp * quickCardScale).coerceIn(44.dp, 76.dp)
-                            val rows = limitedQuick.chunked(columns)
+                            val rows = remember(limitedQuick, columns) { limitedQuick.chunked(columns) }
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1136,28 +1138,32 @@ private fun RenderHomeLayoutItem(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 rows.forEach { row ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        row.forEach { pin ->
-                                            QuickCard(
-                                                pin = pin,
-                                                pinned = pin.id in pinnedIds,
-                                                viewModel = viewModel,
-                                                onPlaylistClick = onPlaylistClick,
-                                                size = cardHeight,
-                                                cardStyle = quickCardStyle,
-                                                iconScale = quickIconScale,
-                                                cardShape = quickCardShape,
-                                                cardLayout = effectiveLayout,
-                                                contentMode = quickCardContentMode,
-                                                columnsCount = columns,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
-                                        repeat(columns - row.size) {
-                                            Spacer(Modifier.weight(1f))
+                                    key(row.first().id) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            row.forEach { pin ->
+                                                key(pin.id) {
+                                                    QuickCard(
+                                                        pin = pin,
+                                                        pinned = pin.id in pinnedIds,
+                                                        viewModel = viewModel,
+                                                        onPlaylistClick = onPlaylistClick,
+                                                        size = cardHeight,
+                                                        cardStyle = quickCardStyle,
+                                                        iconScale = quickIconScale,
+                                                        cardShape = quickCardShape,
+                                                        cardLayout = effectiveLayout,
+                                                        contentMode = quickCardContentMode,
+                                                        columnsCount = columns,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                }
+                                            }
+                                            repeat(columns - row.size) {
+                                                Spacer(Modifier.weight(1f))
+                                            }
                                         }
                                     }
                                 }
@@ -1166,28 +1172,31 @@ private fun RenderHomeLayoutItem(
                             val baseCardSize = if (isLandscape) 124.dp else (maxWidth - 48.dp) / 3
                             val cardSize = baseCardSize * quickCardScale
                             val columns = ((availableWidth + 8.dp) / (cardSize + 8.dp)).toInt().coerceIn(2, 6)
+                            val pages = remember(limitedQuick, columns) { limitedQuick.chunked(columns * 3) }
                             LazyRow(
                                 contentPadding = PaddingValues(horizontal = hPad),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                items(limitedQuick.chunked(columns * 3), key = { page -> page.first().id }) { page ->
+                                items(pages, key = { page -> page.first().id }) { page ->
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         page.chunked(columns).forEach { row ->
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                 row.forEach { pin ->
-                                                    QuickCard(
-                                                        pin = pin,
-                                                        pinned = pin.id in pinnedIds,
-                                                        viewModel = viewModel,
-                                                        onPlaylistClick = onPlaylistClick,
-                                                        size = cardSize,
-                                                        cardStyle = quickCardStyle,
-                                                        iconScale = quickIconScale,
-                                                        cardShape = quickCardShape,
-                                                        cardLayout = effectiveLayout,
-                                                        contentMode = quickCardContentMode,
-                                                        columnsCount = columns
-                                                    )
+                                                    key(pin.id) {
+                                                        QuickCard(
+                                                            pin = pin,
+                                                            pinned = pin.id in pinnedIds,
+                                                            viewModel = viewModel,
+                                                            onPlaylistClick = onPlaylistClick,
+                                                            size = cardSize,
+                                                            cardStyle = quickCardStyle,
+                                                            iconScale = quickIconScale,
+                                                            cardShape = quickCardShape,
+                                                            cardLayout = effectiveLayout,
+                                                            contentMode = quickCardContentMode,
+                                                            columnsCount = columns
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -1578,6 +1587,15 @@ private fun HeaderLogoView(
 }
 
 private val CardBottomScrim = Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .85f)))
+private val FlowQuickGradientBrush = Brush.linearGradient(
+    listOf(Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF97316))
+)
+
+@Composable
+private fun rememberQuickThemeCardBrush(primary: Color, cardColor: Color): Brush =
+    remember(primary, cardColor) {
+        Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), cardColor))
+    }
 
 @Composable
 private fun QuickCard(
@@ -1607,23 +1625,10 @@ private fun QuickCard(
     }
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
-    val themeCardBrush = remember(primary, colors.card) {
-        Brush.verticalGradient(listOf(primary.copy(alpha = 0.24f), colors.card))
-    }
-    val deezerFavBrush = remember(primary) {
-        Brush.linearGradient(listOf(primary, Color(0xFF7B63DC), Color(0xFFE993BA)))
-    }
-    val flowGradient = remember {
-        Brush.linearGradient(listOf(Color(0xFF8B5CF6), Color(0xFFEC4899), Color(0xFFF97316)))
-    }
-    val downloadsBrush = remember(primary) {
-        Brush.linearGradient(listOf(Color(0xFF0EA5E9), Color(0xFF10B981), primary))
-    }
     val isSpecialCard = pin is PinnedItem.Flow ||
         (pin is PinnedItem.Playlist && (pin.playlist.id == DEEZER_FAVORITES_ID || pin.playlist.id == LOCAL_DOWNLOADS_ID))
     val legacyUi = colors.legacyUiMode
     val useThemeAdaptive = legacyUi && isSpecialCard && cardStyle == QuickCardStyle.THEME_ADAPTIVE
-    val downloadedTracks by viewModel.downloadedTracks.collectAsState()
     val composeShape = cardShape.toComposeShape()
     val isHorizontal = cardLayout == QuickCardLayout.COMPACT_HORIZONTAL
     val isCircle = cardShape == QuickCardShape.CIRCLE
@@ -1632,11 +1637,17 @@ private fun QuickCard(
         pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID -> Icons.Default.Favorite
         else -> Icons.Default.DownloadDone
     }
-    val gradient = when {
-        pin is PinnedItem.Flow -> flowGradient
-        pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID -> deezerFavBrush
-        else -> downloadsBrush
-    }
+    val gradient = if (legacyUi && isSpecialCard && !useThemeAdaptive) {
+        when {
+            pin is PinnedItem.Flow -> FlowQuickGradientBrush
+            pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID -> remember(primary) {
+                Brush.linearGradient(listOf(primary, Color(0xFF7B63DC), Color(0xFFE993BA)))
+            }
+            else -> remember(primary) {
+                Brush.linearGradient(listOf(Color(0xFF0EA5E9), Color(0xFF10B981), primary))
+            }
+        }
+    } else null
 
     Box(
         modifier
@@ -1693,7 +1704,7 @@ private fun QuickCard(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .background(gradient),
+                                        .background(gradient ?: FlowQuickGradientBrush),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(centerIcon, contentDescription = title, tint = Color.White, modifier = Modifier.size(thumbIconSize))
@@ -1734,7 +1745,10 @@ private fun QuickCard(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .then(if (legacyUi) Modifier.background(themeCardBrush) else Modifier.background(colors.card)),
+                        .then(
+                            if (legacyUi) Modifier.background(rememberQuickThemeCardBrush(primary, colors.card))
+                            else Modifier.background(colors.card)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -1775,7 +1789,7 @@ private fun QuickCard(
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .background(themeCardBrush),
+                                .background(rememberQuickThemeCardBrush(primary, colors.card)),
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
@@ -1800,7 +1814,7 @@ private fun QuickCard(
                             pin is PinnedItem.Playlist && pin.playlist.id == DEEZER_FAVORITES_ID -> 42.dp
                             else -> 40.dp
                         }
-                        Box(Modifier.fillMaxSize().background(gradient), contentAlignment = Alignment.Center) {
+                        Box(Modifier.fillMaxSize().background(gradient ?: FlowQuickGradientBrush), contentAlignment = Alignment.Center) {
                             Icon(
                                 centerIcon,
                                 contentDescription = title,
@@ -1890,6 +1904,7 @@ private fun QuickCard(
                             }
                         )
                     } else if (pin is PinnedItem.Playlist && pin.playlist.id == LOCAL_DOWNLOADS_ID) {
+                        val downloadedTracks by viewModel.downloadedTracks.collectAsState()
                         if (downloadedTracks.isNotEmpty()) {
                             DropdownMenuItem(
                                 text = { Text("Tümünü çal") },
