@@ -165,7 +165,7 @@ fun HomeScreen(
     var showStatsDialog by remember { mutableStateOf(false) }
     var selectedQuickArtist by remember { mutableStateOf<String?>(null) }
     var isEditMode by remember { mutableStateOf(false) }
-    var holdProgress by remember { mutableStateOf<Float?>(null) }
+    val holdProgressState = remember { mutableStateOf<Float?>(null) }
     var showAddWidgetSheet by remember { mutableStateOf(false) }
     var customizingInstanceId by remember { mutableStateOf<String?>(null) }
     var showResetLayoutConfirm by remember { mutableStateOf(false) }
@@ -428,7 +428,7 @@ fun HomeScreen(
                         .homeEditHoldTrigger(
                             enabled = !isEditMode,
                             holdDurationMs = holdDurationMs,
-                            onHoldProgress = { holdProgress = it },
+                            onHoldProgress = { holdProgressState.value = it },
                             onTriggered = { enterEditMode() }
                         )
                 )
@@ -457,7 +457,7 @@ fun HomeScreen(
                             dragDeltaY = delta
                         },
                         onSetDragDeltaY = { dragDeltaY = it },
-                        onHoldProgress = { holdProgress = it },
+                        onHoldProgress = { holdProgressState.value = it },
                         onEnterEditMode = { enterEditMode() },
                         onCustomize = { customizingInstanceId = layoutItem.instanceId },
                         viewModel = viewModel,
@@ -534,7 +534,7 @@ fun HomeScreen(
                                 getDragDeltaY = { 0f },
                                 onSetDragging = { _, _, _ -> },
                                 onSetDragDeltaY = {},
-                                onHoldProgress = { holdProgress = it },
+                                onHoldProgress = { holdProgressState.value = it },
                                 onEnterEditMode = { enterEditMode() },
                                 onCustomize = {},
                                 viewModel = viewModel,
@@ -652,18 +652,35 @@ fun HomeScreen(
             )
         }
 
-        val activeHoldProgress = holdProgress
-        if (!isEditMode && activeHoldProgress != null) {
-            HomeEditHoldIndicatorPill(
-                progress = activeHoldProgress,
-                holdSeconds = homeEditHoldSeconds,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = 6.dp)
-                    .zIndex(25f)
-            )
-        }
+        HomeEditHoldIndicatorHost(
+            isEditMode = isEditMode,
+            holdProgressState = holdProgressState,
+            holdSeconds = homeEditHoldSeconds,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 6.dp)
+                .zIndex(25f)
+        )
+    }
+}
+
+@Composable
+private fun HomeEditHoldIndicatorHost(
+    isEditMode: Boolean,
+    holdProgressState: State<Float?>,
+    holdSeconds: Int,
+    modifier: Modifier = Modifier
+) {
+    // Read holdProgressState.value inside this small leaf scope so ~30 FPS progress ticks
+    // never recompose the entire HomeScreen Box and LazyColumn.
+    val activeHoldProgress = holdProgressState.value
+    if (!isEditMode && activeHoldProgress != null) {
+        HomeEditHoldIndicatorPill(
+            progress = activeHoldProgress,
+            holdSeconds = holdSeconds,
+            modifier = modifier
+        )
     }
 }
 

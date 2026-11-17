@@ -27,7 +27,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -43,6 +42,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.theme.PlasmaCustomColors
 import uniffi.plasmawave_core.FfiHomeWidgetCatalogEntry
@@ -66,13 +66,14 @@ fun parseHomeHexColorSafe(hex: String?, fallback: Color): Color {
     }
 }
 
+@Composable
 fun resolveHomeWidgetVisuals(
     item: FfiHomeWidgetItem,
     colors: PlasmaCustomColors,
     fallbackAccent: Color
-): HomeWidgetVisualTokens {
+): HomeWidgetVisualTokens = remember(item.style, item.accentHex, colors, fallbackAccent) {
     val accent = parseHomeHexColorSafe(item.accentHex, fallbackAccent)
-    return when (item.style) {
+    when (item.style) {
         FfiHomeWidgetStyle.CARD -> HomeWidgetVisualTokens(
             containerColor = colors.card,
             borderStroke = null,
@@ -128,18 +129,19 @@ fun defaultTitleForHomeKind(kind: String): String = when (kind) {
  * interrupting normal taps, track-menu long-clicks (<1s), or LazyColumn scrolling.
  * Once triggered, consumes remaining pointer release events so child clickables don't fire on lift.
  */
+@Composable
 fun Modifier.homeEditHoldTrigger(
     enabled: Boolean,
     holdDurationMs: Long,
     onHoldProgress: (Float?) -> Unit,
     onTriggered: () -> Unit
-): Modifier = composed {
+): Modifier {
     val currentEnabled by rememberUpdatedState(enabled)
     val currentDuration by rememberUpdatedState(holdDurationMs.coerceIn(3_000L, 10_000L))
     val currentOnProgress by rememberUpdatedState(onHoldProgress)
     val currentOnTriggered by rememberUpdatedState(onTriggered)
 
-    pointerInput(Unit) {
+    return this.pointerInput(Unit) {
         val touchSlop = viewConfiguration.touchSlop
         coroutineScope {
             awaitEachGesture {
@@ -148,11 +150,27 @@ fun Modifier.homeEditHoldTrigger(
 
                 val pointerId = down.id
                 val startPos = down.position
-                var triggered = false
+                val visualDelayMs = 450L
+                var aborted = false
 
+                // Defer timer allocation and progress updates until the initial hold delay passes,
+                // keeping normal taps, short long-presses, and LazyColumn scrolls zero-overhead.
+                withTimeoutOrNull(visualDelayMs) {
+                    while (true) {
+                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                        val tracked = event.changes.firstOrNull { it.id == pointerId }
+                        if (tracked == null || !tracked.pressed || event.changes.count { it.pressed } > 1 ||
+                            (tracked.position - startPos).getDistance() > touchSlop
+                        ) {
+                            aborted = true
+                            break
+                        }
+                    }
+                }
+                if (aborted) return@awaitEachGesture
+
+                var triggered = false
                 val timerJob = launch {
-                    val visualDelayMs = 450L
-                    delay(visualDelayMs)
                     val totalMs = currentDuration
                     val startUptime = SystemClock.uptimeMillis()
                     while (isActive) {
@@ -266,7 +284,9 @@ fun HomeEditableItemShell(
 ) {
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
-    val accent = parseHomeHexColorSafe(item.accentHex, primary)
+    val accent = remember(item.accentHex, primary) {
+        parseHomeHexColorSafe(item.accentHex, primary)
+    }
 
     // Keep references fresh across pointerInput suspensions without restarting pointerInput mid-drag.
     val currentOnDragStart by rememberUpdatedState(onDragStart)
