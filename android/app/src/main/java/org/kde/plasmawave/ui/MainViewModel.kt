@@ -14,8 +14,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -207,9 +211,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun playlistCacheVersion(playlistId: String): Long =
         playlistCacheVersions[playlistId] ?: 0L
 
-    init {
-        migrateLegacyPrefsToRustOnce()
-    }
+    @Volatile private var startupHydrated = false
 
     private val initialCoreSettings = runCatching { core.getSettings() }.getOrElse {
         FfiSettings(
@@ -538,20 +540,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateCoreSettings { it.copy(homeFeedType = serialized) }
     }
 
-    private val _launcherIcon = MutableStateFlow(
-        LauncherIconManager.getSelectedIcon(application).also {
-            LauncherIconManager.syncLauncherIcon(application)
-        }
-    )
+    private val _launcherIcon = MutableStateFlow(AppLauncherIcon.DEFAULT)
     val launcherIcon = _launcherIcon.asStateFlow()
     fun setLauncherIcon(icon: AppLauncherIcon) {
         LauncherIconManager.setLauncherIcon(getApplication(), icon, requestPin = (icon == AppLauncherIcon.CUSTOM))
         _launcherIcon.value = icon
     }
 
-    private val _userCustomThemes = MutableStateFlow<List<CustomThemeSpec>>(
-        runCatching { core.listUserCustomThemes().map { it.toUi() } }.getOrDefault(emptyList())
-    )
+    private val _userCustomThemes = MutableStateFlow<List<CustomThemeSpec>>(emptyList())
     val userCustomThemes: StateFlow<List<CustomThemeSpec>> = _userCustomThemes.asStateFlow()
 
     // 1. Kaldığın Yerden Devam Et (UI görünürlüğü & kayıt)
@@ -586,9 +582,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // 3. Ana Sayfa Düzeni ve Widget Kişiselleştirme (Rust Çekirdekli)
     private val homeLayoutMutex = Mutex()
-    private val _homeWidgetCatalog = MutableStateFlow(
-        runCatching { core.getHomeWidgetCatalog() }.getOrDefault(emptyList())
-    )
+    private val _homeWidgetCatalog = MutableStateFlow<List<FfiHomeWidgetCatalogEntry>>(emptyList())
     val homeWidgetCatalog: StateFlow<List<FfiHomeWidgetCatalogEntry>> = _homeWidgetCatalog.asStateFlow()
 
     private val _homeLayout = MutableStateFlow<List<FfiHomeWidgetItem>>(
@@ -748,48 +742,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // 4. Dinleme İstatistikleri (Hangi şarkı kaç kere dinlendi, toplam dinleme süresi — Rust SQLite v2)
-    private val _recentTracks = MutableStateFlow<List<FfiTrack>>(
-        runCatching { core.getRecentTracks(100u) }.getOrDefault(emptyList())
-    )
+    private val _recentTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
     val recentTracks: StateFlow<List<FfiTrack>> = _recentTracks.asStateFlow()
 
-    private val _mostPlayedTracks = MutableStateFlow<List<FfiTrack>>(
-        runCatching { core.getMostPlayedTracks(100u) }.getOrDefault(emptyList())
-    )
+    private val _mostPlayedTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
     val mostPlayedTracks: StateFlow<List<FfiTrack>> = _mostPlayedTracks.asStateFlow()
 
-    private val _trackListeningStats = MutableStateFlow<List<TrackListeningStat>>(
-        runCatching { core.getListeningStats(300u).map { it.toUi() } }.getOrDefault(emptyList())
-    )
+    private val _trackListeningStats = MutableStateFlow<List<TrackListeningStat>>(emptyList())
     val trackListeningStats: StateFlow<List<TrackListeningStat>> = _trackListeningStats.asStateFlow()
 
-    private val _totalListeningTimeMs = MutableStateFlow<Long>(
-        runCatching { core.getTotalListeningTimeMs().toLong() }.getOrDefault(0L)
-    )
+    private val _totalListeningTimeMs = MutableStateFlow(0L)
     val totalListeningTimeMs: StateFlow<Long> = _totalListeningTimeMs.asStateFlow()
 
-    private val _resumePlaybackState = MutableStateFlow<ResumePlaybackState?>(
-        runCatching { core.getResumePlaybackState()?.toUi() }.getOrNull() ?: run {
-            val recent = _recentTracks.value
-            val first = recent.firstOrNull()
-            if (first != null) {
-                val dur = first.durationMs.toLong().takeIf { it > 0L } ?: 210_000L
-                ResumePlaybackState(
-                    track = first,
-                    positionMs = (dur * 0.35).toLong(),
-                    durationMs = dur,
-                    updatedAtMs = System.currentTimeMillis(),
-                    queueTracks = recent.take(20),
-                    queueIndex = 0
-                )
-            } else null
-        }
-    )
+    private val _resumePlaybackState = MutableStateFlow<ResumePlaybackState?>(null)
     val resumePlaybackState: StateFlow<ResumePlaybackState?> = _resumePlaybackState.asStateFlow()
 
-    private fun migrateLegacyPrefsToRustOnce() {
-        try {
-            if (displayPrefs.getBoolean("migrated_to_rust_v2", false)) return
+    private fun migrateLegacyPrefsToRustOnce(): Boolean {
+        return try {
+            if (displayPrefs.getBoolean("migrated_to_rust_v2", false)) return false
 
             // 1. Migrate UI & Privacy settings from displayPrefs & privacyPrefs
             val cur = core.getSettings()
@@ -919,8 +889,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             displayPrefs.edit().putBoolean("migrated_to_rust_v2", true).apply()
+            true
         } catch (e: Exception) {
             Log.e("MainViewModel", "Legacy prefs migration error", e)
+            false
         }
     }
 
@@ -1150,7 +1122,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _deezerUser = MutableStateFlow<FfiDeezerUser?>(deezerSession.cachedUser())
     val deezerUser: StateFlow<FfiDeezerUser?> = _deezerUser.asStateFlow()
 
-    private val _deezerPlaylists = MutableStateFlow<List<LibraryPlaylistEntry>>(loadCachedDeezerPlaylists())
+    private val _deezerPlaylists = MutableStateFlow<List<LibraryPlaylistEntry>>(emptyList())
     val deezerPlaylists: StateFlow<List<LibraryPlaylistEntry>> = _deezerPlaylists.asStateFlow()
     private val _deezerLibraryLoading = MutableStateFlow(deezerSession.hasSavedSession)
     val deezerLibraryLoading: StateFlow<Boolean> = _deezerLibraryLoading.asStateFlow()
@@ -1185,6 +1157,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _downloadedTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
     val downloadedTracks: StateFlow<List<FfiTrack>> = _downloadedTracks.asStateFlow()
+
+    val allKnownTracks: StateFlow<List<FfiTrack>> = combine(
+        _recentTracks,
+        _deezerFavorites,
+        _favorites,
+        _downloadedTracks
+    ) { recent, deezerFavs, favs, downloaded ->
+        (recent + deezerFavs + favs + downloaded).distinctBy { it.id }
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // Contextual Long-press state
     private val _selectedTrackForMenu = MutableStateFlow<FfiTrack?>(null)
@@ -1324,7 +1307,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             _deezerFavorites.collect {
                 refreshDownloadedTracks()
-                if (_resumePlaybackState.value == null && it.isNotEmpty()) {
+                if (startupHydrated && _resumePlaybackState.value == null && it.isNotEmpty()) {
                     val first = it.first()
                     val dur = first.durationMs.toLong().takeIf { d -> d > 0L } ?: 210_000L
                     saveResumePlaybackSnapshot(first, (dur * 0.25).toLong(), dur, it.take(20), 0)
@@ -1334,8 +1317,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadData()
     }
 
+    private fun hydrateStartupLocalState() {
+        try {
+            val migrated = migrateLegacyPrefsToRustOnce()
+            if (migrated) {
+                runCatching { core.getSettings() }.getOrNull()?.let { s ->
+                    _settings.value = s
+                    _highRefreshRate.value = s.highRefreshRate
+                    _dynamicColorEnabled.value = s.dynamicColorEnabled
+                    runCatching { SeekbarStyle.valueOf(s.seekbarStyle) }.getOrNull()?.let { _seekbarStyle.value = it }
+                    runCatching { AlbumCoverFrame.valueOf(s.albumFrame) }.getOrNull()?.let { _albumFrame.value = it }
+                    _swipeToSkipEnabled.value = s.swipeToSkip
+                    _flowHeroCardEnabled.value = s.flowHeroCardEnabled
+                    _flowQuickAccessPinned.value = s.flowQuickAccessPinned
+                    _flowLibraryPinned.value = s.flowLibraryPinned
+                    _downloadsQuickAccessPinned.value = s.downloadsQuickAccessPinned
+                    _downloadsLibraryPinned.value = s.downloadsLibraryPinned
+                    runCatching { HeaderLogoStyle.valueOf(s.headerLogoStyle) }.getOrNull()?.let { _headerLogoStyle.value = it }
+                    _homeFeedTypes.value = parseHomeFeedTypes(s.homeFeedType)
+                    _resumePlaybackEnabled.value = s.resumePlaybackEnabled
+                    _collectListeningStatsEnabled.value = s.collectListeningStats
+                    _collectListeningHistoryEnabled.value = s.collectListeningHistory
+                    _saveResumePositionEnabled.value = s.saveResumePosition
+                    _homeEditHoldSeconds.value = s.homeEditHoldSeconds.toInt().coerceIn(3, 10)
+                }
+                val layout = runCatching { core.getHomeLayout() }.getOrDefault(emptyList())
+                _homeLayout.value = layout
+                _enabledHomeWidgets.value = computeEnabledWidgets(layout, _settings.value.enabledHomeWidgets)
+                runCatching { core.getCurrentTheme() }.getOrNull()?.let { _activeTheme.value = it }
+            }
+
+            val selectedIcon = LauncherIconManager.getSelectedIcon(getApplication())
+            _launcherIcon.value = selectedIcon
+            LauncherIconManager.syncLauncherIcon(getApplication())
+
+            _userCustomThemes.value = runCatching { core.listUserCustomThemes().map { it.toUi() } }.getOrDefault(emptyList())
+            _homeWidgetCatalog.value = runCatching { core.getHomeWidgetCatalog() }.getOrDefault(emptyList())
+
+            val recent = runCatching { core.getRecentTracks(100u) }.getOrDefault(emptyList())
+            _recentTracks.value = recent
+            _mostPlayedTracks.value = runCatching { core.getMostPlayedTracks(100u) }.getOrDefault(emptyList())
+            _trackListeningStats.value = runCatching { core.getListeningStats(300u).map { it.toUi() } }.getOrDefault(emptyList())
+            _totalListeningTimeMs.value = runCatching { core.getTotalListeningTimeMs().toLong() }.getOrDefault(0L)
+            _resumePlaybackState.value = runCatching { core.getResumePlaybackState()?.toUi() }.getOrNull() ?: run {
+                val first = recent.firstOrNull()
+                if (first != null) {
+                    val dur = first.durationMs.toLong().takeIf { it > 0L } ?: 210_000L
+                    ResumePlaybackState(
+                        track = first,
+                        positionMs = (dur * 0.35).toLong(),
+                        durationMs = dur,
+                        updatedAtMs = System.currentTimeMillis(),
+                        queueTracks = recent.take(20),
+                        queueIndex = 0
+                    )
+                } else null
+            }
+
+            val cachedPlaylists = loadCachedDeezerPlaylists()
+            if (cachedPlaylists.isNotEmpty() && _deezerPlaylists.value.isEmpty()) {
+                _deezerPlaylists.value = cachedPlaylists
+            }
+        } finally {
+            startupHydrated = true
+        }
+    }
+
     fun loadData() {
         viewModelScope.launch(Dispatchers.IO) {
+            hydrateStartupLocalState()
             warmupPlaylistCacheFromDisk()
             try { core.clearDeezerUser() } catch (_: Exception) { }
             try { fullDownloadManager.recover() } catch (_: Exception) { }

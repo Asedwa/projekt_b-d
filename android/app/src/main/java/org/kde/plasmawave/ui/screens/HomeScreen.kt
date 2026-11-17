@@ -60,8 +60,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import java.io.File
 import kotlin.random.Random
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import org.kde.plasmawave.R
 import org.kde.plasmawave.player.SleepTimerState
 import org.kde.plasmawave.theme.LocalPlasmaColors
@@ -112,6 +114,11 @@ private fun parseHexColorSafe(hex: String, fallback: Color): Color {
     } catch (_: Exception) {
         fallback
     }
+}
+
+private object CustomHeaderLogoCache {
+    @Volatile var cachedTimestamp: Long = Long.MIN_VALUE
+    @Volatile var cachedBitmap: ImageBitmap? = null
 }
 
 private const val CALM_TOP_GRADIENT_ALPHA = 0.22f
@@ -201,9 +208,7 @@ fun HomeScreen(
         )
     }
 
-    val allKnownTracks = remember(deezerFavorites, favorites, downloadedTracks, recentTracks) {
-        (recentTracks + deezerFavorites + favorites + downloadedTracks).distinctBy { it.id }
-    }
+    val allKnownTracks by viewModel.allKnownTracks.collectAsState()
 
     if (selectedQuickArtist != null) {
         val artistName = selectedQuickArtist!!
@@ -289,13 +294,32 @@ fun HomeScreen(
         )
     }
 
-    val customLogoImage = remember(customLogoTimestamp, headerLogoStyle) {
-        if (headerLogoStyle == HeaderLogoStyle.CUSTOM) {
+    val customLogoImage by produceState<ImageBitmap?>(
+        initialValue = if (headerLogoStyle == HeaderLogoStyle.CUSTOM &&
+            CustomHeaderLogoCache.cachedTimestamp == customLogoTimestamp
+        ) {
+            CustomHeaderLogoCache.cachedBitmap
+        } else null,
+        customLogoTimestamp,
+        headerLogoStyle
+    ) {
+        if (headerLogoStyle != HeaderLogoStyle.CUSTOM) {
+            value = null
+            return@produceState
+        }
+        if (CustomHeaderLogoCache.cachedTimestamp == customLogoTimestamp) {
+            value = CustomHeaderLogoCache.cachedBitmap
+            return@produceState
+        }
+        val decoded = withContext(Dispatchers.IO) {
             val file = File(context.filesDir, "custom_header_logo.png")
             if (file.exists()) {
                 BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
             } else null
-        } else null
+        }
+        CustomHeaderLogoCache.cachedTimestamp = customLogoTimestamp
+        CustomHeaderLogoCache.cachedBitmap = decoded
+        value = decoded
     }
 
     val isDeezerConnected = deezerUser != null
