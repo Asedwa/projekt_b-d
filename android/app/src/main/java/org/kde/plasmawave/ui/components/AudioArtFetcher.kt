@@ -2,19 +2,21 @@ package org.kde.plasmawave.ui.components
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
-import android.util.Size
+import android.util.Size as AndroidSize
 import coil.ImageLoader
 import coil.decode.DataSource
 import coil.decode.ImageSource
+import coil.fetch.DrawableResult
 import coil.fetch.FetchResult
 import coil.fetch.Fetcher
 import coil.fetch.SourceResult
 import coil.request.Options
+import coil.size.Dimension
 import okio.Buffer
-import java.io.ByteArrayOutputStream
 
 /**
  * Coil [Fetcher] that extracts album artwork for local/downloaded audio files using
@@ -23,7 +25,8 @@ import java.io.ByteArrayOutputStream
  */
 class AudioArtFetcher(
     private val context: Context,
-    private val uri: Uri
+    private val uri: Uri,
+    private val options: Options
 ) : Fetcher {
 
     override suspend fun fetch(): FetchResult? {
@@ -32,13 +35,21 @@ class AudioArtFetcher(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && targetUri.scheme == "content") {
             try {
-                val bmp = context.contentResolver.loadThumbnail(targetUri, Size(512, 512), null)
-                val out = ByteArrayOutputStream()
-                bmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                val buffer = Buffer().write(out.toByteArray())
-                return SourceResult(
-                    source = ImageSource(buffer, context),
-                    mimeType = "image/jpeg",
+                val targetW = (options.size.width as? Dimension.Pixels)?.px?.coerceIn(96, 512) ?: 320
+                val targetH = (options.size.height as? Dimension.Pixels)?.px?.coerceIn(96, 512) ?: 320
+                val bmp = context.contentResolver.loadThumbnail(
+                    targetUri,
+                    AndroidSize(targetW, targetH),
+                    null
+                )
+                val safeBmp = if (options.config != Bitmap.Config.HARDWARE && bmp.config == Bitmap.Config.HARDWARE) {
+                    bmp.copy(Bitmap.Config.ARGB_8888, false) ?: bmp
+                } else {
+                    bmp
+                }
+                return DrawableResult(
+                    drawable = BitmapDrawable(context.resources, safeBmp),
+                    isSampled = true,
                     dataSource = DataSource.DISK
                 )
             } catch (_: Throwable) {
@@ -72,7 +83,7 @@ class AudioArtFetcher(
 
     class Factory(private val context: Context) : Fetcher.Factory<Uri> {
         override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? =
-            if (data.scheme == SCHEME) AudioArtFetcher(context, data) else null
+            if (data.scheme == SCHEME) AudioArtFetcher(context, data, options) else null
     }
 
     companion object {

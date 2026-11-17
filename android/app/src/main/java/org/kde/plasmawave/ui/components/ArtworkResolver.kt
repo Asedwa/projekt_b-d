@@ -22,22 +22,41 @@ object ArtworkResolver {
 
     private val memoryCache = ConcurrentHashMap<String, String>()
     private val inFlight = ConcurrentHashMap<String, CompletableDeferred<String?>>()
+    private val prefsLoadLock = Any()
+    @Volatile private var prefsLoaded = false
 
     fun isPlaceholderOrBlank(url: String?): Boolean {
         if (url.isNullOrBlank()) return true
         return url.contains(DEEZER_EMPTY_HASH, ignoreCase = true) || url.contains(ZERO_HASH)
     }
 
+    /** Preloads persisted fallback artwork entries off the Main thread once per process. */
+    fun warmup(context: Context) {
+        ensurePrefsLoaded(context)
+    }
+
+    private fun ensurePrefsLoaded(context: Context) {
+        if (prefsLoaded) return
+        synchronized(prefsLoadLock) {
+            if (prefsLoaded) return
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.all.forEach { (k, v) ->
+                if (v is String) {
+                    memoryCache.putIfAbsent(k, v)
+                }
+            }
+            prefsLoaded = true
+        }
+    }
+
+    fun isKnownMissing(title: String?, artist: String?): Boolean {
+        val key = cacheKey(title, artist) ?: return false
+        return memoryCache[key] == ""
+    }
+
     fun getCached(context: Context, title: String?, artist: String?): String? {
         val key = cacheKey(title, artist) ?: return null
-        memoryCache[key]?.let { return it.ifEmpty { null } }
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (prefs.contains(key)) {
-            val saved = prefs.getString(key, "").orEmpty()
-            memoryCache[key] = saved
-            return saved.ifEmpty { null }
-        }
-        return null
+        return memoryCache[key]?.ifEmpty { null }
     }
 
     suspend fun resolve(context: Context, title: String?, artist: String?): String? {
@@ -46,13 +65,6 @@ object ArtworkResolver {
 
         memoryCache[key]?.let { return it.ifEmpty { null } }
 
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (prefs.contains(key)) {
-            val saved = prefs.getString(key, "").orEmpty()
-            memoryCache[key] = saved
-            return saved.ifEmpty { null }
-        }
-
         val existing = inFlight[key]
         if (existing != null) return existing.await()
 
@@ -60,14 +72,22 @@ object ArtworkResolver {
         val raced = inFlight.putIfAbsent(key, deferred)
         if (raced != null) return raced.await()
 
+        val appContext = context.applicationContext
         return try {
             val resolved = withContext(Dispatchers.IO) {
-                queryDeezerSearch(cleanTitle, artist) ?: queryItunesSearch(cleanTitle, artist)
-            }
-            val stored = resolved.orEmpty()
-            memoryCache[key] = stored
-            if (!resolved.isNullOrBlank()) {
-                prefs.edit().putString(key, resolved).apply()
+                ensurePrefsLoaded(appContext)
+                memoryCache[key]?.let { cached ->
+                    return@withContext cached.ifEmpty { null }
+                }
+                val fetched = queryDeezerSearch(cleanTitle, artist) ?: queryItunesSearch(cleanTitle, artist)
+                memoryCache[key] = fetched.orEmpty()
+                if (!fetched.isNullOrBlank()) {
+                    appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString(key, fetched)
+                        .apply()
+                }
+                fetched
             }
             deferred.complete(resolved)
             resolved

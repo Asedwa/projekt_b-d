@@ -52,8 +52,12 @@ fun ArtworkImage(
     val effectiveUrl = initialUrl ?: resolvedFallback
     var failed by remember(effectiveUrl) { mutableStateOf(false) }
 
-    LaunchedEffect(initialUrl, failed, fallbackTitle, fallbackArtist) {
-        if ((initialUrl == null || failed) && !fallbackTitle.isNullOrBlank() && resolvedFallback == null) {
+    val needsFallback = (initialUrl == null || failed) &&
+        !fallbackTitle.isNullOrBlank() &&
+        resolvedFallback == null &&
+        !ArtworkResolver.isKnownMissing(fallbackTitle, fallbackArtist)
+    if (needsFallback) {
+        LaunchedEffect(initialUrl, failed, fallbackTitle, fallbackArtist) {
             resolvedFallback = ArtworkResolver.resolve(context, fallbackTitle, fallbackArtist)
         }
     }
@@ -67,7 +71,6 @@ fun ArtworkImage(
             val request = remember(displayUrl, context) {
                 ImageRequest.Builder(context)
                     .data(displayUrl)
-                    .memoryCacheKey(displayUrl)
                     .diskCacheKey(displayUrl)
                     .build()
             }

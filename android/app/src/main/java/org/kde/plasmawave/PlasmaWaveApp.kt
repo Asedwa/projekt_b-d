@@ -37,6 +37,9 @@ class PlasmaWaveApp : Application(), ImageLoaderFactory {
             Log.i(TAG, "PlasmaWave core initialized: ${core.getVersion()}")
             appInitScope.launch {
                 runCatching {
+                    org.kde.plasmawave.ui.components.ArtworkResolver.warmup(this@PlasmaWaveApp)
+                }
+                runCatching {
                     org.kde.plasmawave.ui.components.LauncherIconManager.syncLauncherIcon(this@PlasmaWaveApp)
                 }
             }
