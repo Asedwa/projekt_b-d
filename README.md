@@ -8,6 +8,10 @@ Deezer kitaplığını ve çalma listelerini kişiselleştirilebilir bir oynatı
 
 Açılan sayfada **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını seç. Depo özel olduğu için GitHub hesabınla giriş yapman gerekir. APK, uygulamanın debug derlemesidir.
 
+## 0.9.3 sürüm notu
+
+Ana sayfa performansı iyileştirildi: müzik akışı (`block_feed`) öğeleri için `LazyColumn` sanallaştırması geri getirildi, oynatma sırasındaki periyodik state abonelikleri yalnızca ilgili widget'lara daraltıldı ve `getQuickArtists` çağrısı önbellekle birlikte arka plan iş parçacığına (`Dispatchers.IO`) taşınarak kaydırma takılmaları azaltıldı.
+
 ## 0.9.2 sürüm notu
 
 Ana sayfaya basılı tutarak widget düzenleme, sıralama ve boyut/stil kişiselleştirme desteği eklendi; ekran kapalıyken şarkı geçişlerindeki duraksamaları gidermek için kesintisiz ExoPlayer kuyruğu ve WakeLock/WifiLock kurtarma iyileştirildi; ana sayfa üst logo animasyonu optimize edildi ve çalma listesi önbellek tutarsızlığı (Rust SQLite geçersiz kılma ve eşzamanlı yazma koruması) giderildi.
