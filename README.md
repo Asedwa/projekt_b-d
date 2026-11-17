@@ -6,7 +6,11 @@ Deezer kitaplığını ve çalma listelerini kişiselleştirilebilir bir oynatı
 
 [**Güncel Android APK’sını indir**](https://github.com/Asedwa/projekt_b-d/releases/latest)
 
-Açılan sayfada **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını seç. Depo özel olduğu için GitHub hesabınla giriş yapman gerekir. APK, uygulamanın debug derlemesidir.
+Açılan sayfada **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını seç. Depo özel olduğu için GitHub hesabınla giriş yapman gerekir. APK, uygulamanın R8 optimizasyonlu release derlemesidir.
+
+## 0.9.4 sürüm notu
+
+Uygulama genelindeki performans iyileştirmeleri tamamlandı: ana sayfa basılı tutma algılaması ve widget stil token hesaplamaları optimize edildi, açılış ve sekme geçişlerindeki ağır Main Thread I/O ile logo yüklemeleri arka plana (`Dispatchers.IO` / `Dispatchers.Default`) taşındı, `QuickCard` state abonelikleri ve `Brush`/`Shape` tahsisleri daraltıldı, yerel kapak çıkarma ve `ArtworkResolver` önbelleklemesi hızlandırıldı ve dağıtılan APK R8 optimizasyonlu release derlemesine geçirildi.
 
 ## 0.9.3 sürüm notu
 
