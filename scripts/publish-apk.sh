@@ -32,7 +32,7 @@ fi
 )
 (
     cd android
-    ./gradlew :app:assembleDebug
+    ./gradlew :app:assembleRelease
 )
 if [[ -n "$(git status --porcelain)" || "$(git rev-parse HEAD)" != "$target" ]]; then
     echo "Source changed during the build; APK publication stopped." >&2
@@ -47,7 +47,7 @@ fi
 artifact_dir="$(mktemp -d "${TMPDIR:-/tmp}/projekt-bd-apk.XXXXXX")"
 trap 'rm -rf -- "$artifact_dir"' EXIT
 artifact_name="projekt_b-d-${version}.apk"
-cp android/app/build/outputs/apk/debug/app-debug.apk "$artifact_dir/$artifact_name"
+cp android/app/build/outputs/apk/release/app-release.apk "$artifact_dir/$artifact_name"
 
 tag="build-$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
 # Publish only after the upload succeeds, so the latest link never points at an empty release.

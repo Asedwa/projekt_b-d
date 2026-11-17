@@ -21,10 +21,23 @@ android {
         }
     }
 
+    signingConfigs {
+        val storePath = System.getenv("PLASMAWAVE_RELEASE_STORE_FILE")?.takeIf { it.isNotBlank() }
+        if (storePath != null) {
+            create("release") {
+                storeFile = file(storePath)
+                storePassword = System.getenv("PLASMAWAVE_RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("PLASMAWAVE_RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("PLASMAWAVE_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
