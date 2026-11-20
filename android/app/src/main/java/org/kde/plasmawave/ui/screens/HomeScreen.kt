@@ -1446,6 +1446,7 @@ private fun CollapsingHomeHeader(
                         transformOrigin = TransformOrigin(0f, 0f)
                         scaleX = scale
                         scaleY = scale
+                        alpha = (1f - s).coerceIn(0f, 1f)
                         translationX = lerpFloat(expandedX, collapsedLogoXPx, s)
                         translationY = lerpFloat(expandedLogoYPx, collapsedY, s)
                     },
@@ -1488,15 +1489,12 @@ private fun CollapsingHomeHeader(
                     }
             )
 
-            // 3. Collapsed Title beside the logo in the top bar
+            // 3. Collapsed Title hidden while logo dissolves on scroll
             Box(
                 modifier = Modifier
                     .height(collapsedHeaderHeight)
                     .graphicsLayer {
-                        val f = fraction()
-                        val sideAlpha = ((f - 0.50f) / 0.50f).coerceIn(0f, 1f)
-                        alpha = sideAlpha
-                        translationX = sideTitleXPx + (1f - sideAlpha) * (-sideSlideOffsetPx)
+                        alpha = 0f
                     },
                 contentAlignment = Alignment.CenterStart
             ) {
