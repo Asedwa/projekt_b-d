@@ -12,8 +12,8 @@ android {
         applicationId = "org.kde.plasmawave"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.9.4"
+        versionCode = 14
+        versionName = "0.9.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
