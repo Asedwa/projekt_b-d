@@ -63,7 +63,7 @@ private enum class CardEditTarget(val title: String) {
     LIBRARY("Kitaplık")
 }
 
-private enum class CustomizationCategory(
+enum class CustomizationCategory(
     val title: String,
     val subtitle: String,
     val icon: ImageVector
@@ -90,7 +90,8 @@ private enum class CustomizationCategory(
 fun CustomizationScreen(
     viewModel: MainViewModel,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialCategory: CustomizationCategory? = null
 ) {
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
@@ -126,12 +127,12 @@ fun CustomizationScreen(
     val primary = MaterialTheme.colorScheme.primary
     val context = LocalContext.current
 
-    var activeCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeCategoryName by rememberSaveable(initialCategory) { mutableStateOf(initialCategory?.name) }
     val activeCategory = activeCategoryName?.let { name ->
         CustomizationCategory.entries.firstOrNull { it.name == name }
     }
 
-    BackHandler(enabled = activeCategory != null) {
+    BackHandler(enabled = activeCategory != null && initialCategory == null) {
         activeCategoryName = null
     }
 
@@ -220,7 +221,7 @@ fun CustomizationScreen(
                 title = { Text(activeCategory?.title ?: "Özelleştirme") },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (activeCategory != null) {
+                        if (activeCategory != null && initialCategory == null) {
                             activeCategoryName = null
                         } else {
                             onBack()

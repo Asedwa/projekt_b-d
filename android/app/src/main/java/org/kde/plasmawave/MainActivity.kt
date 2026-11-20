@@ -66,7 +66,7 @@ sealed class SubScreen {
     data object None : SubScreen()
     class PlaylistDetail(val playlist: FfiPlaylist) : SubScreen()
     data object Themes : SubScreen()
-    data object Customization : SubScreen()
+    data class Customization(val initialCategory: CustomizationCategory? = null) : SubScreen()
     data object ModManager : SubScreen()
     data object Downloads : SubScreen()
     data object Stats : SubScreen()
@@ -162,7 +162,11 @@ class MainActivity : ComponentActivity() {
                                 onDownloadPlaylist = requestDownload
                             )
                             SubScreen.Themes -> ThemesScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
-                            SubScreen.Customization -> CustomizationScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                            is SubScreen.Customization -> CustomizationScreen(
+                                viewModel,
+                                onBack = { currentSubScreen = SubScreen.None },
+                                initialCategory = sub.initialCategory
+                            )
                             SubScreen.ModManager -> ModManagerScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
                             SubScreen.Downloads -> DownloadsScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
                             SubScreen.Stats -> StatsScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
@@ -181,7 +185,7 @@ class MainActivity : ComponentActivity() {
                                         onNavigateThemes = { currentSubScreen = SubScreen.Themes },
                                         onNavigateMods = { currentSubScreen = SubScreen.ModManager },
                                         onNavigateDownloads = { currentSubScreen = SubScreen.Downloads },
-                                        onNavigateCustomization = { currentSubScreen = SubScreen.Customization },
+                                        onNavigateCustomization = { category -> currentSubScreen = SubScreen.Customization(category) },
                                         onNavigateStats = { currentSubScreen = SubScreen.Stats }
                                     )
                                 }

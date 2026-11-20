@@ -118,7 +118,7 @@ fun SettingsScreen(
     onNavigateThemes: () -> Unit,
     onNavigateMods: () -> Unit,
     onNavigateDownloads: () -> Unit = {},
-    onNavigateCustomization: () -> Unit = {},
+    onNavigateCustomization: (CustomizationCategory?) -> Unit = {},
     onNavigateStats: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -505,7 +505,7 @@ fun SettingsScreen(
                 }
 
                 // Kategori Grup 1: Görünüm ve Ana Sayfa
-                if (matchesSearch("eski mod", "klasik", "görünüm", "breeze", "widget", "ana sayfa", "kaldığın", "devam", "özelleştirme", "tema", "ikon", "logo", "renk", "120", "ekran")) {
+                if (matchesSearch("eski mod", "klasik", "görünüm", "breeze", "widget", "ana sayfa", "kaldığın", "devam", "özelleştirme", "tema", "galeri", "ikon", "logo", "kimlik", "hızlı erişim", "oynatıcı", "efekt", "çerçeve", "ilerleme", "renk", "120", "ekran", "twilight", "pinkie")) {
                     Spacer(Modifier.height(14.dp))
                     PhoneSettingsCard {
                         SettingsToggle(
@@ -517,29 +517,80 @@ fun SettingsScreen(
                         )
                     }
                     PhoneSettingsGroupLabel("GÖRÜNÜM VE ANA SAYFA")
-                    PhoneSettingsCard {
+                    val appearanceRows = buildList<@Composable () -> Unit> {
                         if (matchesSearch("widget", "ana sayfa", "kaldığın", "devam", "istatistik", "sanatçı", "şanslı", "uyku", "miks")) {
-                            PhoneCategoryRow(
-                                icon = SettingsCategory.HOME_AND_WIDGETS.icon,
-                                badgeColor = SettingsCategory.HOME_AND_WIDGETS.badgeColor,
-                                title = "Ana Sayfa ve Widget'lar",
-                                subtitle = "Widget ekle/düzenle (${enabledWidgets.size} aktif) • Kaldığın yerden devam et",
-                                onClick = { activeCategoryName = SettingsCategory.HOME_AND_WIDGETS.name }
-                            )
+                            add {
+                                PhoneCategoryRow(
+                                    icon = SettingsCategory.HOME_AND_WIDGETS.icon,
+                                    badgeColor = SettingsCategory.HOME_AND_WIDGETS.badgeColor,
+                                    title = "Ana Sayfa ve Widget'lar",
+                                    subtitle = "Widget ekle/düzenle (${enabledWidgets.size} aktif) • Kaldığın yerden devam et",
+                                    onClick = { activeCategoryName = SettingsCategory.HOME_AND_WIDGETS.name }
+                                )
+                            }
                         }
-                        if (matchesSearch("widget", "ana sayfa", "kaldığın", "devam") &&
-                            matchesSearch("özelleştirme", "tema", "ikon", "logo", "renk", "120", "ekran")
-                        ) {
-                            PhoneSettingsDivider()
+                        if (matchesSearch("kimlik", "logo", "ikon", "uygulama", "özelleştirme")) {
+                            add {
+                                PhoneCategoryRow(
+                                    icon = CustomizationCategory.IDENTITY.icon,
+                                    badgeColor = Color(0xFF8B5CF6),
+                                    title = CustomizationCategory.IDENTITY.title,
+                                    subtitle = CustomizationCategory.IDENTITY.subtitle,
+                                    onClick = { onNavigateCustomization(CustomizationCategory.IDENTITY) }
+                                )
+                            }
                         }
-                        if (matchesSearch("özelleştirme", "tema", "ikon", "logo", "renk", "120", "ekran", "twilight", "pinkie")) {
-                            PhoneCategoryRow(
-                                icon = SettingsCategory.CUSTOMIZATION_AND_THEMES.icon,
-                                badgeColor = SettingsCategory.CUSTOMIZATION_AND_THEMES.badgeColor,
-                                title = "Özelleştirme ve Temalar",
-                                subtitle = "Tema: ${theme.name} • Uygulama ikonu, logo ve oynatıcı",
-                                onClick = { activeCategoryName = SettingsCategory.CUSTOMIZATION_AND_THEMES.name }
-                            )
+                        if (matchesSearch("ana sayfa", "hızlı erişim", "kart", "tuş", "boyut", "öneri", "widget", "özelleştirme")) {
+                            add {
+                                PhoneCategoryRow(
+                                    icon = CustomizationCategory.HOME_AND_SHORTCUTS.icon,
+                                    badgeColor = Color(0xFF0EA5E9),
+                                    title = CustomizationCategory.HOME_AND_SHORTCUTS.title,
+                                    subtitle = CustomizationCategory.HOME_AND_SHORTCUTS.subtitle,
+                                    onClick = { onNavigateCustomization(CustomizationCategory.HOME_AND_SHORTCUTS) }
+                                )
+                            }
+                        }
+                        if (matchesSearch("oynatıcı", "görsel", "efekt", "dinamik", "renk", "kapak", "çerçeve", "ilerleme", "çubuk", "özelleştirme")) {
+                            add {
+                                PhoneCategoryRow(
+                                    icon = CustomizationCategory.PLAYER_AND_VISUALS.icon,
+                                    badgeColor = Color(0xFFEC4899),
+                                    title = CustomizationCategory.PLAYER_AND_VISUALS.title,
+                                    subtitle = CustomizationCategory.PLAYER_AND_VISUALS.subtitle,
+                                    onClick = { onNavigateCustomization(CustomizationCategory.PLAYER_AND_VISUALS) }
+                                )
+                            }
+                        }
+                        if (matchesSearch("tema", "galeri", "renk", "twilight", "pinkie", "breeze", "görünüm")) {
+                            add {
+                                PhoneCategoryRow(
+                                    icon = Icons.Default.Palette,
+                                    badgeColor = Color(0xFFF59E0B),
+                                    title = "Tema Galerisi",
+                                    subtitle = "Etkin tema: ${theme.name}",
+                                    onClick = onNavigateThemes
+                                )
+                            }
+                        }
+                        if (matchesSearch("özelleştirme", "tema", "120", "ekran", "yenileme", "eski mod", "dinamik")) {
+                            add {
+                                PhoneCategoryRow(
+                                    icon = SettingsCategory.CUSTOMIZATION_AND_THEMES.icon,
+                                    badgeColor = SettingsCategory.CUSTOMIZATION_AND_THEMES.badgeColor,
+                                    title = "Özelleştirme ve Temalar",
+                                    subtitle = "120 Hz yenileme hızı ve hızlı görünüm ayarları",
+                                    onClick = { activeCategoryName = SettingsCategory.CUSTOMIZATION_AND_THEMES.name }
+                                )
+                            }
+                        }
+                    }
+                    if (appearanceRows.isNotEmpty()) {
+                        PhoneSettingsCard {
+                            appearanceRows.forEachIndexed { index, row ->
+                                if (index > 0) PhoneSettingsDivider()
+                                row()
+                            }
                         }
                     }
                 }
@@ -809,7 +860,7 @@ fun SettingsScreen(
                                 icon = Icons.Default.Tune,
                                 title = "Özelleştirme Stüdyosu",
                                 subtitle = "Uygulama ikonu, ana sayfa logosu, Custom Themes (Twilight, Pinkie ve özel temalar)",
-                                onClick = onNavigateCustomization
+                                onClick = { onNavigateCustomization(null) }
                             )
                             PhoneSettingsDivider()
                             SettingsLink(
@@ -850,7 +901,7 @@ fun SettingsScreen(
                                 icon = Icons.Default.LinearScale,
                                 title = "İlerleme çubuğu ve kapak çerçevesi",
                                 subtitle = "Seçili çubuk: ${seekbarStyle.title}",
-                                onClick = onNavigateCustomization
+                                onClick = { onNavigateCustomization(null) }
                             )
                         }
                     }
