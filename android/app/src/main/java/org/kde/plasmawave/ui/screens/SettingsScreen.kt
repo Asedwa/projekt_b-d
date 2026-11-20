@@ -854,23 +854,6 @@ fun SettingsScreen(
                     }
 
                     SettingsCategory.CUSTOMIZATION_AND_THEMES -> {
-                        PhoneSettingsGroupLabel("TEMA, LOGO VE İKON ÖZELLEŞTİRME")
-                        PhoneSettingsCard {
-                            SettingsLink(
-                                icon = Icons.Default.Tune,
-                                title = "Özelleştirme Stüdyosu",
-                                subtitle = "Uygulama ikonu, ana sayfa logosu, Custom Themes (Twilight, Pinkie ve özel temalar)",
-                                onClick = { onNavigateCustomization(null) }
-                            )
-                            PhoneSettingsDivider()
-                            SettingsLink(
-                                icon = Icons.Default.Palette,
-                                title = "Tema Galerisi",
-                                subtitle = "Etkin tema: ${theme.name}",
-                                onClick = onNavigateThemes
-                            )
-                        }
-
                         PhoneSettingsGroupLabel("EKRAN VE OYNATICI GÖRÜNÜMÜ")
                         PhoneSettingsCard {
                             SettingsToggle(
@@ -901,7 +884,7 @@ fun SettingsScreen(
                                 icon = Icons.Default.LinearScale,
                                 title = "İlerleme çubuğu ve kapak çerçevesi",
                                 subtitle = "Seçili çubuk: ${seekbarStyle.title}",
-                                onClick = { onNavigateCustomization(null) }
+                                onClick = { onNavigateCustomization(CustomizationCategory.PLAYER_AND_VISUALS) }
                             )
                         }
                     }
