@@ -295,6 +295,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         updateCoreSettings { it.copy(dynamicColorEnabled = enabled) }
     }
 
+    private val _ambientBackgroundEnabled = MutableStateFlow(
+        displayPrefs.getBoolean("ambient_background_enabled", true)
+    )
+    val ambientBackgroundEnabled = _ambientBackgroundEnabled.asStateFlow()
+    fun setAmbientBackgroundEnabled(enabled: Boolean) {
+        _ambientBackgroundEnabled.value = enabled
+        displayPrefs.edit().putBoolean("ambient_background_enabled", enabled).apply()
+    }
+
     private val _seekbarStyle = MutableStateFlow(
         runCatching { SeekbarStyle.valueOf(initialCoreSettings.seekbarStyle) }.getOrDefault(SeekbarStyle.CLASSIC)
     )

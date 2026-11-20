@@ -42,8 +42,10 @@ import org.kde.plasmawave.theme.PlasmaTheme
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.SearchCategory
 import org.kde.plasmawave.jam.JamMode
+import org.kde.plasmawave.ui.components.AmbientBackdropLayer
 import org.kde.plasmawave.ui.components.FullPlayerSheet
 import org.kde.plasmawave.ui.components.JamSheet
+import org.kde.plasmawave.ui.components.LocalAmbientBackdropEnabled
 import org.kde.plasmawave.ui.components.LocalDeezerConnected
 import org.kde.plasmawave.ui.components.LocalDownloadStatus
 import org.kde.plasmawave.ui.components.MiniPlayer
@@ -100,6 +102,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val activeTheme by viewModel.activeTheme.collectAsState()
             val legacyUiMode by viewModel.legacyUiMode.collectAsState()
+            val ambientBackgroundEnabled by viewModel.ambientBackgroundEnabled.collectAsState()
             val hasCurrentEntry by remember {
                 viewModel.playbackManager.overview
                     .map { it.currentEntry != null }
@@ -154,7 +157,8 @@ class MainActivity : ComponentActivity() {
             PlasmaTheme(activeTheme = activeTheme, legacyUiMode = legacyUiMode) {
                 CompositionLocalProvider(
                     LocalDeezerConnected provides (deezerUser != null),
-                    LocalDownloadStatus provides downloadStatus
+                    LocalDownloadStatus provides downloadStatus,
+                    LocalAmbientBackdropEnabled provides ambientBackgroundEnabled
                 ) {
                     val colors = LocalPlasmaColors.current
                     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -198,8 +202,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    if (isLandscape) {
-                        Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                        if (ambientBackgroundEnabled) {
+                            AmbientBackdropLayer(modifier = Modifier.fillMaxSize())
+                        }
+                        if (isLandscape) {
+                            Row(modifier = Modifier.fillMaxSize()) {
                             NavigationRail(
                                 containerColor = if (colors.legacyUiMode) colors.card else MaterialTheme.colorScheme.surface,
                                 modifier = Modifier.fillMaxHeight()
@@ -241,7 +249,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         Scaffold(
                             modifier = Modifier.fillMaxSize(),
-                            containerColor = MaterialTheme.colorScheme.background,
+                            containerColor = if (ambientBackgroundEnabled) Color.Transparent else MaterialTheme.colorScheme.background,
                             bottomBar = {
                                 Column {
                                     AnimatedVisibility(
@@ -282,6 +290,7 @@ class MainActivity : ComponentActivity() {
                                 contentArea()
                             }
                         }
+                    }
                     }
 
                     if (isFullPlayerVisible) {

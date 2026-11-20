@@ -954,6 +954,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1217,6 +1219,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_upsert_listening_stats_batch(`ptr`: Pointer,`stats`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_frame(`phase`: Float,`primaryArgb`: Int,`secondaryArgb`: Int,`backgroundArgb`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun ffi_plasmawave_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_plasmawave_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1329,6 +1333,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_plasmawave_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_tracks_to_playlist(
@@ -1586,6 +1592,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame() != 24740.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget() != 2433.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2082,6 +2091,29 @@ public object FfiConverterLong: FfiConverter<Long, Long> {
 
     override fun write(value: Long, buf: ByteBuffer) {
         buf.putLong(value)
+    }
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterFloat: FfiConverter<Float, Float> {
+    override fun lift(value: Float): Float {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Float {
+        return buf.getFloat()
+    }
+
+    override fun lower(value: Float): Float {
+        return value
+    }
+
+    override fun allocationSize(value: Float) = 4UL
+
+    override fun write(value: Float, buf: ByteBuffer) {
+        buf.putFloat(value)
     }
 }
 
@@ -4284,6 +4316,150 @@ public object FfiConverterTypeFfiAlbumStatSummary: FfiConverterRustBuffer<FfiAlb
             FfiConverterULong.write(value.`totalListenedMs`, buf)
             FfiConverterUInt.write(value.`uniqueTracks`, buf)
             FfiConverterOptionalString.write(value.`artworkUrl`, buf)
+    }
+}
+
+
+
+data class FfiAmbientBackdropFrame (
+    var `orbs`: List<FfiAmbientOrb>, 
+    var `ribbons`: List<FfiAmbientRibbon>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAmbientBackdropFrame: FfiConverterRustBuffer<FfiAmbientBackdropFrame> {
+    override fun read(buf: ByteBuffer): FfiAmbientBackdropFrame {
+        return FfiAmbientBackdropFrame(
+            FfiConverterSequenceTypeFfiAmbientOrb.read(buf),
+            FfiConverterSequenceTypeFfiAmbientRibbon.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAmbientBackdropFrame) = (
+            FfiConverterSequenceTypeFfiAmbientOrb.allocationSize(value.`orbs`) +
+            FfiConverterSequenceTypeFfiAmbientRibbon.allocationSize(value.`ribbons`)
+    )
+
+    override fun write(value: FfiAmbientBackdropFrame, buf: ByteBuffer) {
+            FfiConverterSequenceTypeFfiAmbientOrb.write(value.`orbs`, buf)
+            FfiConverterSequenceTypeFfiAmbientRibbon.write(value.`ribbons`, buf)
+    }
+}
+
+
+
+data class FfiAmbientOrb (
+    var `cx`: kotlin.Float, 
+    var `cy`: kotlin.Float, 
+    var `radius`: kotlin.Float, 
+    var `colorArgb`: kotlin.UInt, 
+    var `alpha`: kotlin.Float
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAmbientOrb: FfiConverterRustBuffer<FfiAmbientOrb> {
+    override fun read(buf: ByteBuffer): FfiAmbientOrb {
+        return FfiAmbientOrb(
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterFloat.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAmbientOrb) = (
+            FfiConverterFloat.allocationSize(value.`cx`) +
+            FfiConverterFloat.allocationSize(value.`cy`) +
+            FfiConverterFloat.allocationSize(value.`radius`) +
+            FfiConverterUInt.allocationSize(value.`colorArgb`) +
+            FfiConverterFloat.allocationSize(value.`alpha`)
+    )
+
+    override fun write(value: FfiAmbientOrb, buf: ByteBuffer) {
+            FfiConverterFloat.write(value.`cx`, buf)
+            FfiConverterFloat.write(value.`cy`, buf)
+            FfiConverterFloat.write(value.`radius`, buf)
+            FfiConverterUInt.write(value.`colorArgb`, buf)
+            FfiConverterFloat.write(value.`alpha`, buf)
+    }
+}
+
+
+
+data class FfiAmbientRibbon (
+    var `x0`: kotlin.Float, 
+    var `y0`: kotlin.Float, 
+    var `cx1`: kotlin.Float, 
+    var `cy1`: kotlin.Float, 
+    var `cx2`: kotlin.Float, 
+    var `cy2`: kotlin.Float, 
+    var `x1`: kotlin.Float, 
+    var `y1`: kotlin.Float, 
+    var `thickness`: kotlin.Float, 
+    var `colorArgb`: kotlin.UInt, 
+    var `alpha`: kotlin.Float
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAmbientRibbon: FfiConverterRustBuffer<FfiAmbientRibbon> {
+    override fun read(buf: ByteBuffer): FfiAmbientRibbon {
+        return FfiAmbientRibbon(
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterFloat.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAmbientRibbon) = (
+            FfiConverterFloat.allocationSize(value.`x0`) +
+            FfiConverterFloat.allocationSize(value.`y0`) +
+            FfiConverterFloat.allocationSize(value.`cx1`) +
+            FfiConverterFloat.allocationSize(value.`cy1`) +
+            FfiConverterFloat.allocationSize(value.`cx2`) +
+            FfiConverterFloat.allocationSize(value.`cy2`) +
+            FfiConverterFloat.allocationSize(value.`x1`) +
+            FfiConverterFloat.allocationSize(value.`y1`) +
+            FfiConverterFloat.allocationSize(value.`thickness`) +
+            FfiConverterUInt.allocationSize(value.`colorArgb`) +
+            FfiConverterFloat.allocationSize(value.`alpha`)
+    )
+
+    override fun write(value: FfiAmbientRibbon, buf: ByteBuffer) {
+            FfiConverterFloat.write(value.`x0`, buf)
+            FfiConverterFloat.write(value.`y0`, buf)
+            FfiConverterFloat.write(value.`cx1`, buf)
+            FfiConverterFloat.write(value.`cy1`, buf)
+            FfiConverterFloat.write(value.`cx2`, buf)
+            FfiConverterFloat.write(value.`cy2`, buf)
+            FfiConverterFloat.write(value.`x1`, buf)
+            FfiConverterFloat.write(value.`y1`, buf)
+            FfiConverterFloat.write(value.`thickness`, buf)
+            FfiConverterUInt.write(value.`colorArgb`, buf)
+            FfiConverterFloat.write(value.`alpha`, buf)
     }
 }
 
@@ -6724,6 +6900,62 @@ public object FfiConverterSequenceTypeFfiAlbumStatSummary: FfiConverterRustBuffe
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiAmbientOrb: FfiConverterRustBuffer<List<FfiAmbientOrb>> {
+    override fun read(buf: ByteBuffer): List<FfiAmbientOrb> {
+        val len = buf.getInt()
+        return List<FfiAmbientOrb>(len) {
+            FfiConverterTypeFfiAmbientOrb.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiAmbientOrb>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiAmbientOrb.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiAmbientOrb>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiAmbientOrb.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiAmbientRibbon: FfiConverterRustBuffer<List<FfiAmbientRibbon>> {
+    override fun read(buf: ByteBuffer): List<FfiAmbientRibbon> {
+        val len = buf.getInt()
+        return List<FfiAmbientRibbon>(len) {
+            FfiConverterTypeFfiAmbientRibbon.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiAmbientRibbon>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiAmbientRibbon.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiAmbientRibbon>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiAmbientRibbon.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiArtist: FfiConverterRustBuffer<List<FfiArtist>> {
     override fun read(buf: ByteBuffer): List<FfiArtist> {
         val len = buf.getInt()
@@ -7316,4 +7548,18 @@ public object FfiConverterMapStringSequenceTypeFfiPlaylistTrackEntry: FfiConvert
         }
     }
 }
+        /**
+         * Pure-Rust, zero-texture ambient aurora & silk-ribbon motion engine.
+         * Accepts normalized phase in [0.0, 1.0) and theme ARGB colors, returning
+         * compact normalized coordinates for low-memory GPU vector rendering.
+         */ fun `computeAmbientBackdropFrame`(`phase`: kotlin.Float, `primaryArgb`: kotlin.UInt, `secondaryArgb`: kotlin.UInt, `backgroundArgb`: kotlin.UInt): FfiAmbientBackdropFrame {
+            return FfiConverterTypeFfiAmbientBackdropFrame.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_frame(
+        FfiConverterFloat.lower(`phase`),FfiConverterUInt.lower(`primaryArgb`),FfiConverterUInt.lower(`secondaryArgb`),FfiConverterUInt.lower(`backgroundArgb`),_status)
+}
+    )
+    }
+    
+
 

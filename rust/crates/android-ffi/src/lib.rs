@@ -3111,6 +3111,134 @@ impl PlasmaWaveCore {
     }
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAmbientOrb {
+    pub cx: f32,
+    pub cy: f32,
+    pub radius: f32,
+    pub color_argb: u32,
+    pub alpha: f32,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAmbientRibbon {
+    pub x0: f32,
+    pub y0: f32,
+    pub cx1: f32,
+    pub cy1: f32,
+    pub cx2: f32,
+    pub cy2: f32,
+    pub x1: f32,
+    pub y1: f32,
+    pub thickness: f32,
+    pub color_argb: u32,
+    pub alpha: f32,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAmbientBackdropFrame {
+    pub orbs: Vec<FfiAmbientOrb>,
+    pub ribbons: Vec<FfiAmbientRibbon>,
+}
+
+fn blend_argb(a: u32, b: u32, t: f32) -> u32 {
+    let t = t.clamp(0.0, 1.0);
+    let inv = 1.0 - t;
+    let ar = ((a >> 16) & 0xFF) as f32;
+    let ag = ((a >> 8) & 0xFF) as f32;
+    let ab = (a & 0xFF) as f32;
+    let br = ((b >> 16) & 0xFF) as f32;
+    let bg = ((b >> 8) & 0xFF) as f32;
+    let bb = (b & 0xFF) as f32;
+    let r = (ar * inv + br * t).round().clamp(0.0, 255.0) as u32;
+    let g = (ag * inv + bg * t).round().clamp(0.0, 255.0) as u32;
+    let bl = (ab * inv + bb * t).round().clamp(0.0, 255.0) as u32;
+    0xFF00_0000 | (r << 16) | (g << 8) | bl
+}
+
+/// Pure-Rust, zero-texture ambient aurora & silk-ribbon motion engine.
+/// Accepts normalized phase in [0.0, 1.0) and theme ARGB colors, returning
+/// compact normalized coordinates for low-memory GPU vector rendering.
+#[uniffi::export]
+pub fn compute_ambient_backdrop_frame(
+    phase: f32,
+    primary_argb: u32,
+    secondary_argb: u32,
+    background_argb: u32,
+) -> FfiAmbientBackdropFrame {
+    let wrapped = phase.rem_euclid(1.0);
+    let tau = wrapped * std::f32::consts::TAU;
+    let s1 = tau.sin();
+    let c1 = tau.cos();
+    let s2 = (tau * 2.0 + 0.85).sin();
+    let c2 = (tau * 2.0 + 0.85).cos();
+
+    // Harmonious theme-derived tints (soft lift + deep blend)
+    let soft_primary = blend_argb(primary_argb, 0xFFFF_FFFF, 0.14);
+    let deep_primary = blend_argb(primary_argb, background_argb, 0.35);
+    let mid_accent = blend_argb(primary_argb, secondary_argb, 0.45);
+
+    let orbs = vec![
+        // 1. Top-right / top-center aurora glow (signature header highlight)
+        FfiAmbientOrb {
+            cx: 0.72 + 0.08 * c1,
+            cy: 0.06 + 0.04 * s1,
+            radius: 0.78 + 0.05 * s2,
+            color_argb: soft_primary,
+            alpha: 0.22 + 0.03 * s1,
+        },
+        // 2. Bottom-right ambient glow rising gently behind the bottom bar
+        FfiAmbientOrb {
+            cx: 0.76 - 0.10 * s1,
+            cy: 0.94 + 0.04 * c1,
+            radius: 0.74 + 0.06 * c2,
+            color_argb: mid_accent,
+            alpha: 0.19 + 0.03 * c1,
+        },
+        // 3. Soft mid-left breathing whisper glow for depth
+        FfiAmbientOrb {
+            cx: 0.10 + 0.07 * s2,
+            cy: 0.48 + 0.06 * c1,
+            radius: 0.62 + 0.04 * s1,
+            color_argb: deep_primary,
+            alpha: 0.13 + 0.02 * s2,
+        },
+    ];
+
+    let ribbons = vec![
+        // Primary sweeping top-right silk aurora wave (matches screenshot header curve)
+        FfiAmbientRibbon {
+            x0: 0.22 + 0.05 * c1,
+            y0: -0.04,
+            cx1: 0.44 + 0.06 * s1,
+            cy1: 0.15 + 0.03 * c1,
+            cx2: 0.68 - 0.05 * c2,
+            cy2: 0.02 + 0.04 * s1,
+            x1: 1.08,
+            y1: 0.13 + 0.03 * c1,
+            thickness: 0.11 + 0.015 * s1,
+            color_argb: soft_primary,
+            alpha: 0.18 + 0.03 * c1,
+        },
+        // Secondary subtle counter-wave echoing the top ribbon
+        FfiAmbientRibbon {
+            x0: 0.34 - 0.04 * s1,
+            y0: 0.01,
+            cx1: 0.56 + 0.05 * c1,
+            cy1: 0.19 - 0.03 * s1,
+            cx2: 0.78 + 0.04 * s2,
+            cy2: 0.06 + 0.03 * c2,
+            x1: 1.12,
+            y1: 0.20 - 0.02 * s1,
+            thickness: 0.075 + 0.012 * c2,
+            color_argb: mid_accent,
+            alpha: 0.12 + 0.025 * s1,
+        },
+    ];
+
+    FfiAmbientBackdropFrame { orbs, ribbons }
+}
+
 fn extract_numeric_id(input: &str) -> Option<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {

@@ -370,8 +370,11 @@ fun HomeScreen(
 
     val primary = MaterialTheme.colorScheme.primary
     val bg = MaterialTheme.colorScheme.background
-    val bgBrush = remember(primary, bg, colors.legacyUiMode) {
-        if (colors.legacyUiMode) {
+    val ambientBackdrop = org.kde.plasmawave.ui.components.LocalAmbientBackdropEnabled.current
+    val bgBrush = remember(primary, bg, colors.legacyUiMode, ambientBackdrop) {
+        if (ambientBackdrop) {
+            Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+        } else if (colors.legacyUiMode) {
             Brush.verticalGradient(listOf(primary.copy(alpha = 0.16f), bg, bg))
         } else {
             val topTint = primary.copy(alpha = CALM_TOP_GRADIENT_ALPHA).compositeOver(bg)

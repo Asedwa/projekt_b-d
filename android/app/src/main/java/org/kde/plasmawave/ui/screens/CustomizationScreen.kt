@@ -94,6 +94,7 @@ fun CustomizationScreen(
     initialCategory: CustomizationCategory? = null
 ) {
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
+    val ambientBackgroundEnabled by viewModel.ambientBackgroundEnabled.collectAsState()
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val albumFrame by viewModel.albumFrame.collectAsState()
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
@@ -1696,6 +1697,60 @@ fun CustomizationScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "Şarkıyı büyüttüğünüzde tam ekran oynatıcı arka planı, çalan şarkının albüm kapağındaki canlı renklere göre otomatik ayarlanır.",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                        )
+                    }
+                }
+
+                // --- 1b. Rust Ambient Animated Backdrop Card ---
+                Spacer(modifier = Modifier.height(14.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = colors.card),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(primary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Hareketli Ortam Arka Planı",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                )
+                                Text(
+                                    text = if (ambientBackgroundEnabled) "Açık (Rust motoru • düşük bellek)" else "Kapalı (Düz tema arka planı)",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                                )
+                            }
+                            Switch(
+                                checked = ambientBackgroundEnabled,
+                                onCheckedChange = viewModel::setAmbientBackgroundEnabled,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = primary
+                                )
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Tema renklerinizden üretilen hafif hareketli ışık dalgalarını ekler. Ekstra bitmap kullanmadan doğrudan Rust matematik motoruyla çizildiği için düşük bellek ve pil tüketir.",
                             style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                         )
                     }
