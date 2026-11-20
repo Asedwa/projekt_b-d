@@ -130,8 +130,23 @@ fun PlaylistDetailScreen(
             norm.isNotBlank() && norm !in downloadStatus.downloadedTrackIds && norm in downloadStatus.activeTrackProgress
         }
     }
-    val remainingDeezerCount = remember(entries, downloadStatus.downloadedTrackIds, downloadStatus.activeTrackProgress) {
+    val unavailableCount = remember(entries, downloadStatus.unavailableTrackIds, downloadStatus.downloadedTrackIds, downloadStatus.activeTrackProgress) {
         entries.count { entry ->
+            val norm = DownloadStorage.normalizeTrackId(entry.track.id)
+            val isDown = entry.track.provider == "local" || norm in downloadStatus.downloadedTrackIds
+            val isAct = norm.isNotBlank() && norm in downloadStatus.activeTrackProgress
+            !isDown && !isAct && (entry.isUnavailable || (norm.isNotBlank() && norm in downloadStatus.unavailableTrackIds))
+        }
+    }
+    val availableCount = (totalCount - unavailableCount).coerceAtLeast(0)
+    val downloadableEntries = remember(entries, downloadStatus.unavailableTrackIds) {
+        entries.filterNot { entry ->
+            val norm = DownloadStorage.normalizeTrackId(entry.track.id)
+            entry.isUnavailable || (norm.isNotBlank() && norm in downloadStatus.unavailableTrackIds)
+        }
+    }
+    val remainingDeezerCount = remember(downloadableEntries, downloadStatus.downloadedTrackIds, downloadStatus.activeTrackProgress) {
+        downloadableEntries.count { entry ->
             val t = entry.track
             if (t.provider != "deezer") false
             else {
@@ -140,13 +155,13 @@ fun PlaylistDetailScreen(
             }
         }
     }
-    val failedDownloadCount = remember(entries, downloadStatus.failedTrackErrors, downloadStatus.downloadedTrackIds, downloadStatus.activeTrackProgress) {
-        entries.count { entry ->
+    val failedDownloadCount = remember(downloadableEntries, downloadStatus.failedTrackErrors, downloadStatus.downloadedTrackIds, downloadStatus.activeTrackProgress) {
+        downloadableEntries.count { entry ->
             val norm = DownloadStorage.normalizeTrackId(entry.track.id)
             norm.isNotBlank() && norm !in downloadStatus.downloadedTrackIds && norm !in downloadStatus.activeTrackProgress && norm in downloadStatus.failedTrackErrors
         }
     }
-    val isFullyDownloaded = totalCount > 0 && downloadedCount == totalCount && activeDownloadCount == 0
+    val isFullyDownloaded = availableCount > 0 && downloadedCount >= availableCount && activeDownloadCount == 0
 
     LaunchedEffect(playlist.id, retry, playlistRevision) {
         if (state !is PlaylistLoadState.Loaded) {
@@ -210,13 +225,14 @@ fun PlaylistDetailScreen(
                                     "Çalma listesi • $count şarkı" + if (playlist.isLocal) " • Bu cihaz" else " • Deezer",
                                     style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                                 )
-                                if (totalCount > 0 && (downloadedCount > 0 || activeDownloadCount > 0 || failedDownloadCount > 0)) {
+                                if (totalCount > 0 && (downloadedCount > 0 || activeDownloadCount > 0 || failedDownloadCount > 0 || unavailableCount > 0)) {
                                     Spacer(Modifier.height(6.dp))
                                     PlaylistDownloadStatusPill(
                                         downloadedCount = downloadedCount,
-                                        totalCount = totalCount,
+                                        availableCount = availableCount,
                                         activeCount = activeDownloadCount,
                                         failedCount = failedDownloadCount,
+                                        unavailableCount = unavailableCount,
                                         isFullyDownloaded = isFullyDownloaded
                                     )
                                 }
@@ -237,7 +253,7 @@ fun PlaylistDetailScreen(
                                     if (entries.any { it.track.provider == "deezer" }) {
                                         if (isFullyDownloaded) {
                                             FilledTonalButton(
-                                                onClick = { onDownloadPlaylist(entries.map { it.track }, playlist.id, playlist.name) },
+                                                onClick = { onDownloadPlaylist(downloadableEntries.map { it.track }, playlist.id, playlist.name) },
                                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                                                 colors = ButtonDefaults.filledTonalButtonColors(
                                                     containerColor = Color(0xFF10B981).copy(alpha = 0.16f),
@@ -250,7 +266,7 @@ fun PlaylistDetailScreen(
                                             }
                                         } else if (activeDownloadCount > 0) {
                                             OutlinedButton(
-                                                onClick = { onDownloadPlaylist(entries.map { it.track }, playlist.id, playlist.name) },
+                                                onClick = { onDownloadPlaylist(downloadableEntries.map { it.track }, playlist.id, playlist.name) },
                                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                                             ) {
                                                 CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
@@ -259,7 +275,7 @@ fun PlaylistDetailScreen(
                                             }
                                         } else {
                                             OutlinedButton(
-                                                onClick = { onDownloadPlaylist(entries.map { it.track }, playlist.id, playlist.name) },
+                                                onClick = { onDownloadPlaylist(downloadableEntries.map { it.track }, playlist.id, playlist.name) },
                                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                                             ) {
                                                 Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -298,14 +314,15 @@ fun PlaylistDetailScreen(
                             modifier = Modifier.fillMaxWidth(),
                             style = MaterialTheme.typography.bodyMedium.copy(color = colors.textSecondary)
                         )
-                        if (totalCount > 0 && (downloadedCount > 0 || activeDownloadCount > 0 || failedDownloadCount > 0)) {
+                        if (totalCount > 0 && (downloadedCount > 0 || activeDownloadCount > 0 || failedDownloadCount > 0 || unavailableCount > 0)) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                                 PlaylistDownloadStatusPill(
                                     downloadedCount = downloadedCount,
-                                    totalCount = totalCount,
+                                    availableCount = availableCount,
                                     activeCount = activeDownloadCount,
                                     failedCount = failedDownloadCount,
+                                    unavailableCount = unavailableCount,
                                     isFullyDownloaded = isFullyDownloaded
                                 )
                             }
@@ -334,7 +351,7 @@ fun PlaylistDetailScreen(
                         if (entries.any { it.track.provider == "deezer" }) {
                             if (isFullyDownloaded) {
                                 FilledTonalButton(
-                                    onClick = { onDownloadPlaylist(entries.map { it.track }, playlist.id, playlist.name) },
+                                    onClick = { onDownloadPlaylist(downloadableEntries.map { it.track }, playlist.id, playlist.name) },
                                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                                     colors = ButtonDefaults.filledTonalButtonColors(
                                         containerColor = Color(0xFF10B981).copy(alpha = 0.16f),
@@ -346,7 +363,7 @@ fun PlaylistDetailScreen(
                                 }
                             } else if (activeDownloadCount > 0) {
                                 OutlinedButton(
-                                    onClick = { onDownloadPlaylist(entries.map { it.track }, playlist.id, playlist.name) },
+                                    onClick = { onDownloadPlaylist(downloadableEntries.map { it.track }, playlist.id, playlist.name) },
                                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                                 ) {
                                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -354,7 +371,7 @@ fun PlaylistDetailScreen(
                                 }
                             } else {
                                 OutlinedButton(
-                                    onClick = { onDownloadPlaylist(entries.map { it.track }, playlist.id, playlist.name) },
+                                    onClick = { onDownloadPlaylist(downloadableEntries.map { it.track }, playlist.id, playlist.name) },
                                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                                 ) {
                                     Icon(Icons.Default.CloudDownload, contentDescription = null)
@@ -422,6 +439,7 @@ fun PlaylistDetailScreen(
                         TrackListItem(
                             track = track,
                             isPlaying = currentTrackId == track.id,
+                            isUnavailable = entry.isUnavailable,
                             onClick = { viewModel.playbackManager.playTrackList(tracks, index) },
                             onLongClick = { viewModel.openTrackMenu(track, playlist, entry.originalIndex) }
                         )
@@ -443,9 +461,10 @@ fun PlaylistDetailScreen(
 @Composable
 private fun PlaylistDownloadStatusPill(
     downloadedCount: Int,
-    totalCount: Int,
+    availableCount: Int,
     activeCount: Int,
     failedCount: Int,
+    unavailableCount: Int,
     isFullyDownloaded: Boolean
 ) {
     val green = Color(0xFF10B981)
@@ -461,11 +480,13 @@ private fun PlaylistDownloadStatusPill(
         failedCount > 0 -> LocalPlasmaColors.current.negative
         else -> LocalPlasmaColors.current.textSecondary
     }
+    val unavailableSuffix = if (unavailableCount > 0) " ($unavailableCount kullanılamıyor)" else ""
     val label = when {
-        isFullyDownloaded -> "Çevrimdışı hazır • $downloadedCount/$totalCount"
-        activeCount > 0 -> "İndiriliyor • $downloadedCount/$totalCount"
-        failedCount > 0 -> "$downloadedCount/$totalCount indirildi • $failedCount indirilemedi"
-        else -> "$downloadedCount/$totalCount şarkı indirildi"
+        isFullyDownloaded -> "Çevrimdışı hazır • $downloadedCount/$availableCount$unavailableSuffix"
+        activeCount > 0 -> "İndiriliyor • $downloadedCount/$availableCount"
+        failedCount > 0 -> "$downloadedCount/$availableCount indirildi • $failedCount indirilemedi"
+        downloadedCount > 0 -> "$downloadedCount/$availableCount şarkı indirildi$unavailableSuffix"
+        else -> "$unavailableCount şarkı Deezer'da kullanılamıyor"
     }
     Surface(
         shape = CircleShape,

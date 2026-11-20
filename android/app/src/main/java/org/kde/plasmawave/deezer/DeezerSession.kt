@@ -247,8 +247,29 @@ class DeezerSession private constructor(context: Context) {
     }
     fun playlistTrackEntries(id: String): List<PlaylistTrackEntry> =
         objects(activeGateway().playlistTracks(id.removePrefix("deezer:"))).mapIndexedNotNull { index, json ->
-            track(json)?.let { PlaylistTrackEntry(it, parseAddedAt(json.opt("DATE_ADD")), index) }
+            track(json)?.let {
+                PlaylistTrackEntry(
+                    track = it,
+                    addedAt = parseAddedAt(json.opt("DATE_ADD")),
+                    originalIndex = index,
+                    isUnavailable = isTrackUnavailable(json)
+                )
+            }
         }
+
+    private fun isTrackUnavailable(t: JSONObject): Boolean {
+        if (t.optJSONObject("FALLBACK") != null) return false
+        val hasAnyFileSize = (t.optLong("FILESIZE_MP3_128") > 0L) ||
+            (t.optLong("FILESIZE_MP3_320") > 0L) ||
+            (t.optLong("FILESIZE_FLAC") > 0L) ||
+            (t.optLong("FILESIZE_MP3_MISC") > 0L)
+        val hasFileSizeFields = t.has("FILESIZE_MP3_128") || t.has("FILESIZE_MP3_320") || t.has("FILESIZE_FLAC")
+        if (hasFileSizeFields && !hasAnyFileSize) return true
+        if (t.has("TRACK_TOKEN") && t.optString("TRACK_TOKEN").isBlank()) return true
+        val rights = t.optJSONObject("RIGHTS")
+        if (rights != null && rights.length() == 0 && !hasAnyFileSize) return true
+        return false
+    }
 
     @Synchronized
     fun logout() {

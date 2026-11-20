@@ -1332,6 +1332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val completedIds = HashSet<String>(saved.size + onDisk.size)
         val activeProgress = HashMap<String, Int?>()
         val failedErrors = HashMap<String, String>()
+        val unavailableIds = HashSet<String>()
         val playlistCompletedIds = HashSet<String>()
 
         onDisk.forEach { track ->
@@ -1345,19 +1346,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (norm.isNotBlank()) {
                         completedIds.add(norm)
                         failedErrors.remove(norm)
+                        unavailableIds.remove(norm)
                     }
                     if (!task.playlistId.isNullOrBlank()) playlistCompletedIds.add(task.playlistId)
                 }
                 "running" -> if (norm.isNotBlank()) {
                     activeProgress[norm] = task.progress
                     failedErrors.remove(norm)
+                    unavailableIds.remove(norm)
                 }
                 "queued" -> if (norm.isNotBlank()) {
                     activeProgress.putIfAbsent(norm, null)
                     failedErrors.remove(norm)
+                    unavailableIds.remove(norm)
                 }
                 "failed" -> if (norm.isNotBlank() && norm !in completedIds && norm !in activeProgress) {
-                    failedErrors[norm] = task.error ?: "İndirilemedi"
+                    val err = task.error ?: "İndirilemedi"
+                    if (err.contains("MP3_128", ignoreCase = true) ||
+                        err.contains("kullanılamıyor", ignoreCase = true) ||
+                        err.contains("kaldırıl", ignoreCase = true)
+                    ) {
+                        unavailableIds.add(norm)
+                    } else {
+                        failedErrors[norm] = err
+                    }
                 }
             }
         }
@@ -1365,6 +1377,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             downloadedTrackIds = completedIds,
             activeTrackProgress = activeProgress,
             failedTrackErrors = failedErrors,
+            unavailableTrackIds = unavailableIds,
             downloadedPlaylistIds = playlistCompletedIds
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DownloadStatusSnapshot())

@@ -15,7 +15,12 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-data class PlaylistTrackEntry(val track: FfiTrack, val addedAt: Long?, val originalIndex: Int)
+data class PlaylistTrackEntry(
+    val track: FfiTrack,
+    val addedAt: Long?,
+    val originalIndex: Int,
+    val isUnavailable: Boolean = false
+)
 
 internal fun PlaylistTrackEntry.toFfi(): FfiPlaylistTrackEntry = FfiPlaylistTrackEntry(
     track = track,

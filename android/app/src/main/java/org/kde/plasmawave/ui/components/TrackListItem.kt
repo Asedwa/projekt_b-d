@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MusicNote
@@ -26,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -40,6 +42,7 @@ data class DownloadStatusSnapshot(
     val downloadedTrackIds: Set<String> = emptySet(),
     val activeTrackProgress: Map<String, Int?> = emptyMap(),
     val failedTrackErrors: Map<String, String> = emptyMap(),
+    val unavailableTrackIds: Set<String> = emptySet(),
     val downloadedPlaylistIds: Set<String> = emptySet()
 )
 
@@ -58,6 +61,7 @@ fun formatDuration(ms: ULong): String {
 fun TrackListItem(
     track: FfiTrack,
     isPlaying: Boolean = false,
+    isUnavailable: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onMoreClick: () -> Unit = onLongClick,
@@ -73,11 +77,15 @@ fun TrackListItem(
         downloadStatus.activeTrackProgress[normalizedId]
     } else null
     val isDownloading = !isDownloaded && normalizedId.isNotBlank() && normalizedId in downloadStatus.activeTrackProgress
-    val isFailed = !isDownloaded && !isDownloading && normalizedId.isNotBlank() && normalizedId in downloadStatus.failedTrackErrors
+    val effectivelyUnavailable = !isDownloaded && !isDownloading &&
+        (isUnavailable || (normalizedId.isNotBlank() && normalizedId in downloadStatus.unavailableTrackIds))
+    val isFailed = !isDownloaded && !isDownloading && !effectivelyUnavailable &&
+        normalizedId.isNotBlank() && normalizedId in downloadStatus.failedTrackErrors
 
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .alpha(if (effectivelyUnavailable) 0.48f else 1f)
             .clip(RoundedCornerShape(8.dp))
             .combinedClickable(
                 onClick = onClick,
@@ -132,6 +140,22 @@ fun TrackListItem(
                         )
                     }
                     Spacer(modifier = Modifier.width(5.dp))
+                } else if (effectivelyUnavailable) {
+                    Icon(
+                        imageVector = Icons.Default.Block,
+                        contentDescription = "Deezer'da kullanılamıyor",
+                        tint = customColors.textSecondary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Deezer'da kullanılamıyor • ",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = customColors.textSecondary,
+                            fontSize = 11.sp
+                        ),
+                        maxLines = 1
+                    )
                 } else if (isFailed) {
                     Icon(
                         imageVector = Icons.Default.ErrorOutline,
