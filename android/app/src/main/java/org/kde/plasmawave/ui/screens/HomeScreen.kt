@@ -4,8 +4,15 @@ import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -1521,8 +1528,27 @@ private fun CollapsingHomeHeader(
             }
 
             // 4. Top Right Downloads Button
-            IconButton(
-                onClick = onDownloadsClick,
+            var lastBadgeLabel by remember { mutableStateOf("") }
+            val currentBadgeLabel = remember(activeDownloads) {
+                when {
+                    activeDownloads <= 0 -> ""
+                    activeDownloads > 9999 -> "9999+"
+                    else -> activeDownloads.toString()
+                }
+            }
+            if (currentBadgeLabel.isNotEmpty()) {
+                lastBadgeLabel = currentBadgeLabel
+            }
+            val targetShift = if (activeDownloads > 0) (currentBadgeLabel.length * 6).dp else 0.dp
+            val animatedShift by animateDpAsState(
+                targetValue = targetShift,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "downloadIconShift"
+            )
+            Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(end = 12.dp)
@@ -1531,25 +1557,63 @@ private fun CollapsingHomeHeader(
                         val s = f * f * (3f - 2f * f)
                         translationY = lerpFloat(downloadTopExpandedPx, downloadTopCollapsedPx, s)
                     }
+                    .height(48.dp)
+                    .width(48.dp + animatedShift)
+                    .clip(RoundedCornerShape(24.dp))
+                    .clickable(onClick = onDownloadsClick)
             ) {
-                if (activeDownloads > 0) {
-                    val badgeLabel = if (activeDownloads > 99) "99+" else "$activeDownloads"
-                    BadgedBox(
-                        badge = {
-                            Badge {
-                                Text(
-                                    text = badgeLabel,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    fontSize = 10.sp
-                                )
-                            }
-                        }
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = "İndirmeler",
+                    tint = LocalContentColor.current,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 12.dp + animatedShift)
+                )
+                AnimatedVisibility(
+                    visible = activeDownloads > 0,
+                    enter = fadeIn(tween(180)) + scaleIn(
+                        initialScale = 0.72f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        )
+                    ),
+                    exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.72f),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 6.dp, end = 4.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                        shadowElevation = 1.dp
                     ) {
-                        Icon(Icons.Default.Download, contentDescription = "İndirmeler")
+                        Box(
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+                                .animateContentSize(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                )
+                                .padding(horizontal = 5.dp, vertical = 1.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = lastBadgeLabel,
+                                maxLines = 1,
+                                softWrap = false,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.sp,
+                                    lineHeight = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            )
+                        }
                     }
-                } else {
-                    Icon(Icons.Default.Download, contentDescription = "İndirmeler")
                 }
             }
         }
