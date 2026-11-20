@@ -3239,6 +3239,102 @@ pub fn compute_ambient_backdrop_frame(
     FfiAmbientBackdropFrame { orbs, ribbons }
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAdaptiveTextPalette {
+    pub on_background_argb: u32,
+    pub on_background_secondary_argb: u32,
+    pub on_card_argb: u32,
+    pub on_card_secondary_argb: u32,
+    pub on_accent_argb: u32,
+    pub is_dark_background: bool,
+}
+
+fn srgb_channel_to_linear(c: u32) -> f32 {
+    let v = (c as f32) / 255.0;
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn relative_luminance(argb: u32) -> f32 {
+    let r = srgb_channel_to_linear((argb >> 16) & 0xFF);
+    let g = srgb_channel_to_linear((argb >> 8) & 0xFF);
+    let b = srgb_channel_to_linear(argb & 0xFF);
+    0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+fn contrast_ratio(a: u32, b: u32) -> f32 {
+    let la = relative_luminance(a);
+    let lb = relative_luminance(b);
+    let (hi, lo) = if la >= lb { (la, lb) } else { (lb, la) };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+fn pick_foreground_pair(surface_argb: u32, primary_argb: u32) -> (u32, u32, bool) {
+    let is_dark = relative_luminance(surface_argb) < 0.34;
+    if is_dark {
+        // Subtle 6% theme tint on pure crisp white so text pops against dark/ambient surfaces
+        let tinted_white = blend_argb(0xFFFF_FFFF, primary_argb, 0.06);
+        let primary_text = if contrast_ratio(tinted_white, surface_argb) >= 7.0 {
+            tinted_white
+        } else {
+            0xFFF8_FAFC
+        };
+        let mut secondary = blend_argb(0xFFCB_D5E1, primary_argb, 0.14);
+        if contrast_ratio(secondary, surface_argb) < 4.5 {
+            secondary = 0xFFE2_E8F0;
+        }
+        (primary_text, secondary, true)
+    } else {
+        let tinted_ink = blend_argb(0xFF11_1827, primary_argb, 0.08);
+        let primary_text = if contrast_ratio(tinted_ink, surface_argb) >= 7.0 {
+            tinted_ink
+        } else {
+            0xFF0F_172A
+        };
+        let mut secondary = blend_argb(0xFF47_5569, primary_argb, 0.12);
+        if contrast_ratio(secondary, surface_argb) < 4.5 {
+            secondary = 0xFF33_4155;
+        }
+        (primary_text, secondary, false)
+    }
+}
+
+/// Pure-Rust WCAG 2.1 contrast-aware foreground text palette engine.
+/// Automatically adapts primary/secondary text and icon colors to the effective
+/// background (including ambient aurora glow lift) and card surfaces.
+#[uniffi::export]
+pub fn compute_adaptive_text_palette(
+    background_argb: u32,
+    card_argb: u32,
+    primary_argb: u32,
+    ambient_enabled: bool,
+) -> FfiAdaptiveTextPalette {
+    let effective_bg = if ambient_enabled {
+        blend_argb(background_argb, primary_argb, 0.14)
+    } else {
+        background_argb
+    };
+    let (on_bg, on_bg_sec, is_dark) = pick_foreground_pair(effective_bg, primary_argb);
+    let (on_card, on_card_sec, _) = pick_foreground_pair(card_argb, primary_argb);
+    let on_accent = if contrast_ratio(0xFFFF_FFFF, primary_argb) >= contrast_ratio(0xFF14_171A, primary_argb) {
+        0xFFFF_FFFF
+    } else {
+        0xFF14_171A
+    };
+
+    FfiAdaptiveTextPalette {
+        on_background_argb: on_bg,
+        on_background_secondary_argb: on_bg_sec,
+        on_card_argb: on_card,
+        on_card_secondary_argb: on_card_sec,
+        on_accent_argb: on_accent,
+        is_dark_background: is_dark,
+    }
+}
+
 fn extract_numeric_id(input: &str) -> Option<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {

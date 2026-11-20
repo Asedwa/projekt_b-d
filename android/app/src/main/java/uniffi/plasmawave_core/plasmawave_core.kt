@@ -956,6 +956,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1219,6 +1221,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_upsert_listening_stats_batch(`ptr`: Pointer,`stats`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_fn_func_compute_adaptive_text_palette(`backgroundArgb`: Int,`cardArgb`: Int,`primaryArgb`: Int,`ambientEnabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_frame(`phase`: Float,`primaryArgb`: Int,`secondaryArgb`: Int,`backgroundArgb`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_plasmawave_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1333,6 +1337,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_plasmawave_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_checksum_func_compute_adaptive_text_palette(
+    ): Short
     fun uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget(
@@ -1592,6 +1598,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_plasmawave_core_checksum_func_compute_adaptive_text_palette() != 18662.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame() != 24740.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -4220,6 +4229,54 @@ public object FfiConverterTypePlasmaWaveCore: FfiConverter<PlasmaWaveCore, Point
         // The Rust code always expects pointers written as 8 bytes,
         // and will fail to compile if they don't fit.
         buf.putLong(Pointer.nativeValue(lower(value)))
+    }
+}
+
+
+
+data class FfiAdaptiveTextPalette (
+    var `onBackgroundArgb`: kotlin.UInt, 
+    var `onBackgroundSecondaryArgb`: kotlin.UInt, 
+    var `onCardArgb`: kotlin.UInt, 
+    var `onCardSecondaryArgb`: kotlin.UInt, 
+    var `onAccentArgb`: kotlin.UInt, 
+    var `isDarkBackground`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAdaptiveTextPalette: FfiConverterRustBuffer<FfiAdaptiveTextPalette> {
+    override fun read(buf: ByteBuffer): FfiAdaptiveTextPalette {
+        return FfiAdaptiveTextPalette(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAdaptiveTextPalette) = (
+            FfiConverterUInt.allocationSize(value.`onBackgroundArgb`) +
+            FfiConverterUInt.allocationSize(value.`onBackgroundSecondaryArgb`) +
+            FfiConverterUInt.allocationSize(value.`onCardArgb`) +
+            FfiConverterUInt.allocationSize(value.`onCardSecondaryArgb`) +
+            FfiConverterUInt.allocationSize(value.`onAccentArgb`) +
+            FfiConverterBoolean.allocationSize(value.`isDarkBackground`)
+    )
+
+    override fun write(value: FfiAdaptiveTextPalette, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`onBackgroundArgb`, buf)
+            FfiConverterUInt.write(value.`onBackgroundSecondaryArgb`, buf)
+            FfiConverterUInt.write(value.`onCardArgb`, buf)
+            FfiConverterUInt.write(value.`onCardSecondaryArgb`, buf)
+            FfiConverterUInt.write(value.`onAccentArgb`, buf)
+            FfiConverterBoolean.write(value.`isDarkBackground`, buf)
     }
 }
 
@@ -7548,6 +7605,20 @@ public object FfiConverterMapStringSequenceTypeFfiPlaylistTrackEntry: FfiConvert
         }
     }
 }
+        /**
+         * Pure-Rust WCAG 2.1 contrast-aware foreground text palette engine.
+         * Automatically adapts primary/secondary text and icon colors to the effective
+         * background (including ambient aurora glow lift) and card surfaces.
+         */ fun `computeAdaptiveTextPalette`(`backgroundArgb`: kotlin.UInt, `cardArgb`: kotlin.UInt, `primaryArgb`: kotlin.UInt, `ambientEnabled`: kotlin.Boolean): FfiAdaptiveTextPalette {
+            return FfiConverterTypeFfiAdaptiveTextPalette.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_func_compute_adaptive_text_palette(
+        FfiConverterUInt.lower(`backgroundArgb`),FfiConverterUInt.lower(`cardArgb`),FfiConverterUInt.lower(`primaryArgb`),FfiConverterBoolean.lower(`ambientEnabled`),_status)
+}
+    )
+    }
+    
+
         /**
          * Pure-Rust, zero-texture ambient aurora & silk-ribbon motion engine.
          * Accepts normalized phase in [0.0, 1.0) and theme ARGB colors, returning

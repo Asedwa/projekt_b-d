@@ -154,7 +154,11 @@ class MainActivity : ComponentActivity() {
                 statusMessage?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show(); viewModel.clearStatusMessage() }
             }
 
-            PlasmaTheme(activeTheme = activeTheme, legacyUiMode = legacyUiMode) {
+            PlasmaTheme(
+                activeTheme = activeTheme,
+                legacyUiMode = legacyUiMode,
+                ambientBackgroundEnabled = ambientBackgroundEnabled
+            ) {
                 CompositionLocalProvider(
                     LocalDeezerConnected provides (deezerUser != null),
                     LocalDownloadStatus provides downloadStatus,
@@ -250,6 +254,7 @@ class MainActivity : ComponentActivity() {
                         Scaffold(
                             modifier = Modifier.fillMaxSize(),
                             containerColor = if (ambientBackgroundEnabled) Color.Transparent else MaterialTheme.colorScheme.background,
+                            contentColor = MaterialTheme.colorScheme.onBackground,
                             bottomBar = {
                                 Column {
                                     AnimatedVisibility(

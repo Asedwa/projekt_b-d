@@ -1,17 +1,19 @@
 package org.kde.plasmawave.theme
 
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.ColorUtils
 import uniffi.plasmawave_core.FfiTheme
+import uniffi.plasmawave_core.computeAdaptiveTextPalette
 
 data class PlasmaCustomColors(
     val card: Color = BreezeCard,
@@ -88,6 +90,7 @@ private fun tintedCalmDarkSurface(hue: Float, hasChroma: Boolean, sat: Float, li
 fun PlasmaTheme(
     activeTheme: FfiTheme? = null,
     legacyUiMode: Boolean = false,
+    ambientBackgroundEnabled: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val isDark = activeTheme?.isDark ?: true
@@ -127,21 +130,29 @@ fun PlasmaTheme(
     val divider = if (!legacyUiMode && isDark) {
         tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_BORDER_SAT, CALM_DIVIDER_LIGHTNESS, isAmoledNothing)
     } else BreezeDivider
-    val text = if (!legacyUiMode && isDark) Color(0xFFF3EFF7) else rawText
-    val textSecondary = if (!legacyUiMode && isDark) {
-        tintedCalmDarkSurface(calmSurfaceHue, hasSurfaceChroma, CALM_TEXT_SEC_SAT, CALM_TEXT_SEC_LIGHTNESS, isAmoledNothing)
-    } else rawTextSecondary
 
-    val onAccent = if (accent.luminance() > 0.52f) Color(0xFF1A1D20) else Color.White
+    val adaptivePalette = remember(bg, card, accent, ambientBackgroundEnabled) {
+        computeAdaptiveTextPalette(
+            backgroundArgb = bg.toArgb().toUInt(),
+            cardArgb = card.toArgb().toUInt(),
+            primaryArgb = accent.toArgb().toUInt(),
+            ambientEnabled = ambientBackgroundEnabled
+        )
+    }
 
-    val colorScheme: ColorScheme = if (isDark) {
+    val text = Color(adaptivePalette.onBackgroundArgb.toInt())
+    val textSecondary = Color(adaptivePalette.onBackgroundSecondaryArgb.toInt())
+    val onCard = Color(adaptivePalette.onCardArgb.toInt())
+    val onAccent = Color(adaptivePalette.onAccentArgb.toInt())
+
+    val colorScheme: ColorScheme = if (adaptivePalette.isDarkBackground) {
         darkColorScheme(
             primary = accent,
             onPrimary = onAccent,
             background = bg,
             onBackground = text,
             surface = surface,
-            onSurface = text,
+            onSurface = onCard,
             surfaceVariant = card,
             onSurfaceVariant = textSecondary,
             surfaceContainerLowest = bg,
@@ -158,7 +169,7 @@ fun PlasmaTheme(
             background = bg,
             onBackground = text,
             surface = surface,
-            onSurface = text,
+            onSurface = onCard,
             surfaceVariant = card,
             onSurfaceVariant = textSecondary,
             outline = border
@@ -184,7 +195,10 @@ fun PlasmaTheme(
         BreezeDefaultShapes
     }
 
-    CompositionLocalProvider(LocalPlasmaColors provides customColors) {
+    CompositionLocalProvider(
+        LocalPlasmaColors provides customColors,
+        LocalContentColor provides text
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = if (legacyUiMode) LegacyBreezeTypography else BreezeTypography,
