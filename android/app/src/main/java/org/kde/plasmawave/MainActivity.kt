@@ -69,6 +69,7 @@ sealed class SubScreen {
     data object Customization : SubScreen()
     data object ModManager : SubScreen()
     data object Downloads : SubScreen()
+    data object Stats : SubScreen()
 }
 
 class MainActivity : ComponentActivity() {
@@ -164,6 +165,7 @@ class MainActivity : ComponentActivity() {
                             SubScreen.Customization -> CustomizationScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
                             SubScreen.ModManager -> ModManagerScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
                             SubScreen.Downloads -> DownloadsScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
+                            SubScreen.Stats -> StatsScreen(viewModel, onBack = { currentSubScreen = SubScreen.None })
                             SubScreen.None -> tabStateHolder.SaveableStateProvider(currentScreen.title) {
                                 when (currentScreen) {
                                     Screen.Home -> HomeScreen(
@@ -179,7 +181,8 @@ class MainActivity : ComponentActivity() {
                                         onNavigateThemes = { currentSubScreen = SubScreen.Themes },
                                         onNavigateMods = { currentSubScreen = SubScreen.ModManager },
                                         onNavigateDownloads = { currentSubScreen = SubScreen.Downloads },
-                                        onNavigateCustomization = { currentSubScreen = SubScreen.Customization }
+                                        onNavigateCustomization = { currentSubScreen = SubScreen.Customization },
+                                        onNavigateStats = { currentSubScreen = SubScreen.Stats }
                                     )
                                 }
                             }

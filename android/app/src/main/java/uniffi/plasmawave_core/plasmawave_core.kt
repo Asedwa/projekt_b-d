@@ -932,6 +932,28 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -961,6 +983,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_add_tracks_to_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`tracks`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_build_listening_stats_csv(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_build_user_data_export_json(`ptr`: Pointer,`exportedAtEpochMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_cancel_download(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -968,6 +992,12 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_all_collected_user_data(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_deezer_user(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_last_24h_data(`ptr`: Pointer,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_listening_history_only(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_listening_stats_only(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_resume_playback_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -978,6 +1008,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_delete_cached_playlist_entries(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_delete_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_delete_single_track_stat(`ptr`: Pointer,`trackId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_delete_user_custom_theme(`ptr`: Pointer,`themeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1031,6 +1063,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_home_widget_catalog(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_listening_analytics(`ptr`: Pointer,`periodId`: RustBuffer.ByValue,`sortBy`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_listening_stats(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_local_tracks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1044,6 +1078,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_playlist_tracks(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_playlists(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_private_session_status(`ptr`: Pointer,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_providers(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1064,6 +1100,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_version(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_import_theme_json(`ptr`: Pointer,`jsonStr`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_import_user_data_json(`ptr`: Pointer,`rawJson`: RustBuffer.ByValue,`merge`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_ingest_local_tracks(`ptr`: Pointer,`inputs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
@@ -1103,6 +1141,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_record_listening_tick(`ptr`: Pointer,`track`: RustBuffer.ByValue,`deltaMs`: Long,`collectStats`: Byte,`timestampMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_record_track_outcome(`ptr`: Pointer,`completed`: Byte,`collectStats`: Byte,`timestampMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_record_track_play(`ptr`: Pointer,`track`: RustBuffer.ByValue,`collectStats`: Byte,`collectHistory`: Byte,`timestampMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_download(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1149,10 +1189,14 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_home_widget_kind_enabled(`ptr`: Pointer,`kind`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_local_tz_offset_ms(`ptr`: Pointer,`offsetMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_mod_enabled(`ptr`: Pointer,`modId`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_pinned_items(`ptr`: Pointer,`items`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_private_session(`ptr`: Pointer,`enabled`: Byte,`durationMs`: Long,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_recent_tracks(`ptr`: Pointer,`tracks`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_theme(`ptr`: Pointer,`themeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1289,6 +1333,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_tracks_to_playlist(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_build_listening_stats_csv(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_build_user_data_export_json(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_cancel_download(
@@ -1296,6 +1342,12 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_all_collected_user_data(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_deezer_user(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_last_24h_data(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_listening_history_only(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_listening_stats_only(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_resume_playback_state(
     ): Short
@@ -1306,6 +1358,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_cached_playlist_entries(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_playlist(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_single_track_stat(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_user_custom_theme(
     ): Short
@@ -1359,6 +1413,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_home_widget_catalog(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_listening_analytics(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_listening_stats(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_local_tracks(
@@ -1372,6 +1428,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlist_tracks(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlists(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_private_session_status(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_providers(
     ): Short
@@ -1392,6 +1450,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_version(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_import_theme_json(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_import_user_data_json(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_ingest_local_tracks(
     ): Short
@@ -1430,6 +1490,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_queue_set_shuffle(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_record_listening_tick(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_record_track_outcome(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_record_track_play(
     ): Short
@@ -1477,9 +1539,13 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_home_widget_kind_enabled(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_local_tz_offset_ms(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_mod_enabled(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_pinned_items(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_private_session(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_recent_tracks(
     ): Short
@@ -1526,6 +1592,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_add_tracks_to_playlist() != 53916.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_build_listening_stats_csv() != 20015.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_build_user_data_export_json() != 56767.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1536,6 +1605,15 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_deezer_user() != 8855.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_last_24h_data() != 52220.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_listening_history_only() != 7170.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_listening_stats_only() != 51560.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_resume_playback_state() != 23611.toShort()) {
@@ -1551,6 +1629,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_playlist() != 39966.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_single_track_stat() != 34716.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_delete_user_custom_theme() != 34.toShort()) {
@@ -1631,6 +1712,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_home_widget_catalog() != 21207.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_listening_analytics() != 65202.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_listening_stats() != 46615.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1650,6 +1734,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlists() != 8990.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_private_session_status() != 50611.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_providers() != 14963.toShort()) {
@@ -1680,6 +1767,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_import_theme_json() != 34458.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_import_user_data_json() != 34879.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_ingest_local_tracks() != 1210.toShort()) {
@@ -1737,6 +1827,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_record_listening_tick() != 32629.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_record_track_outcome() != 56842.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_record_track_play() != 3832.toShort()) {
@@ -1808,10 +1901,16 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_home_widget_kind_enabled() != 28331.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_local_tz_offset_ms() != 20662.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_mod_enabled() != 19700.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_pinned_items() != 27441.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_private_session() != 16543.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_recent_tracks() != 45329.toShort()) {
@@ -2234,6 +2333,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `addTracksToPlaylist`(`playlistId`: kotlin.String, `tracks`: List<FfiTrack>)
     
+    fun `buildListeningStatsCsv`(): kotlin.String
+    
     fun `buildUserDataExportJson`(`exportedAtEpochMs`: kotlin.ULong): kotlin.String
     
     fun `cancelDownload`(`id`: kotlin.Long): FfiDownloadTask
@@ -2241,6 +2342,12 @@ public interface PlasmaWaveCoreInterface {
     fun `clearAllCollectedUserData`()
     
     fun `clearDeezerUser`()
+    
+    fun `clearLast24hData`(`nowMs`: kotlin.ULong)
+    
+    fun `clearListeningHistoryOnly`()
+    
+    fun `clearListeningStatsOnly`()
     
     fun `clearResumePlaybackState`()
     
@@ -2251,6 +2358,8 @@ public interface PlasmaWaveCoreInterface {
     fun `deleteCachedPlaylistEntries`(`playlistId`: kotlin.String)
     
     fun `deletePlaylist`(`playlistId`: kotlin.String)
+    
+    fun `deleteSingleTrackStat`(`trackId`: kotlin.String)
     
     fun `deleteUserCustomTheme`(`themeId`: kotlin.String): FfiTheme
     
@@ -2304,6 +2413,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `getHomeWidgetCatalog`(): List<FfiHomeWidgetCatalogEntry>
     
+    fun `getListeningAnalytics`(`periodId`: kotlin.String, `sortBy`: kotlin.String, `nowMs`: kotlin.ULong): FfiListeningAnalytics
+    
     fun `getListeningStats`(`limit`: kotlin.UInt): List<FfiTrackListeningStat>
     
     fun `getLocalTracks`(): List<FfiTrack>
@@ -2317,6 +2428,8 @@ public interface PlasmaWaveCoreInterface {
     fun `getPlaylistTracks`(`playlistId`: kotlin.String): List<FfiTrack>
     
     fun `getPlaylists`(): List<FfiPlaylist>
+    
+    fun `getPrivateSessionStatus`(`nowMs`: kotlin.ULong): FfiPrivateSessionStatus
     
     fun `getProviders`(): List<FfiProviderInfo>
     
@@ -2337,6 +2450,8 @@ public interface PlasmaWaveCoreInterface {
     fun `getVersion`(): kotlin.String
     
     fun `importThemeJson`(`jsonStr`: kotlin.String): FfiTheme
+    
+    fun `importUserDataJson`(`rawJson`: kotlin.String, `merge`: kotlin.Boolean): FfiImportBackupReport
     
     fun `ingestLocalTracks`(`inputs`: List<FfiLocalTrackInput>): kotlin.UInt
     
@@ -2375,6 +2490,8 @@ public interface PlasmaWaveCoreInterface {
     fun `queueSetShuffle`(`enabled`: kotlin.Boolean)
     
     fun `recordListeningTick`(`track`: FfiTrack, `deltaMs`: kotlin.ULong, `collectStats`: kotlin.Boolean, `timestampMs`: kotlin.ULong): kotlin.ULong
+    
+    fun `recordTrackOutcome`(`completed`: kotlin.Boolean, `collectStats`: kotlin.Boolean, `timestampMs`: kotlin.ULong)
     
     fun `recordTrackPlay`(`track`: FfiTrack, `collectStats`: kotlin.Boolean, `collectHistory`: kotlin.Boolean, `timestampMs`: kotlin.ULong)
     
@@ -2422,9 +2539,13 @@ public interface PlasmaWaveCoreInterface {
     
     fun `setHomeWidgetKindEnabled`(`kind`: kotlin.String, `enabled`: kotlin.Boolean): List<FfiHomeWidgetItem>
     
+    fun `setLocalTzOffsetMs`(`offsetMs`: kotlin.Long)
+    
     fun `setModEnabled`(`modId`: kotlin.String, `enabled`: kotlin.Boolean)
     
     fun `setPinnedItems`(`items`: List<FfiPinnedItem>)
+    
+    fun `setPrivateSession`(`enabled`: kotlin.Boolean, `durationMs`: kotlin.ULong, `nowMs`: kotlin.ULong): FfiPrivateSessionStatus
     
     fun `setRecentTracks`(`tracks`: List<FfiTrack>)
     
@@ -2563,6 +2684,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
 
     
+    @Throws(FfiException::class)override fun `buildListeningStatsCsv`(): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_build_listening_stats_csv(
+        it, _status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(FfiException::class)override fun `buildUserDataExportJson`(`exportedAtEpochMs`: kotlin.ULong): kotlin.String {
             return FfiConverterString.lift(
     callWithPointer {
@@ -2606,6 +2740,42 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_clear_deezer_user(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `clearLast24hData`(`nowMs`: kotlin.ULong)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_clear_last_24h_data(
+        it, FfiConverterULong.lower(`nowMs`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `clearListeningHistoryOnly`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_clear_listening_history_only(
+        it, _status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `clearListeningStatsOnly`()
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_clear_listening_stats_only(
         it, _status)
 }
     }
@@ -2669,6 +2839,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_delete_playlist(
         it, FfiConverterString.lower(`playlistId`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `deleteSingleTrackStat`(`trackId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_delete_single_track_stat(
+        it, FfiConverterString.lower(`trackId`),_status)
 }
     }
     
@@ -3007,6 +3189,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
 
     
+    @Throws(FfiException::class)override fun `getListeningAnalytics`(`periodId`: kotlin.String, `sortBy`: kotlin.String, `nowMs`: kotlin.ULong): FfiListeningAnalytics {
+            return FfiConverterTypeFfiListeningAnalytics.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_listening_analytics(
+        it, FfiConverterString.lower(`periodId`),FfiConverterString.lower(`sortBy`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(FfiException::class)override fun `getListeningStats`(`limit`: kotlin.UInt): List<FfiTrackListeningStat> {
             return FfiConverterSequenceTypeFfiTrackListeningStat.lift(
     callWithPointer {
@@ -3090,6 +3285,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_playlists(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    override fun `getPrivateSessionStatus`(`nowMs`: kotlin.ULong): FfiPrivateSessionStatus {
+            return FfiConverterTypeFfiPrivateSessionStatus.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_private_session_status(
+        it, FfiConverterULong.lower(`nowMs`),_status)
 }
     }
     )
@@ -3216,6 +3423,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_import_theme_json(
         it, FfiConverterString.lower(`jsonStr`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `importUserDataJson`(`rawJson`: kotlin.String, `merge`: kotlin.Boolean): FfiImportBackupReport {
+            return FfiConverterTypeFfiImportBackupReport.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_import_user_data_json(
+        it, FfiConverterString.lower(`rawJson`),FfiConverterBoolean.lower(`merge`),_status)
 }
     }
     )
@@ -3456,6 +3676,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     }
     )
     }
+    
+
+    
+    @Throws(FfiException::class)override fun `recordTrackOutcome`(`completed`: kotlin.Boolean, `collectStats`: kotlin.Boolean, `timestampMs`: kotlin.ULong)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_record_track_outcome(
+        it, FfiConverterBoolean.lower(`completed`),FfiConverterBoolean.lower(`collectStats`),FfiConverterULong.lower(`timestampMs`),_status)
+}
+    }
+    
     
 
     
@@ -3751,6 +3983,17 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     }
     
 
+    override fun `setLocalTzOffsetMs`(`offsetMs`: kotlin.Long)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_set_local_tz_offset_ms(
+        it, FfiConverterLong.lower(`offsetMs`),_status)
+}
+    }
+    
+    
+
     
     @Throws(FfiException::class)override fun `setModEnabled`(`modId`: kotlin.String, `enabled`: kotlin.Boolean)
         = 
@@ -3773,6 +4016,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
 }
     }
     
+    
+
+    override fun `setPrivateSession`(`enabled`: kotlin.Boolean, `durationMs`: kotlin.ULong, `nowMs`: kotlin.ULong): FfiPrivateSessionStatus {
+            return FfiConverterTypeFfiPrivateSessionStatus.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_set_private_session(
+        it, FfiConverterBoolean.lower(`enabled`),FfiConverterULong.lower(`durationMs`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -3986,6 +4241,54 @@ public object FfiConverterTypeFfiAlbum: FfiConverterRustBuffer<FfiAlbum> {
 
 
 
+data class FfiAlbumStatSummary (
+    var `album`: kotlin.String, 
+    var `artist`: kotlin.String, 
+    var `playCount`: kotlin.UInt, 
+    var `totalListenedMs`: kotlin.ULong, 
+    var `uniqueTracks`: kotlin.UInt, 
+    var `artworkUrl`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAlbumStatSummary: FfiConverterRustBuffer<FfiAlbumStatSummary> {
+    override fun read(buf: ByteBuffer): FfiAlbumStatSummary {
+        return FfiAlbumStatSummary(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAlbumStatSummary) = (
+            FfiConverterString.allocationSize(value.`album`) +
+            FfiConverterString.allocationSize(value.`artist`) +
+            FfiConverterUInt.allocationSize(value.`playCount`) +
+            FfiConverterULong.allocationSize(value.`totalListenedMs`) +
+            FfiConverterUInt.allocationSize(value.`uniqueTracks`) +
+            FfiConverterOptionalString.allocationSize(value.`artworkUrl`)
+    )
+
+    override fun write(value: FfiAlbumStatSummary, buf: ByteBuffer) {
+            FfiConverterString.write(value.`album`, buf)
+            FfiConverterString.write(value.`artist`, buf)
+            FfiConverterUInt.write(value.`playCount`, buf)
+            FfiConverterULong.write(value.`totalListenedMs`, buf)
+            FfiConverterUInt.write(value.`uniqueTracks`, buf)
+            FfiConverterOptionalString.write(value.`artworkUrl`, buf)
+    }
+}
+
+
+
 data class FfiArtist (
     var `id`: kotlin.String, 
     var `name`: kotlin.String, 
@@ -4025,6 +4328,50 @@ public object FfiConverterTypeFfiArtist: FfiConverterRustBuffer<FfiArtist> {
             FfiConverterOptionalString.write(value.`pictureUrl`, buf)
             FfiConverterUInt.write(value.`nbAlbums`, buf)
             FfiConverterUInt.write(value.`nbFans`, buf)
+    }
+}
+
+
+
+data class FfiArtistStatSummary (
+    var `artist`: kotlin.String, 
+    var `playCount`: kotlin.UInt, 
+    var `totalListenedMs`: kotlin.ULong, 
+    var `uniqueTracks`: kotlin.UInt, 
+    var `artworkUrl`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiArtistStatSummary: FfiConverterRustBuffer<FfiArtistStatSummary> {
+    override fun read(buf: ByteBuffer): FfiArtistStatSummary {
+        return FfiArtistStatSummary(
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiArtistStatSummary) = (
+            FfiConverterString.allocationSize(value.`artist`) +
+            FfiConverterUInt.allocationSize(value.`playCount`) +
+            FfiConverterULong.allocationSize(value.`totalListenedMs`) +
+            FfiConverterUInt.allocationSize(value.`uniqueTracks`) +
+            FfiConverterOptionalString.allocationSize(value.`artworkUrl`)
+    )
+
+    override fun write(value: FfiArtistStatSummary, buf: ByteBuffer) {
+            FfiConverterString.write(value.`artist`, buf)
+            FfiConverterUInt.write(value.`playCount`, buf)
+            FfiConverterULong.write(value.`totalListenedMs`, buf)
+            FfiConverterUInt.write(value.`uniqueTracks`, buf)
+            FfiConverterOptionalString.write(value.`artworkUrl`, buf)
     }
 }
 
@@ -4109,6 +4456,54 @@ public object FfiConverterTypeFfiCustomThemeSpec: FfiConverterRustBuffer<FfiCust
             FfiConverterString.write(value.`cardHex`, buf)
             FfiConverterString.write(value.`accentHex`, buf)
             FfiConverterString.write(value.`textHex`, buf)
+    }
+}
+
+
+
+data class FfiDailyListeningPoint (
+    var `dayKey`: kotlin.String, 
+    var `dayEpoch`: kotlin.Long, 
+    var `playCount`: kotlin.UInt, 
+    var `completedCount`: kotlin.UInt, 
+    var `skipCount`: kotlin.UInt, 
+    var `listenedMs`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiDailyListeningPoint: FfiConverterRustBuffer<FfiDailyListeningPoint> {
+    override fun read(buf: ByteBuffer): FfiDailyListeningPoint {
+        return FfiDailyListeningPoint(
+            FfiConverterString.read(buf),
+            FfiConverterLong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiDailyListeningPoint) = (
+            FfiConverterString.allocationSize(value.`dayKey`) +
+            FfiConverterLong.allocationSize(value.`dayEpoch`) +
+            FfiConverterUInt.allocationSize(value.`playCount`) +
+            FfiConverterUInt.allocationSize(value.`completedCount`) +
+            FfiConverterUInt.allocationSize(value.`skipCount`) +
+            FfiConverterULong.allocationSize(value.`listenedMs`)
+    )
+
+    override fun write(value: FfiDailyListeningPoint, buf: ByteBuffer) {
+            FfiConverterString.write(value.`dayKey`, buf)
+            FfiConverterLong.write(value.`dayEpoch`, buf)
+            FfiConverterUInt.write(value.`playCount`, buf)
+            FfiConverterUInt.write(value.`completedCount`, buf)
+            FfiConverterUInt.write(value.`skipCount`, buf)
+            FfiConverterULong.write(value.`listenedMs`, buf)
     }
 }
 
@@ -4430,6 +4825,82 @@ public object FfiConverterTypeFfiHomeWidgetPatch: FfiConverterRustBuffer<FfiHome
 
 
 
+data class FfiHourlyListeningBucket (
+    var `hour`: kotlin.UInt, 
+    var `playCount`: kotlin.UInt, 
+    var `listenedMs`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiHourlyListeningBucket: FfiConverterRustBuffer<FfiHourlyListeningBucket> {
+    override fun read(buf: ByteBuffer): FfiHourlyListeningBucket {
+        return FfiHourlyListeningBucket(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiHourlyListeningBucket) = (
+            FfiConverterUInt.allocationSize(value.`hour`) +
+            FfiConverterUInt.allocationSize(value.`playCount`) +
+            FfiConverterULong.allocationSize(value.`listenedMs`)
+    )
+
+    override fun write(value: FfiHourlyListeningBucket, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`hour`, buf)
+            FfiConverterUInt.write(value.`playCount`, buf)
+            FfiConverterULong.write(value.`listenedMs`, buf)
+    }
+}
+
+
+
+data class FfiImportBackupReport (
+    var `importedTracks`: kotlin.UInt, 
+    var `importedHistory`: kotlin.UInt, 
+    var `importedDays`: kotlin.UInt, 
+    var `importedThemes`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiImportBackupReport: FfiConverterRustBuffer<FfiImportBackupReport> {
+    override fun read(buf: ByteBuffer): FfiImportBackupReport {
+        return FfiImportBackupReport(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiImportBackupReport) = (
+            FfiConverterUInt.allocationSize(value.`importedTracks`) +
+            FfiConverterUInt.allocationSize(value.`importedHistory`) +
+            FfiConverterUInt.allocationSize(value.`importedDays`) +
+            FfiConverterUInt.allocationSize(value.`importedThemes`)
+    )
+
+    override fun write(value: FfiImportBackupReport, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`importedTracks`, buf)
+            FfiConverterUInt.write(value.`importedHistory`, buf)
+            FfiConverterUInt.write(value.`importedDays`, buf)
+            FfiConverterUInt.write(value.`importedThemes`, buf)
+    }
+}
+
+
+
 data class FfiLibraryPlaylistEntry (
     var `playlist`: FfiPlaylist, 
     var `isPinned`: kotlin.Boolean
@@ -4457,6 +4928,146 @@ public object FfiConverterTypeFfiLibraryPlaylistEntry: FfiConverterRustBuffer<Ff
     override fun write(value: FfiLibraryPlaylistEntry, buf: ByteBuffer) {
             FfiConverterTypeFfiPlaylist.write(value.`playlist`, buf)
             FfiConverterBoolean.write(value.`isPinned`, buf)
+    }
+}
+
+
+
+data class FfiListeningAnalytics (
+    var `periodId`: kotlin.String, 
+    var `totalListenedMs`: kotlin.ULong, 
+    var `totalPlays`: kotlin.UInt, 
+    var `uniqueTracks`: kotlin.UInt, 
+    var `uniqueArtists`: kotlin.UInt, 
+    var `uniqueAlbums`: kotlin.UInt, 
+    var `currentStreakDays`: kotlin.UInt, 
+    var `longestStreakDays`: kotlin.UInt, 
+    var `dailyAverageMs`: kotlin.ULong, 
+    var `peakDayKey`: kotlin.String?, 
+    var `peakDayMs`: kotlin.ULong, 
+    var `completedPlays`: kotlin.UInt, 
+    var `skippedPlays`: kotlin.UInt, 
+    var `completionRatePct`: kotlin.UInt, 
+    var `listeningPersona`: kotlin.String, 
+    var `peakHour`: kotlin.UInt, 
+    var `topTrackTitle`: kotlin.String?, 
+    var `topTrackArtist`: kotlin.String?, 
+    var `topTrackPlays`: kotlin.UInt, 
+    var `topArtistName`: kotlin.String?, 
+    var `topArtistPlays`: kotlin.UInt, 
+    var `topAlbumName`: kotlin.String?, 
+    var `topAlbumPlays`: kotlin.UInt, 
+    var `dailyPoints`: List<FfiDailyListeningPoint>, 
+    var `hourlyBuckets`: List<FfiHourlyListeningBucket>, 
+    var `topTracks`: List<FfiTrackListeningStat>, 
+    var `topArtists`: List<FfiArtistStatSummary>, 
+    var `topAlbums`: List<FfiAlbumStatSummary>, 
+    var `forgottenFavorites`: List<FfiTrackListeningStat>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiListeningAnalytics: FfiConverterRustBuffer<FfiListeningAnalytics> {
+    override fun read(buf: ByteBuffer): FfiListeningAnalytics {
+        return FfiListeningAnalytics(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterSequenceTypeFfiDailyListeningPoint.read(buf),
+            FfiConverterSequenceTypeFfiHourlyListeningBucket.read(buf),
+            FfiConverterSequenceTypeFfiTrackListeningStat.read(buf),
+            FfiConverterSequenceTypeFfiArtistStatSummary.read(buf),
+            FfiConverterSequenceTypeFfiAlbumStatSummary.read(buf),
+            FfiConverterSequenceTypeFfiTrackListeningStat.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiListeningAnalytics) = (
+            FfiConverterString.allocationSize(value.`periodId`) +
+            FfiConverterULong.allocationSize(value.`totalListenedMs`) +
+            FfiConverterUInt.allocationSize(value.`totalPlays`) +
+            FfiConverterUInt.allocationSize(value.`uniqueTracks`) +
+            FfiConverterUInt.allocationSize(value.`uniqueArtists`) +
+            FfiConverterUInt.allocationSize(value.`uniqueAlbums`) +
+            FfiConverterUInt.allocationSize(value.`currentStreakDays`) +
+            FfiConverterUInt.allocationSize(value.`longestStreakDays`) +
+            FfiConverterULong.allocationSize(value.`dailyAverageMs`) +
+            FfiConverterOptionalString.allocationSize(value.`peakDayKey`) +
+            FfiConverterULong.allocationSize(value.`peakDayMs`) +
+            FfiConverterUInt.allocationSize(value.`completedPlays`) +
+            FfiConverterUInt.allocationSize(value.`skippedPlays`) +
+            FfiConverterUInt.allocationSize(value.`completionRatePct`) +
+            FfiConverterString.allocationSize(value.`listeningPersona`) +
+            FfiConverterUInt.allocationSize(value.`peakHour`) +
+            FfiConverterOptionalString.allocationSize(value.`topTrackTitle`) +
+            FfiConverterOptionalString.allocationSize(value.`topTrackArtist`) +
+            FfiConverterUInt.allocationSize(value.`topTrackPlays`) +
+            FfiConverterOptionalString.allocationSize(value.`topArtistName`) +
+            FfiConverterUInt.allocationSize(value.`topArtistPlays`) +
+            FfiConverterOptionalString.allocationSize(value.`topAlbumName`) +
+            FfiConverterUInt.allocationSize(value.`topAlbumPlays`) +
+            FfiConverterSequenceTypeFfiDailyListeningPoint.allocationSize(value.`dailyPoints`) +
+            FfiConverterSequenceTypeFfiHourlyListeningBucket.allocationSize(value.`hourlyBuckets`) +
+            FfiConverterSequenceTypeFfiTrackListeningStat.allocationSize(value.`topTracks`) +
+            FfiConverterSequenceTypeFfiArtistStatSummary.allocationSize(value.`topArtists`) +
+            FfiConverterSequenceTypeFfiAlbumStatSummary.allocationSize(value.`topAlbums`) +
+            FfiConverterSequenceTypeFfiTrackListeningStat.allocationSize(value.`forgottenFavorites`)
+    )
+
+    override fun write(value: FfiListeningAnalytics, buf: ByteBuffer) {
+            FfiConverterString.write(value.`periodId`, buf)
+            FfiConverterULong.write(value.`totalListenedMs`, buf)
+            FfiConverterUInt.write(value.`totalPlays`, buf)
+            FfiConverterUInt.write(value.`uniqueTracks`, buf)
+            FfiConverterUInt.write(value.`uniqueArtists`, buf)
+            FfiConverterUInt.write(value.`uniqueAlbums`, buf)
+            FfiConverterUInt.write(value.`currentStreakDays`, buf)
+            FfiConverterUInt.write(value.`longestStreakDays`, buf)
+            FfiConverterULong.write(value.`dailyAverageMs`, buf)
+            FfiConverterOptionalString.write(value.`peakDayKey`, buf)
+            FfiConverterULong.write(value.`peakDayMs`, buf)
+            FfiConverterUInt.write(value.`completedPlays`, buf)
+            FfiConverterUInt.write(value.`skippedPlays`, buf)
+            FfiConverterUInt.write(value.`completionRatePct`, buf)
+            FfiConverterString.write(value.`listeningPersona`, buf)
+            FfiConverterUInt.write(value.`peakHour`, buf)
+            FfiConverterOptionalString.write(value.`topTrackTitle`, buf)
+            FfiConverterOptionalString.write(value.`topTrackArtist`, buf)
+            FfiConverterUInt.write(value.`topTrackPlays`, buf)
+            FfiConverterOptionalString.write(value.`topArtistName`, buf)
+            FfiConverterUInt.write(value.`topArtistPlays`, buf)
+            FfiConverterOptionalString.write(value.`topAlbumName`, buf)
+            FfiConverterUInt.write(value.`topAlbumPlays`, buf)
+            FfiConverterSequenceTypeFfiDailyListeningPoint.write(value.`dailyPoints`, buf)
+            FfiConverterSequenceTypeFfiHourlyListeningBucket.write(value.`hourlyBuckets`, buf)
+            FfiConverterSequenceTypeFfiTrackListeningStat.write(value.`topTracks`, buf)
+            FfiConverterSequenceTypeFfiArtistStatSummary.write(value.`topArtists`, buf)
+            FfiConverterSequenceTypeFfiAlbumStatSummary.write(value.`topAlbums`, buf)
+            FfiConverterSequenceTypeFfiTrackListeningStat.write(value.`forgottenFavorites`, buf)
     }
 }
 
@@ -4729,6 +5340,38 @@ public object FfiConverterTypeFfiPreviousResult: FfiConverterRustBuffer<FfiPrevi
     override fun write(value: FfiPreviousResult, buf: ByteBuffer) {
             FfiConverterBoolean.write(value.`shouldRestartCurrent`, buf)
             FfiConverterOptionalTypeFfiQueueEntry.write(value.`movedEntry`, buf)
+    }
+}
+
+
+
+data class FfiPrivateSessionStatus (
+    var `active`: kotlin.Boolean, 
+    var `untilEpochMs`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiPrivateSessionStatus: FfiConverterRustBuffer<FfiPrivateSessionStatus> {
+    override fun read(buf: ByteBuffer): FfiPrivateSessionStatus {
+        return FfiPrivateSessionStatus(
+            FfiConverterBoolean.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiPrivateSessionStatus) = (
+            FfiConverterBoolean.allocationSize(value.`active`) +
+            FfiConverterULong.allocationSize(value.`untilEpochMs`)
+    )
+
+    override fun write(value: FfiPrivateSessionStatus, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`active`, buf)
+            FfiConverterULong.write(value.`untilEpochMs`, buf)
     }
 }
 
@@ -6053,6 +6696,34 @@ public object FfiConverterSequenceTypeFfiAlbum: FfiConverterRustBuffer<List<FfiA
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiAlbumStatSummary: FfiConverterRustBuffer<List<FfiAlbumStatSummary>> {
+    override fun read(buf: ByteBuffer): List<FfiAlbumStatSummary> {
+        val len = buf.getInt()
+        return List<FfiAlbumStatSummary>(len) {
+            FfiConverterTypeFfiAlbumStatSummary.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiAlbumStatSummary>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiAlbumStatSummary.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiAlbumStatSummary>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiAlbumStatSummary.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiArtist: FfiConverterRustBuffer<List<FfiArtist>> {
     override fun read(buf: ByteBuffer): List<FfiArtist> {
         val len = buf.getInt()
@@ -6081,6 +6752,34 @@ public object FfiConverterSequenceTypeFfiArtist: FfiConverterRustBuffer<List<Ffi
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiArtistStatSummary: FfiConverterRustBuffer<List<FfiArtistStatSummary>> {
+    override fun read(buf: ByteBuffer): List<FfiArtistStatSummary> {
+        val len = buf.getInt()
+        return List<FfiArtistStatSummary>(len) {
+            FfiConverterTypeFfiArtistStatSummary.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiArtistStatSummary>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiArtistStatSummary.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiArtistStatSummary>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiArtistStatSummary.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiCustomThemeSpec: FfiConverterRustBuffer<List<FfiCustomThemeSpec>> {
     override fun read(buf: ByteBuffer): List<FfiCustomThemeSpec> {
         val len = buf.getInt()
@@ -6099,6 +6798,34 @@ public object FfiConverterSequenceTypeFfiCustomThemeSpec: FfiConverterRustBuffer
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiCustomThemeSpec.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiDailyListeningPoint: FfiConverterRustBuffer<List<FfiDailyListeningPoint>> {
+    override fun read(buf: ByteBuffer): List<FfiDailyListeningPoint> {
+        val len = buf.getInt()
+        return List<FfiDailyListeningPoint>(len) {
+            FfiConverterTypeFfiDailyListeningPoint.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiDailyListeningPoint>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiDailyListeningPoint.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiDailyListeningPoint>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiDailyListeningPoint.write(it, buf)
         }
     }
 }
@@ -6183,6 +6910,34 @@ public object FfiConverterSequenceTypeFfiHomeWidgetItem: FfiConverterRustBuffer<
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiHomeWidgetItem.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiHourlyListeningBucket: FfiConverterRustBuffer<List<FfiHourlyListeningBucket>> {
+    override fun read(buf: ByteBuffer): List<FfiHourlyListeningBucket> {
+        val len = buf.getInt()
+        return List<FfiHourlyListeningBucket>(len) {
+            FfiConverterTypeFfiHourlyListeningBucket.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiHourlyListeningBucket>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiHourlyListeningBucket.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiHourlyListeningBucket>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiHourlyListeningBucket.write(it, buf)
         }
     }
 }

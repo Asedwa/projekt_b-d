@@ -2,6 +2,8 @@ package org.kde.plasmawave.ui.screens
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +29,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.kde.plasmawave.BuildConfig
 import org.kde.plasmawave.deezer.DeezerLoginDialog
 import org.kde.plasmawave.deezer.StreamingQuality
@@ -87,6 +92,7 @@ fun SettingsScreen(
     onNavigateMods: () -> Unit,
     onNavigateDownloads: () -> Unit = {},
     onNavigateCustomization: () -> Unit = {},
+    onNavigateStats: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val user by viewModel.deezerUser.collectAsState()
@@ -108,6 +114,8 @@ fun SettingsScreen(
     val homeEditHoldSeconds by viewModel.homeEditHoldSeconds.collectAsState()
     val trackStats by viewModel.trackListeningStats.collectAsState()
     val totalListeningMs by viewModel.totalListeningTimeMs.collectAsState()
+    val privateSession by viewModel.privateSessionStatus.collectAsState()
+    val storageBreakdown by viewModel.storageBreakdown.collectAsState()
     val highRefresh by viewModel.highRefreshRate.collectAsState()
     val dynamicColor by viewModel.dynamicColorEnabled.collectAsState()
     val legacyUiMode by viewModel.legacyUiMode.collectAsState()
@@ -117,6 +125,7 @@ fun SettingsScreen(
     val settings by viewModel.settings.collectAsState()
     val colors = LocalPlasmaColors.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var activeCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
     val activeCategory = activeCategoryName?.let { name ->
@@ -126,9 +135,101 @@ fun SettingsScreen(
     var showArl by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
+    var pendingImportJson by remember { mutableStateOf<String?>(null) }
     var arl by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var searchVisible by remember { mutableStateOf(false) }
+
+    val csvExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val csv = viewModel.buildListeningStatsCsv()
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
+                        true
+                    }.getOrDefault(false)
+                }
+                Toast.makeText(
+                    context,
+                    if (ok) "CSV istatistik dosyası kaydedildi." else "CSV kaydedilemedi.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    val jsonImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val raw = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                    }.getOrNull()
+                }
+                if (raw.isNullOrBlank()) {
+                    Toast.makeText(context, "Yedek dosyası okunamadı.", Toast.LENGTH_LONG).show()
+                } else {
+                    pendingImportJson = raw
+                }
+            }
+        }
+    }
+
+    pendingImportJson?.let { rawJson ->
+        AlertDialog(
+            onDismissRequest = { pendingImportJson = null },
+            title = { Text("Yedekten Geri Yükle") },
+            text = {
+                Text("Seçtiğiniz JSON yedeği mevcut verilerle birleştirilsin mi yoksa mevcut verilerin üzerine mi yazılsın?")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingImportJson = null
+                        scope.launch {
+                            val res = viewModel.importUserDataFromJson(rawJson, merge = true)
+                            res.onSuccess { r ->
+                                Toast.makeText(
+                                    context,
+                                    "Birleştirildi: ${r.importedTracks} şarkı, ${r.importedDays} gün, ${r.importedThemes} tema",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }.onFailure { err ->
+                                Toast.makeText(context, "Geri yükleme hatası: ${err.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                ) { Text("Birleştir") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            pendingImportJson = null
+                            scope.launch {
+                                val res = viewModel.importUserDataFromJson(rawJson, merge = false)
+                                res.onSuccess { r ->
+                                    Toast.makeText(
+                                        context,
+                                        "Geri yüklendi: ${r.importedTracks} şarkı, ${r.importedDays} gün",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }.onFailure { err ->
+                                    Toast.makeText(context, "Geri yükleme hatası: ${err.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    ) { Text("Üzerine Yaz", color = Color(0xFFEF4444)) }
+                    TextButton(onClick = { pendingImportJson = null }) { Text("İptal") }
+                }
+            }
+        )
+    }
 
     BackHandler(enabled = activeCategory != null) {
         activeCategoryName = null
@@ -786,6 +887,10 @@ fun SettingsScreen(
                     }
 
                     SettingsCategory.DATA_AND_PRIVACY -> {
+                        LaunchedEffect(Unit) {
+                            viewModel.refreshStorageBreakdown()
+                            viewModel.refreshPrivateSessionStatus()
+                        }
                         val topSong = remember(trackStats) { trackStats.firstOrNull() }
                         PhoneSettingsGroupLabel("DİNLEME İSTATİSTİKLERİ VE SAYAÇLAR")
                         Card(
@@ -793,7 +898,7 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { showStatsDialog = true }
+                                .clickable { onNavigateStats() }
                         ) {
                             Column(Modifier.padding(16.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -845,13 +950,13 @@ fun SettingsScreen(
                                 Spacer(Modifier.height(12.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(
-                                        onClick = { showStatsDialog = true },
+                                        onClick = onNavigateStats,
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(10.dp)
                                     ) {
                                         Icon(Icons.Default.QueryStats, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(6.dp))
-                                        Text("Şarkı Sayaçlarını Gör")
+                                        Text("Detaylı İstatistikler")
                                     }
                                     OutlinedButton(
                                         onClick = {
@@ -868,9 +973,47 @@ fun SettingsScreen(
                                     ) {
                                         Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text("Verileri İndir")
+                                        Text("JSON İndir")
                                     }
                                 }
+                            }
+                        }
+
+                        PhoneSettingsGroupLabel("GİZLİ DİNLEME OTURUMU")
+                        PhoneSettingsCard {
+                            SettingsToggle(
+                                icon = Icons.Default.VisibilityOff,
+                                title = "Gizli dinleme oturumu",
+                                subtitle = if (privateSession.active) {
+                                    "Aktif — dinlenen şarkılar istatistiklere ve geçmişe kaydedilmez"
+                                } else {
+                                    "Açıkken dinlediğiniz şarkılar sayaçlara ve geçmişe işlenmez"
+                                },
+                                checked = privateSession.active,
+                                onChange = { enabled -> viewModel.setPrivateSession(enabled, 0L) }
+                            )
+                            PhoneSettingsDivider()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = privateSession.active && privateSession.untilEpochMs == 0uL,
+                                    onClick = { viewModel.setPrivateSession(true, 0L) },
+                                    label = { Text("Kapatana kadar") }
+                                )
+                                FilterChip(
+                                    selected = privateSession.active && privateSession.untilEpochMs > 0uL,
+                                    onClick = { viewModel.setPrivateSession(true, 3_600_000L) },
+                                    label = { Text("1 Saat") }
+                                )
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { viewModel.setPrivateSession(true, 3 * 3_600_000L) },
+                                    label = { Text("3 Saat") }
+                                )
                             }
                         }
 
@@ -901,12 +1044,12 @@ fun SettingsScreen(
                             )
                         }
 
-                        PhoneSettingsGroupLabel("VERİ DIŞA AKTARMA VE SIFIRLAMA")
+                        PhoneSettingsGroupLabel("YEDEKLEME, DIŞA VE İÇE AKTARMA")
                         PhoneSettingsCard {
                             SettingsLink(
                                 icon = Icons.Default.FileDownload,
-                                title = "Verilerimi indir (JSON dışa aktar)",
-                                subtitle = "Tüm dinleme sürelerinizi, şarkı sayaçlarınızı ve ayarlarınızı dosya olarak indirin",
+                                title = "Verilerimi indir (JSON yedek)",
+                                subtitle = "İstatistikler, günlük/saatlik grafikler, geçmiş ve özel temalar",
                                 onClick = {
                                     val path = viewModel.exportUserDataToDownloads()
                                     if (path != null) {
@@ -920,9 +1063,76 @@ fun SettingsScreen(
                             )
                             PhoneSettingsDivider()
                             SettingsLink(
+                                icon = Icons.Default.TableChart,
+                                title = "İstatistikleri CSV olarak dışa aktar",
+                                subtitle = "Excel veya Google E-Tablolar ile açılabilir tablo dosyası",
+                                onClick = { csvExportLauncher.launch("plasmawave_istatistikler.csv") }
+                            )
+                            PhoneSettingsDivider()
+                            SettingsLink(
+                                icon = Icons.Default.UploadFile,
+                                title = "Yedekten geri yükle (JSON içe aktar)",
+                                subtitle = "Önceki JSON yedeğinizi mevcut verilerle birleştirin veya geri yükleyin",
+                                onClick = { jsonImportLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+                            )
+                        }
+
+                        PhoneSettingsGroupLabel("DEPOLAMA VE VERİTABANI DÖKÜMÜ")
+                        PhoneSettingsCard {
+                            val fmtMb: (Long) -> String = { b -> "%.1f MB".format(b / (1024f * 1024f)) }
+                            SettingsInfo(
+                                icon = Icons.Default.Storage,
+                                title = "Rust Veritabanı (plasmawave.db)",
+                                subtitle = fmtMb(storageBreakdown.dbBytes)
+                            )
+                            PhoneSettingsDivider()
+                            SettingsInfo(
+                                icon = Icons.Default.Cached,
+                                title = "Medya ve Kapak Önbelleği",
+                                subtitle = "Medya: ${fmtMb(storageBreakdown.mediaCacheBytes)} • Kapak: ${fmtMb(storageBreakdown.imageCacheBytes)}"
+                            )
+                            PhoneSettingsDivider()
+                            SettingsInfo(
+                                icon = Icons.Default.Folder,
+                                title = "İndirilen Müzikler (Müzik/PlasmaWave)",
+                                subtitle = fmtMb(storageBreakdown.downloadsBytes)
+                            )
+                            PhoneSettingsDivider()
+                            SettingsLink(
+                                icon = Icons.Default.CleaningServices,
+                                title = "Medya ve kapak önbelleğini temizle",
+                                subtitle = "İndirilen şarkılarınız ve istatistikleriniz etkilenmez",
+                                onClick = { viewModel.clearAppCaches() }
+                            )
+                        }
+
+                        PhoneSettingsGroupLabel("SEÇİCİ VERİ TEMİZLEME VE SIFIRLAMA")
+                        PhoneSettingsCard {
+                            SettingsLink(
+                                icon = Icons.Default.Schedule,
+                                title = "Son 24 saatin verilerini temizle",
+                                subtitle = "Son bir gündeki dinleme geçmişini ve günlük kayıtları siler",
+                                onClick = { viewModel.clearLast24hData() }
+                            )
+                            PhoneSettingsDivider()
+                            SettingsLink(
+                                icon = Icons.Default.HistoryToggleOff,
+                                title = "Yalnızca son çalınanlar geçmişini sil",
+                                subtitle = "Şarkı sayaçları ve toplam dinleme süreniz korunur",
+                                onClick = { viewModel.clearListeningHistoryOnly() }
+                            )
+                            PhoneSettingsDivider()
+                            SettingsLink(
+                                icon = Icons.Default.RestartAlt,
+                                title = "Yalnızca dinleme sayaçlarını sıfırla",
+                                subtitle = "Sayaçlar, grafikler ve toplam süre sıfırlanır",
+                                onClick = { viewModel.clearListeningStatsOnly() }
+                            )
+                            PhoneSettingsDivider()
+                            SettingsLink(
                                 icon = Icons.Default.DeleteSweep,
-                                title = "Toplanan verileri sıfırla ve temizle",
-                                subtitle = "Kaydedilen tüm dinleme istatistiklerini ve geçmişi sil",
+                                title = "Toplanan tüm verileri sıfırla ve temizle",
+                                subtitle = "Kaydedilen tüm dinleme istatistiklerini, grafikleri ve geçmişi sil",
                                 onClick = { showResetConfirm = true }
                             )
                         }

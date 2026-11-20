@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const _CURRENT_SCHEMA_VERSION: i32 = 2;
+pub const _CURRENT_SCHEMA_VERSION: i32 = 3;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -188,6 +188,47 @@ impl Database {
                 .map_err(|e| DomainError::Storage(format!("commit migration v2 error: {e}")))?;
         }
 
+        if version < 3 {
+            let tx = conn
+                .transaction()
+                .map_err(|e| DomainError::Storage(format!("migration v3 transaction error: {e}")))?;
+
+            tx.execute_batch(
+                "CREATE TABLE IF NOT EXISTS daily_listening_stats (
+                    day_key TEXT PRIMARY KEY,
+                    day_epoch INTEGER NOT NULL,
+                    play_count INTEGER NOT NULL DEFAULT 0,
+                    completed_count INTEGER NOT NULL DEFAULT 0,
+                    skip_count INTEGER NOT NULL DEFAULT 0,
+                    listened_ms INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_daily_listening_epoch ON daily_listening_stats(day_epoch DESC);
+
+                CREATE TABLE IF NOT EXISTS hourly_listening_stats (
+                    hour_of_day INTEGER PRIMARY KEY CHECK (hour_of_day >= 0 AND hour_of_day <= 23),
+                    play_count INTEGER NOT NULL DEFAULT 0,
+                    listened_ms INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS track_daily_plays (
+                    day_epoch INTEGER NOT NULL,
+                    track_id TEXT NOT NULL,
+                    track_json TEXT NOT NULL,
+                    play_count INTEGER NOT NULL DEFAULT 0,
+                    listened_ms INTEGER NOT NULL DEFAULT 0,
+                    last_played_at_ms INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (day_epoch, track_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_track_daily_epoch ON track_daily_plays(day_epoch DESC);
+
+                PRAGMA user_version = 3;",
+            )
+            .map_err(|e| DomainError::Storage(format!("failed to execute migration v3: {e}")))?;
+
+            tx.commit()
+                .map_err(|e| DomainError::Storage(format!("commit migration v3 error: {e}")))?;
+        }
+
         Ok(())
     }
 }
@@ -203,6 +244,6 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 }

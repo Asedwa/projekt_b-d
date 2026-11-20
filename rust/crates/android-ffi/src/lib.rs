@@ -20,9 +20,10 @@ use core_settings::{
     HomeWidgetStyle, Language, Settings, SettingsService,
 };
 use core_storage::{
-    now_epoch_ms, Database, StoredHistoryEntry, StoredPinnedItem, StoredPlaylistRecord,
-    StoredPlaylistTrackEntry, StoredResumePlaybackState, StoredTrackListeningStat,
-    StoredTrackRecord,
+    now_epoch_ms, AlbumStatSummary, ArtistStatSummary, DailyListeningPoint, Database,
+    HourlyListeningBucket, ImportBackupReport, ListeningAnalyticsSummary, StoredHistoryEntry,
+    StoredPinnedItem, StoredPlaylistRecord, StoredPlaylistTrackEntry, StoredResumePlaybackState,
+    StoredTrackListeningStat, StoredTrackRecord,
 };
 use core_themes::{CustomThemeSpec, ThemeManifest, ThemeRegistry};
 use provider_deezer::{DeezerAppConfig, DeezerProvider};
@@ -826,6 +827,184 @@ pub struct FfiCapabilityStatus {
 }
 
 // Global Core instance
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiDailyListeningPoint {
+    pub day_key: String,
+    pub day_epoch: i64,
+    pub play_count: u32,
+    pub completed_count: u32,
+    pub skip_count: u32,
+    pub listened_ms: u64,
+}
+
+impl From<DailyListeningPoint> for FfiDailyListeningPoint {
+    fn from(v: DailyListeningPoint) -> Self {
+        Self {
+            day_key: v.day_key,
+            day_epoch: v.day_epoch,
+            play_count: v.play_count,
+            completed_count: v.completed_count,
+            skip_count: v.skip_count,
+            listened_ms: v.listened_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiHourlyListeningBucket {
+    pub hour: u32,
+    pub play_count: u32,
+    pub listened_ms: u64,
+}
+
+impl From<HourlyListeningBucket> for FfiHourlyListeningBucket {
+    fn from(v: HourlyListeningBucket) -> Self {
+        Self {
+            hour: v.hour,
+            play_count: v.play_count,
+            listened_ms: v.listened_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiArtistStatSummary {
+    pub artist: String,
+    pub play_count: u32,
+    pub total_listened_ms: u64,
+    pub unique_tracks: u32,
+    pub artwork_url: Option<String>,
+}
+
+impl From<ArtistStatSummary> for FfiArtistStatSummary {
+    fn from(v: ArtistStatSummary) -> Self {
+        Self {
+            artist: v.artist,
+            play_count: v.play_count,
+            total_listened_ms: v.total_listened_ms,
+            unique_tracks: v.unique_tracks,
+            artwork_url: v.artwork_url,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAlbumStatSummary {
+    pub album: String,
+    pub artist: String,
+    pub play_count: u32,
+    pub total_listened_ms: u64,
+    pub unique_tracks: u32,
+    pub artwork_url: Option<String>,
+}
+
+impl From<AlbumStatSummary> for FfiAlbumStatSummary {
+    fn from(v: AlbumStatSummary) -> Self {
+        Self {
+            album: v.album,
+            artist: v.artist,
+            play_count: v.play_count,
+            total_listened_ms: v.total_listened_ms,
+            unique_tracks: v.unique_tracks,
+            artwork_url: v.artwork_url,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiListeningAnalytics {
+    pub period_id: String,
+    pub total_listened_ms: u64,
+    pub total_plays: u32,
+    pub unique_tracks: u32,
+    pub unique_artists: u32,
+    pub unique_albums: u32,
+    pub current_streak_days: u32,
+    pub longest_streak_days: u32,
+    pub daily_average_ms: u64,
+    pub peak_day_key: Option<String>,
+    pub peak_day_ms: u64,
+    pub completed_plays: u32,
+    pub skipped_plays: u32,
+    pub completion_rate_pct: u32,
+    pub listening_persona: String,
+    pub peak_hour: u32,
+    pub top_track_title: Option<String>,
+    pub top_track_artist: Option<String>,
+    pub top_track_plays: u32,
+    pub top_artist_name: Option<String>,
+    pub top_artist_plays: u32,
+    pub top_album_name: Option<String>,
+    pub top_album_plays: u32,
+    pub daily_points: Vec<FfiDailyListeningPoint>,
+    pub hourly_buckets: Vec<FfiHourlyListeningBucket>,
+    pub top_tracks: Vec<FfiTrackListeningStat>,
+    pub top_artists: Vec<FfiArtistStatSummary>,
+    pub top_albums: Vec<FfiAlbumStatSummary>,
+    pub forgotten_favorites: Vec<FfiTrackListeningStat>,
+}
+
+impl From<ListeningAnalyticsSummary> for FfiListeningAnalytics {
+    fn from(v: ListeningAnalyticsSummary) -> Self {
+        Self {
+            period_id: v.period_id,
+            total_listened_ms: v.total_listened_ms,
+            total_plays: v.total_plays,
+            unique_tracks: v.unique_tracks,
+            unique_artists: v.unique_artists,
+            unique_albums: v.unique_albums,
+            current_streak_days: v.current_streak_days,
+            longest_streak_days: v.longest_streak_days,
+            daily_average_ms: v.daily_average_ms,
+            peak_day_key: v.peak_day_key,
+            peak_day_ms: v.peak_day_ms,
+            completed_plays: v.completed_plays,
+            skipped_plays: v.skipped_plays,
+            completion_rate_pct: v.completion_rate_pct,
+            listening_persona: v.listening_persona,
+            peak_hour: v.peak_hour,
+            top_track_title: v.top_track_title,
+            top_track_artist: v.top_track_artist,
+            top_track_plays: v.top_track_plays,
+            top_artist_name: v.top_artist_name,
+            top_artist_plays: v.top_artist_plays,
+            top_album_name: v.top_album_name,
+            top_album_plays: v.top_album_plays,
+            daily_points: v.daily_points.into_iter().map(Into::into).collect(),
+            hourly_buckets: v.hourly_buckets.into_iter().map(Into::into).collect(),
+            top_tracks: v.top_tracks.into_iter().map(Into::into).collect(),
+            top_artists: v.top_artists.into_iter().map(Into::into).collect(),
+            top_albums: v.top_albums.into_iter().map(Into::into).collect(),
+            forgotten_favorites: v.forgotten_favorites.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiImportBackupReport {
+    pub imported_tracks: u32,
+    pub imported_history: u32,
+    pub imported_days: u32,
+    pub imported_themes: u32,
+}
+
+impl From<ImportBackupReport> for FfiImportBackupReport {
+    fn from(v: ImportBackupReport) -> Self {
+        Self {
+            imported_tracks: v.imported_tracks,
+            imported_history: v.imported_history,
+            imported_days: v.imported_days,
+            imported_themes: v.imported_themes,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiPrivateSessionStatus {
+    pub active: bool,
+    pub until_epoch_ms: u64, // 0 = indefinite while active
+}
+
 #[derive(uniffi::Object)]
 pub struct PlasmaWaveCore {
     queue: Mutex<Queue>,
@@ -840,6 +1019,8 @@ pub struct PlasmaWaveCore {
     download_manager: Arc<DownloadManager>,
     active_theme_id: RwLock<String>,
     tokio_runtime: tokio::runtime::Runtime,
+    private_session_until_ms: Mutex<Option<u64>>,
+    local_tz_offset_ms: Mutex<i64>,
 }
 
 #[uniffi::export]
@@ -899,6 +1080,8 @@ impl PlasmaWaveCore {
             download_manager,
             active_theme_id,
             tokio_runtime,
+            private_session_until_ms: Mutex::new(None),
+            local_tz_offset_ms: Mutex::new(3 * 3_600_000),
         }))
     }
 
@@ -2123,6 +2306,47 @@ impl PlasmaWaveCore {
     // ------------------------------------------------------------------------
     // Listening Statistics, History, Privacy & User Data Export
     // ------------------------------------------------------------------------
+    pub fn set_local_tz_offset_ms(&self, offset_ms: i64) {
+        if let Ok(mut guard) = self.local_tz_offset_ms.lock() {
+            *guard = offset_ms.clamp(-14 * 3_600_000, 14 * 3_600_000);
+        }
+    }
+
+    pub fn set_private_session(&self, enabled: bool, duration_ms: u64, now_ms: u64) -> FfiPrivateSessionStatus {
+        let ts = if now_ms > 0 { now_ms } else { now_epoch_ms() };
+        let next = if !enabled {
+            None
+        } else if duration_ms == 0 {
+            Some(0)
+        } else {
+            Some(ts.saturating_add(duration_ms))
+        };
+        if let Ok(mut guard) = self.private_session_until_ms.lock() {
+            *guard = next;
+        }
+        FfiPrivateSessionStatus {
+            active: next.is_some(),
+            until_epoch_ms: next.unwrap_or(0),
+        }
+    }
+
+    pub fn get_private_session_status(&self, now_ms: u64) -> FfiPrivateSessionStatus {
+        let ts = if now_ms > 0 { now_ms } else { now_epoch_ms() };
+        let mut guard = match self.private_session_until_ms.lock() {
+            Ok(g) => g,
+            Err(_) => return FfiPrivateSessionStatus { active: false, until_epoch_ms: 0 },
+        };
+        match *guard {
+            None => FfiPrivateSessionStatus { active: false, until_epoch_ms: 0 },
+            Some(0) => FfiPrivateSessionStatus { active: true, until_epoch_ms: 0 },
+            Some(until) if until > ts => FfiPrivateSessionStatus { active: true, until_epoch_ms: until },
+            Some(_) => {
+                *guard = None;
+                FfiPrivateSessionStatus { active: false, until_epoch_ms: 0 }
+            }
+        }
+    }
+
     pub fn record_track_play(
         &self,
         track: FfiTrack,
@@ -2130,14 +2354,19 @@ impl PlasmaWaveCore {
         collect_history: bool,
         timestamp_ms: u64,
     ) -> FfiResult<()> {
-        let stored = StoredTrackRecord::from(track);
         let ts = if timestamp_ms > 0 {
             timestamp_ms
         } else {
             now_epoch_ms()
         };
+        if self.get_private_session_status(ts).active {
+            return Ok(());
+        }
+        let stored = StoredTrackRecord::from(track);
+        let tz = self.local_tz_offset_ms.lock().map(|g| *g).unwrap_or(0);
         if collect_stats {
             self.database.record_track_play_stat(&stored, ts)?;
+            let _ = self.database.record_analytics_play(&stored, ts, tz);
         }
         if collect_history {
             self.database.record_history_entry(&stored, ts)?;
@@ -2152,17 +2381,95 @@ impl PlasmaWaveCore {
         collect_stats: bool,
         timestamp_ms: u64,
     ) -> FfiResult<u64> {
-        if !collect_stats {
-            return Ok(self.database.get_total_listening_time_ms()?);
-        }
-        let stored = StoredTrackRecord::from(track);
         let ts = if timestamp_ms > 0 {
             timestamp_ms
         } else {
             now_epoch_ms()
         };
+        if !collect_stats || self.get_private_session_status(ts).active {
+            return Ok(self.database.get_total_listening_time_ms()?);
+        }
+        let stored = StoredTrackRecord::from(track);
+        let tz = self.local_tz_offset_ms.lock().map(|g| *g).unwrap_or(0);
         let total = self.database.record_listening_tick(&stored, delta_ms, ts)?;
+        let _ = self.database.record_analytics_tick(&stored, delta_ms, ts, tz);
         Ok(total)
+    }
+
+    pub fn record_track_outcome(
+        &self,
+        completed: bool,
+        collect_stats: bool,
+        timestamp_ms: u64,
+    ) -> FfiResult<()> {
+        let ts = if timestamp_ms > 0 {
+            timestamp_ms
+        } else {
+            now_epoch_ms()
+        };
+        if !collect_stats || self.get_private_session_status(ts).active {
+            return Ok(());
+        }
+        let tz = self.local_tz_offset_ms.lock().map(|g| *g).unwrap_or(0);
+        self.database.record_track_outcome(completed, ts, tz)?;
+        Ok(())
+    }
+
+    pub fn get_listening_analytics(
+        &self,
+        period_id: String,
+        sort_by: String,
+        now_ms: u64,
+    ) -> FfiResult<FfiListeningAnalytics> {
+        let ts = if now_ms > 0 { now_ms } else { now_epoch_ms() };
+        let tz = self.local_tz_offset_ms.lock().map(|g| *g).unwrap_or(0);
+        let summary = self
+            .database
+            .get_listening_analytics(&period_id, &sort_by, ts, tz)?;
+        Ok(summary.into())
+    }
+
+    pub fn build_listening_stats_csv(&self) -> FfiResult<String> {
+        Ok(self.database.build_listening_stats_csv()?)
+    }
+
+    pub fn import_user_data_json(
+        &self,
+        raw_json: String,
+        merge: bool,
+    ) -> FfiResult<FfiImportBackupReport> {
+        let report = self.database.import_user_data_json(&raw_json, merge)?;
+        // Refresh custom themes in ThemeRegistry if any were imported
+        if let Ok(custom_themes) = self.database.list_user_custom_themes() {
+            for spec in custom_themes {
+                if let Ok(manifest) = spec.to_manifest() {
+                    let _ = self.theme_registry.register(manifest);
+                }
+            }
+        }
+        Ok(report.into())
+    }
+
+    pub fn clear_listening_history_only(&self) -> FfiResult<()> {
+        self.database.clear_listening_history_only()?;
+        Ok(())
+    }
+
+    pub fn clear_listening_stats_only(&self) -> FfiResult<()> {
+        self.database.clear_listening_stats_only()?;
+        Ok(())
+    }
+
+    pub fn clear_last_24h_data(&self, now_ms: u64) -> FfiResult<()> {
+        let ts = if now_ms > 0 { now_ms } else { now_epoch_ms() };
+        let tz = self.local_tz_offset_ms.lock().map(|g| *g).unwrap_or(0);
+        self.database.clear_last_24h_data(ts, tz)?;
+        Ok(())
+    }
+
+    pub fn delete_single_track_stat(&self, track_id: String) -> FfiResult<()> {
+        self.database.delete_single_track_stat(&track_id)?;
+        Ok(())
     }
 
     pub fn get_listening_stats(&self, limit: u32) -> FfiResult<Vec<FfiTrackListeningStat>> {
@@ -2238,15 +2545,20 @@ impl PlasmaWaveCore {
         let recent = self.database.get_recent_tracks(200)?;
         let resume = self.database.get_resume_state()?;
         let custom_themes = self.database.list_user_custom_themes()?;
+        let daily_stats = self.database.load_daily_points(None).unwrap_or_default();
+        let hourly_stats = self.database.load_hourly_buckets().unwrap_or_default();
 
         let stats_json: Vec<serde_json::Value> = stats
             .iter()
             .map(|s| {
                 serde_json::json!({
                     "trackId": s.track.id,
+                    "provider": s.track.provider,
                     "title": s.track.title,
                     "artist": s.track.artist,
                     "album": s.track.album,
+                    "durationMs": s.track.duration_ms,
+                    "artworkUrl": s.track.artwork_url,
                     "playCount": s.play_count,
                     "totalListenedMs": s.total_listened_ms,
                     "totalListenedFormatted": self.format_duration_tr(s.total_listened_ms),
@@ -2260,9 +2572,12 @@ impl PlasmaWaveCore {
             .map(|t| {
                 serde_json::json!({
                     "id": t.id,
+                    "provider": t.provider,
                     "title": t.title,
                     "artist": t.artist,
                     "album": t.album,
+                    "durationMs": t.duration_ms,
+                    "artworkUrl": t.artwork_url,
                 })
             })
             .collect();
@@ -2280,7 +2595,7 @@ impl PlasmaWaveCore {
 
         let root = serde_json::json!({
             "app": "projekt_b-d",
-            "engine": "PlasmaWave Rust Core (SQLite v2)",
+            "engine": "PlasmaWave Rust Core (SQLite v3)",
             "exportedAtEpochMs": exported_at_epoch_ms,
             "totalListeningTimeMs": total_ms,
             "totalListeningTimeFormatted": self.format_duration_tr(total_ms),
@@ -2291,8 +2606,11 @@ impl PlasmaWaveCore {
                 "resumePlaybackEnabled": settings.resume_playback_enabled,
             },
             "listeningStats": stats_json,
+            "dailyStats": daily_stats,
+            "hourlyStats": hourly_stats,
             "recentHistory": recent_json,
             "resumeState": resume_json,
+            "customThemes": custom_themes,
             "customThemesCount": custom_themes.len(),
         });
 

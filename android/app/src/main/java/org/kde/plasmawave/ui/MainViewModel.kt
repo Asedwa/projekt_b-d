@@ -70,9 +70,12 @@ import uniffi.plasmawave_core.FfiHomeWidgetItem
 import uniffi.plasmawave_core.FfiHomeWidgetPatch
 import uniffi.plasmawave_core.FfiHomeWidgetSize
 import uniffi.plasmawave_core.FfiHomeWidgetStyle
+import uniffi.plasmawave_core.FfiImportBackupReport
+import uniffi.plasmawave_core.FfiListeningAnalytics
 import uniffi.plasmawave_core.FfiLocalTrackInput
 import uniffi.plasmawave_core.FfiModInfo
 import uniffi.plasmawave_core.FfiPlaylist
+import uniffi.plasmawave_core.FfiPrivateSessionStatus
 import uniffi.plasmawave_core.FfiQuickArtistItem
 import uniffi.plasmawave_core.FfiResumePlaybackState
 import uniffi.plasmawave_core.FfiSettings
@@ -177,6 +180,15 @@ internal fun FfiResumePlaybackState.toUi(): ResumePlaybackState = ResumePlayback
     queueTracks = queueTracks,
     queueIndex = queueIndex.toInt()
 )
+
+data class StorageBreakdown(
+    val dbBytes: Long = 0L,
+    val mediaCacheBytes: Long = 0L,
+    val imageCacheBytes: Long = 0L,
+    val downloadsBytes: Long = 0L
+) {
+    val totalBytes: Long get() = dbBytes + mediaCacheBytes + imageCacheBytes + downloadsBytes
+}
 
 data class TrackListeningStat(
     val track: FfiTrack,
@@ -983,6 +995,154 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val _privateSessionStatus = MutableStateFlow(
+        FfiPrivateSessionStatus(active = false, untilEpochMs = 0uL)
+    )
+    val privateSessionStatus: StateFlow<FfiPrivateSessionStatus> = _privateSessionStatus.asStateFlow()
+
+    private val _storageBreakdown = MutableStateFlow(StorageBreakdown())
+    val storageBreakdown: StateFlow<StorageBreakdown> = _storageBreakdown.asStateFlow()
+
+    fun setPrivateSession(enabled: Boolean, durationMs: Long = 0L) {
+        val status = core.setPrivateSession(
+            enabled = enabled,
+            durationMs = durationMs.coerceAtLeast(0L).toULong(),
+            nowMs = System.currentTimeMillis().toULong()
+        )
+        _privateSessionStatus.value = status
+        _statusMessage.value = if (status.active) {
+            if (durationMs > 0L) "Gizli dinleme oturumu açıldı (${durationMs / 3_600_000L} saat)"
+            else "Gizli dinleme oturumu açıldı"
+        } else {
+            "Gizli dinleme oturumu kapatıldı"
+        }
+    }
+
+    fun refreshPrivateSessionStatus() {
+        _privateSessionStatus.value = core.getPrivateSessionStatus(System.currentTimeMillis().toULong())
+    }
+
+    suspend fun loadListeningAnalytics(periodId: String, sortBy: String): FfiListeningAnalytics? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                core.getListeningAnalytics(
+                    periodId = periodId,
+                    sortBy = sortBy,
+                    nowMs = System.currentTimeMillis().toULong()
+                )
+            }.getOrNull()
+        }
+
+    suspend fun buildListeningStatsCsv(): String = withContext(Dispatchers.IO) {
+        runCatching { core.buildListeningStatsCsv() }.getOrDefault("")
+    }
+
+    suspend fun importUserDataFromJson(rawJson: String, merge: Boolean): Result<FfiImportBackupReport> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val report = core.importUserDataJson(rawJson, merge)
+                _trackListeningStats.value = core.getListeningStats(300u).map { it.toUi() }
+                _totalListeningTimeMs.value = core.getTotalListeningTimeMs().toLong()
+                _recentTracks.value = core.getRecentTracks(100u)
+                _mostPlayedTracks.value = core.getMostPlayedTracks(100u)
+                _availableThemes.value = core.listThemes()
+                report
+            }
+        }
+
+    fun clearListeningHistoryOnly() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { core.clearListeningHistoryOnly() }
+            _recentTracks.value = emptyList()
+            _statusMessage.value = "Son çalınanlar geçmişi temizlendi"
+        }
+    }
+
+    fun clearListeningStatsOnly() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { core.clearListeningStatsOnly() }
+            _trackListeningStats.value = emptyList()
+            _mostPlayedTracks.value = emptyList()
+            _totalListeningTimeMs.value = 0L
+            _statusMessage.value = "Dinleme sayaçları ve süreler sıfırlandı"
+        }
+    }
+
+    fun clearLast24hData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { core.clearLast24hData(System.currentTimeMillis().toULong()) }
+            _recentTracks.value = runCatching { core.getRecentTracks(100u) }.getOrDefault(emptyList())
+            _trackListeningStats.value = runCatching { core.getListeningStats(300u).map { it.toUi() } }.getOrDefault(emptyList())
+            _statusMessage.value = "Son 24 saatin verileri temizlendi"
+        }
+    }
+
+    fun deleteSingleTrackStat(trackId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { core.deleteSingleTrackStat(trackId) }
+            _trackListeningStats.value = runCatching { core.getListeningStats(300u).map { it.toUi() } }.getOrDefault(emptyList())
+            _recentTracks.value = runCatching { core.getRecentTracks(100u) }.getOrDefault(emptyList())
+            _mostPlayedTracks.value = runCatching { core.getMostPlayedTracks(100u) }.getOrDefault(emptyList())
+            _statusMessage.value = "Şarkı istatistiği silindi"
+        }
+    }
+
+    fun createPlaylistFromStats(name: String, tracks: List<FfiTrack>) {
+        if (tracks.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val created = core.createPlaylist(name)
+                core.addTracksToPlaylist(created.id, tracks)
+                _playlists.value = core.getPlaylists()
+                _statusMessage.value = "\"$name\" çalma listesi (${tracks.size} şarkı) oluşturuldu"
+            }.onFailure { err ->
+                _statusMessage.value = "Liste oluşturulamadı: ${err.message}"
+            }
+        }
+    }
+
+    fun refreshStorageBreakdown() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val dbFile = File(app.filesDir, "plasmawave_data/plasmawave.db")
+            val dbWal = File(app.filesDir, "plasmawave_data/plasmawave.db-wal")
+            val dbBytes = (if (dbFile.exists()) dbFile.length() else 0L) +
+                (if (dbWal.exists()) dbWal.length() else 0L)
+            val mediaCacheBytes = dirSizeBytes(File(app.cacheDir, "media_cache"))
+            val imageCacheBytes = dirSizeBytes(File(app.cacheDir, "image_cache"))
+            val downloadsDir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
+                "PlasmaWave"
+            )
+            val downloadsBytes = dirSizeBytes(downloadsDir)
+            _storageBreakdown.value = StorageBreakdown(
+                dbBytes = dbBytes,
+                mediaCacheBytes = mediaCacheBytes,
+                imageCacheBytes = imageCacheBytes,
+                downloadsBytes = downloadsBytes
+            )
+        }
+    }
+
+    fun clearAppCaches() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            runCatching { File(app.cacheDir, "image_cache").deleteRecursively() }
+            runCatching { File(app.cacheDir, "media_cache").deleteRecursively() }
+            refreshStorageBreakdown()
+            _statusMessage.value = "Medya ve kapak önbellekleri temizlendi"
+        }
+    }
+
+    private fun dirSizeBytes(dir: File): Long {
+        if (!dir.exists()) return 0L
+        var sum = 0L
+        runCatching {
+            dir.walkTopDown().forEach { f -> if (f.isFile) sum += f.length() }
+        }
+        return sum
+    }
+
     fun formatDurationTr(ms: Long): String =
         core.formatDurationTr(ms.coerceAtLeast(0L).toULong())
 
@@ -1223,6 +1383,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            val tzOffset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()).toLong()
+            runCatching { core.setLocalTzOffsetMs(tzOffset) }
+            refreshPrivateSessionStatus()
+        }
         registerNetworkRecoveryCallback()
         var trackRecordJob: Job? = null
         viewModelScope.launch {
@@ -1253,16 +1418,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var tickCounter = 0
             var pendingTrack: FfiTrack? = null
             var pendingMs = 0L
+            var lastTrackPosMs = 0L
+            var lastTrackDurMs = 0L
             while (isActive) {
                 delay(1000L)
                 val ui = playbackManager.uiState.value
+                val prog = playbackManager.progress.value
                 val curTrack = ui.currentEntry?.track
                 if (ui.isPlaying && curTrack != null) {
-                    if (pendingTrack != null && pendingTrack.id != curTrack.id && pendingMs > 0L) {
-                        recordActiveListeningTick(pendingTrack, pendingMs)
-                        pendingMs = 0L
+                    if (pendingTrack != null && pendingTrack.id != curTrack.id) {
+                        if (pendingMs > 0L) {
+                            recordActiveListeningTick(pendingTrack, pendingMs)
+                            pendingMs = 0L
+                        }
+                        if (lastTrackDurMs > 0L && lastTrackPosMs >= 5_000L) {
+                            val completed = lastTrackPosMs >= (lastTrackDurMs * 3L) / 4L ||
+                                (lastTrackDurMs - lastTrackPosMs) <= 15_000L
+                            runCatching {
+                                core.recordTrackOutcome(
+                                    completed = completed,
+                                    collectStats = _collectListeningStatsEnabled.value,
+                                    timestampMs = System.currentTimeMillis().toULong()
+                                )
+                            }
+                        }
                     }
                     pendingTrack = curTrack
+                    lastTrackPosMs = prog.positionMs
+                    lastTrackDurMs = prog.durationMs.takeIf { it > 0L } ?: curTrack.durationMs.toLong()
                     pendingMs += 1000L
                     tickCounter++
                     if (pendingMs >= 10_000L) {

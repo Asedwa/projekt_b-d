@@ -488,6 +488,12 @@ impl Database {
             .map_err(|e| DomainError::Storage(format!("clear listening_history: {e}")))?;
         tx.execute("DELETE FROM resume_state;", [])
             .map_err(|e| DomainError::Storage(format!("clear resume_state: {e}")))?;
+        tx.execute("DELETE FROM daily_listening_stats;", [])
+            .map_err(|e| DomainError::Storage(format!("clear daily_listening_stats: {e}")))?;
+        tx.execute("DELETE FROM hourly_listening_stats;", [])
+            .map_err(|e| DomainError::Storage(format!("clear hourly_listening_stats: {e}")))?;
+        tx.execute("DELETE FROM track_daily_plays;", [])
+            .map_err(|e| DomainError::Storage(format!("clear track_daily_plays: {e}")))?;
         tx.execute(
             "INSERT INTO settings (key, value) VALUES (?1, '0')
              ON CONFLICT(key) DO UPDATE SET value = '0';",
