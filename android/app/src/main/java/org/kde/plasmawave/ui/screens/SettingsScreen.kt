@@ -41,6 +41,33 @@ import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.components.HomeWidgetType
 import org.kde.plasmawave.ui.components.ListeningStatsDialog
 
+private enum class DataDeleteAction(
+    val title: String,
+    val step1Message: String,
+    val doneMessage: String
+) {
+    LAST_24H(
+        title = "Son 24 Saati Temizle",
+        step1Message = "Son 24 saatteki dinleme geçmişiniz ve bugüne ait günlük kayıtlar silinecek.",
+        doneMessage = "Son 24 saatin verileri temizlendi."
+    ),
+    HISTORY_ONLY(
+        title = "Son Çalınanlar Geçmişini Sil",
+        step1Message = "Yalnızca son çalınanlar geçmişiniz silinecek; şarkı sayaçları ve toplam süreniz korunacak.",
+        doneMessage = "Son çalınanlar geçmişi silindi."
+    ),
+    STATS_ONLY(
+        title = "Dinleme Sayaçlarını Sıfırla",
+        step1Message = "Tüm şarkı sayaçları, grafikler ve toplam dinleme süreniz sıfırlanacak.",
+        doneMessage = "Dinleme sayaçları sıfırlandı."
+    ),
+    ALL_DATA(
+        title = "Toplanan Tüm Verileri Sil",
+        step1Message = "Dinleme istatistikleri, grafikler, şarkı sayaçları, toplam dinleme süresi, geçmiş ve kaldığın yerden devam et kayıtları kalıcı olarak silinecek.",
+        doneMessage = "Toplanan tüm veriler silindi."
+    )
+}
+
 private enum class SettingsCategory(
     val title: String,
     val subtitle: String,
@@ -134,7 +161,8 @@ fun SettingsScreen(
     var showLogin by remember { mutableStateOf(false) }
     var showArl by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
-    var showResetConfirm by remember { mutableStateOf(false) }
+    var pendingDeleteAction by remember { mutableStateOf<DataDeleteAction?>(null) }
+    var deleteConfirmStep by remember { mutableIntStateOf(1) }
     var pendingImportJson by remember { mutableStateOf<String?>(null) }
     var arl by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
@@ -252,26 +280,59 @@ fun SettingsScreen(
         )
     }
 
-    if (showResetConfirm) {
+    pendingDeleteAction?.let { action ->
         AlertDialog(
-            onDismissRequest = { showResetConfirm = false },
-            title = { Text("Toplanan Verileri Sil?") },
+            onDismissRequest = {
+                pendingDeleteAction = null
+                deleteConfirmStep = 1
+            },
+            title = {
+                Text(
+                    if (deleteConfirmStep == 1) "${action.title}?" else "Emin misiniz? (Son Onay)",
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
-                Text("Dinleme istatistikleri, şarkı sayaçları, toplam dinleme süresi ve kaldığın yerden devam et kayıtları kalıcı olarak silinecek.")
+                Text(
+                    if (deleteConfirmStep == 1) {
+                        action.step1Message
+                    } else {
+                        "Bu işlem geri alınamaz. \"${action.title}\" işlemini kalıcı olarak uygulamak istediğinize emin misiniz?"
+                    }
+                )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.clearAllCollectedUserData()
-                        showResetConfirm = false
-                        Toast.makeText(context, "Toplanan tüm veriler silindi.", Toast.LENGTH_SHORT).show()
+                        if (deleteConfirmStep == 1) {
+                            deleteConfirmStep = 2
+                        } else {
+                            when (action) {
+                                DataDeleteAction.LAST_24H -> viewModel.clearLast24hData()
+                                DataDeleteAction.HISTORY_ONLY -> viewModel.clearListeningHistoryOnly()
+                                DataDeleteAction.STATS_ONLY -> viewModel.clearListeningStatsOnly()
+                                DataDeleteAction.ALL_DATA -> viewModel.clearAllCollectedUserData()
+                            }
+                            Toast.makeText(context, action.doneMessage, Toast.LENGTH_SHORT).show()
+                            pendingDeleteAction = null
+                            deleteConfirmStep = 1
+                        }
                     }
                 ) {
-                    Text("Sil", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                    Text(
+                        if (deleteConfirmStep == 1) "Devam Et (1/2)" else "Kalıcı Olarak Sil (2/2)",
+                        color = Color(0xFFEF4444),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) {
+                TextButton(
+                    onClick = {
+                        pendingDeleteAction = null
+                        deleteConfirmStep = 1
+                    }
+                ) {
                     Text("Vazgeç")
                 }
             }
@@ -1112,28 +1173,40 @@ fun SettingsScreen(
                                 icon = Icons.Default.Schedule,
                                 title = "Son 24 saatin verilerini temizle",
                                 subtitle = "Son bir gündeki dinleme geçmişini ve günlük kayıtları siler",
-                                onClick = { viewModel.clearLast24hData() }
+                                onClick = {
+                                    deleteConfirmStep = 1
+                                    pendingDeleteAction = DataDeleteAction.LAST_24H
+                                }
                             )
                             PhoneSettingsDivider()
                             SettingsLink(
                                 icon = Icons.Default.HistoryToggleOff,
                                 title = "Yalnızca son çalınanlar geçmişini sil",
                                 subtitle = "Şarkı sayaçları ve toplam dinleme süreniz korunur",
-                                onClick = { viewModel.clearListeningHistoryOnly() }
+                                onClick = {
+                                    deleteConfirmStep = 1
+                                    pendingDeleteAction = DataDeleteAction.HISTORY_ONLY
+                                }
                             )
                             PhoneSettingsDivider()
                             SettingsLink(
                                 icon = Icons.Default.RestartAlt,
                                 title = "Yalnızca dinleme sayaçlarını sıfırla",
                                 subtitle = "Sayaçlar, grafikler ve toplam süre sıfırlanır",
-                                onClick = { viewModel.clearListeningStatsOnly() }
+                                onClick = {
+                                    deleteConfirmStep = 1
+                                    pendingDeleteAction = DataDeleteAction.STATS_ONLY
+                                }
                             )
                             PhoneSettingsDivider()
                             SettingsLink(
                                 icon = Icons.Default.DeleteSweep,
                                 title = "Toplanan tüm verileri sıfırla ve temizle",
                                 subtitle = "Kaydedilen tüm dinleme istatistiklerini, grafikleri ve geçmişi sil",
-                                onClick = { showResetConfirm = true }
+                                onClick = {
+                                    deleteConfirmStep = 1
+                                    pendingDeleteAction = DataDeleteAction.ALL_DATA
+                                }
                             )
                         }
                     }
