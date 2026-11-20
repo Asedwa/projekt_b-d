@@ -136,6 +136,8 @@ fun SettingsScreen(
     val collectStats by viewModel.collectListeningStatsEnabled.collectAsState()
     val collectHistory by viewModel.collectListeningHistoryEnabled.collectAsState()
     val saveResumePos by viewModel.saveResumePositionEnabled.collectAsState()
+    val soundBoostEnabled by viewModel.playbackManager.soundBoostEnabled.collectAsState()
+    val soundBoostPercent by viewModel.playbackManager.soundBoostPercent.collectAsState()
     val resumeCardEnabled by viewModel.resumePlaybackEnabled.collectAsState()
     val enabledWidgets by viewModel.enabledHomeWidgets.collectAsState()
     val homeEditHoldSeconds by viewModel.homeEditHoldSeconds.collectAsState()
@@ -596,15 +598,15 @@ fun SettingsScreen(
                 }
 
                 // Kategori Grup 2: Ses, Oynatma ve İndirmeler
-                if (matchesSearch("ses", "kalite", "wifi", "mobil", "flac", "mp3", "indir", "çevrimdışı", "depolama", "sabitle")) {
+                if (matchesSearch("ses", "kalite", "wifi", "mobil", "flac", "mp3", "indir", "çevrimdışı", "depolama", "sabitle", "sound", "boost", "yükseltici")) {
                     PhoneSettingsGroupLabel("SES VE İNDİRMELER")
                     PhoneSettingsCard {
-                        if (matchesSearch("ses", "kalite", "wifi", "mobil", "flac", "mp3", "oynatma")) {
+                        if (matchesSearch("ses", "kalite", "wifi", "mobil", "flac", "mp3", "oynatma", "sound", "boost", "yükseltici")) {
                             PhoneCategoryRow(
                                 icon = SettingsCategory.AUDIO_AND_PLAYBACK.icon,
                                 badgeColor = SettingsCategory.AUDIO_AND_PLAYBACK.badgeColor,
                                 title = "Ses Kalitesi ve Oynatma",
-                                subtitle = "Wi-Fi: ${wifiQuality.label} • Mobil: ${mobileQuality.label}",
+                                subtitle = "Wi-Fi: ${wifiQuality.label} • Sound Boost: " + if (soundBoostEnabled) "Açık" else "Kapalı",
                                 onClick = { activeCategoryName = SettingsCategory.AUDIO_AND_PLAYBACK.name }
                             )
                         }
@@ -917,6 +919,21 @@ fun SettingsScreen(
                                 selected = downloadQuality.label,
                                 options = DownloadQuality.entries.map { it.label },
                                 onSelect = { viewModel.setDownloadQuality(DownloadQuality.entries[it]) }
+                            )
+                        }
+
+                        PhoneSettingsGroupLabel("SES GÜÇLENDİRİCİ (SOUND BOOST)")
+                        PhoneSettingsCard {
+                            SettingsToggle(
+                                icon = Icons.Default.VolumeUp,
+                                title = "Ses Yükseltici (Sound Boost)",
+                                subtitle = if (soundBoostEnabled) {
+                                    "Açık • Tam ekran oynatıcıda ses yükseltme butonu aktif (+%$soundBoostPercent)"
+                                } else {
+                                    "Kapalı (Varsayılan) • Tam ekran oynatıcıda ses yükseltme butonu gizli"
+                                },
+                                checked = soundBoostEnabled,
+                                onChange = viewModel.playbackManager::setSoundBoostEnabled
                             )
                         }
 

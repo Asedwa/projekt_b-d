@@ -69,6 +69,7 @@ fun FullPlayerSheet(
     seekbarStyle: SeekbarStyle,
     albumFrame: AlbumCoverFrame,
     swipeToSkipEnabled: Boolean,
+    soundBoostEnabled: Boolean = false,
     soundBoostPercent: Int = 0,
     onSoundBoostChange: (Int) -> Unit = {},
     onDismiss: () -> Unit,
@@ -104,6 +105,9 @@ fun FullPlayerSheet(
 
     var showLyrics by remember { mutableStateOf(false) }
     var showSoundBoost by remember { mutableStateOf(false) }
+    LaunchedEffect(soundBoostEnabled) {
+        if (!soundBoostEnabled) showSoundBoost = false
+    }
     var lyricsState by remember(entry.track.id) {
         mutableStateOf(
             LyricsRepository.getCached(entry.track.title, entry.track.artist) ?: LyricsState.Idle
@@ -300,6 +304,7 @@ fun FullPlayerSheet(
                             currentTrackIndex = currentTrackIndex,
                             totalTracks = totalTracks,
                             showLyrics = showLyrics,
+                            soundBoostEnabled = soundBoostEnabled,
                             showSoundBoost = showSoundBoost,
                             soundBoostPercent = soundBoostPercent,
                             isJamActive = isJamActive,
@@ -382,6 +387,7 @@ fun FullPlayerSheet(
                         currentTrackIndex = currentTrackIndex,
                         totalTracks = totalTracks,
                         showLyrics = showLyrics,
+                        soundBoostEnabled = soundBoostEnabled,
                         showSoundBoost = showSoundBoost,
                         soundBoostPercent = soundBoostPercent,
                         isJamActive = isJamActive,
@@ -474,7 +480,7 @@ fun FullPlayerSheet(
                     .padding(top = 56.dp, start = 20.dp, end = 20.dp)
             ) {
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = showSoundBoost,
+                    visible = soundBoostEnabled && showSoundBoost,
                     enter = fadeIn(tween(160)) + expandVertically(expandFrom = Alignment.Top),
                     exit = fadeOut(tween(140)) + shrinkVertically(shrinkTowards = Alignment.Top)
                 ) {
@@ -589,6 +595,7 @@ private fun PlayerHeader(
     currentTrackIndex: Int,
     totalTracks: Int,
     showLyrics: Boolean,
+    soundBoostEnabled: Boolean,
     showSoundBoost: Boolean,
     soundBoostPercent: Int,
     isJamActive: Boolean,
@@ -640,22 +647,24 @@ private fun PlayerHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = onToggleSoundBoost,
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (showSoundBoost || soundBoostPercent > 0) effectiveAccent.copy(alpha = 0.32f)
-                        else Color.Black.copy(alpha = 0.28f)
+            if (soundBoostEnabled) {
+                IconButton(
+                    onClick = onToggleSoundBoost,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (showSoundBoost || soundBoostPercent > 0) effectiveAccent.copy(alpha = 0.32f)
+                            else Color.Black.copy(alpha = 0.28f)
+                        )
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = "Ses Yükseltici",
+                        modifier = Modifier.size(19.dp),
+                        tint = if (showSoundBoost || soundBoostPercent > 0) effectiveAccent else Color.White
                     )
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = "Ses Yükseltici",
-                    modifier = Modifier.size(19.dp),
-                    tint = if (showSoundBoost || soundBoostPercent > 0) effectiveAccent else Color.White
-                )
+                }
             }
             IconButton(
                 onClick = onToggleLyrics,

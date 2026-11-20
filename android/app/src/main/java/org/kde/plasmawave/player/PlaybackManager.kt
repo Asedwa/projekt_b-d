@@ -145,10 +145,20 @@ class PlaybackManager private constructor(private val context: Context) {
     private val _sleepTimerState = MutableStateFlow<SleepTimerState>(SleepTimerState.Off)
     val sleepTimerState: StateFlow<SleepTimerState> = _sleepTimerState.asStateFlow()
     private val audioFxPrefs = context.getSharedPreferences("audio_fx", Context.MODE_PRIVATE)
+    private val _soundBoostEnabled = MutableStateFlow(audioFxPrefs.getBoolean("sound_boost_enabled", false))
+    val soundBoostEnabled: StateFlow<Boolean> = _soundBoostEnabled.asStateFlow()
     private val _soundBoostPercent = MutableStateFlow(audioFxPrefs.getInt("sound_boost_percent", 0).coerceIn(0, 100))
     val soundBoostPercent: StateFlow<Int> = _soundBoostPercent.asStateFlow()
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var loudnessSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+
+    fun setSoundBoostEnabled(enabled: Boolean) {
+        _soundBoostEnabled.value = enabled
+        audioFxPrefs.edit().putBoolean("sound_boost_enabled", enabled).apply()
+        scope.launch(Dispatchers.Main.immediate) {
+            applySoundBoostForPlayer(playbackPlayer)
+        }
+    }
 
     fun setSoundBoostPercent(percent: Int) {
         val clamped = percent.coerceIn(0, 100)
@@ -166,7 +176,8 @@ class PlaybackManager private constructor(private val context: Context) {
             ?: C.AUDIO_SESSION_ID_UNSET
         if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId == 0) return
 
-        val percent = _soundBoostPercent.value.coerceIn(0, 100)
+        val enabled = _soundBoostEnabled.value
+        val percent = if (enabled) _soundBoostPercent.value.coerceIn(0, 100) else 0
         if (percent == 0 && loudnessEnhancer == null) return
 
         runCatching {
@@ -177,7 +188,7 @@ class PlaybackManager private constructor(private val context: Context) {
             }
             val gainMb = (percent * 15).coerceIn(0, 1500) // 0 dB .. +15 dB
             loudnessEnhancer?.setTargetGain(gainMb)
-            loudnessEnhancer?.enabled = percent > 0
+            loudnessEnhancer?.enabled = enabled && percent > 0
         }.onFailure { err ->
             Log.w(TAG, "LoudnessEnhancer unavailable for session $sessionId", err)
             releaseSoundBoost()
