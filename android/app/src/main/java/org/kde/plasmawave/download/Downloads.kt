@@ -133,8 +133,18 @@ class Downloads private constructor(private val context: Context) {
 
         val allNew = linkedExisting + toDownload
         if (allNew.isEmpty()) return EnqueueResult(0, tracks.size)
+        val retriedTrackIds = toDownload.map { DownloadStorage.normalizeTrackId(it.track.id) }.toSet()
+        val staleIds = if (retriedTrackIds.isNotEmpty()) {
+            _items.value.filter {
+                it.state in listOf("failed", "cancelled") &&
+                    DownloadStorage.normalizeTrackId(it.track.id) in retriedTrackIds
+            }.map { it.id }.toSet()
+        } else {
+            emptySet()
+        }
+        staleIds.forEach { database.remove(it) }
         database.insertAll(allNew)
-        _items.value = _items.value + allNew
+        _items.value = _items.value.filterNot { it.id in staleIds } + allNew
         if (toDownload.isNotEmpty()) {
             try {
                 scheduleQueue()

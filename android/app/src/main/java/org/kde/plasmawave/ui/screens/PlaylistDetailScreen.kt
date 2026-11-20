@@ -136,8 +136,14 @@ fun PlaylistDetailScreen(
             if (t.provider != "deezer") false
             else {
                 val norm = DownloadStorage.normalizeTrackId(t.id)
-                norm.isNotBlank() && norm !in downloadStatus.downloadedTrackIds && norm !in downloadStatus.activeTrackProgress
+                norm.isNotBlank() && norm.all(Char::isDigit) && norm !in downloadStatus.downloadedTrackIds && norm !in downloadStatus.activeTrackProgress
             }
+        }
+    }
+    val failedDownloadCount = remember(entries, downloadStatus.failedTrackErrors, downloadStatus.downloadedTrackIds, downloadStatus.activeTrackProgress) {
+        entries.count { entry ->
+            val norm = DownloadStorage.normalizeTrackId(entry.track.id)
+            norm.isNotBlank() && norm !in downloadStatus.downloadedTrackIds && norm !in downloadStatus.activeTrackProgress && norm in downloadStatus.failedTrackErrors
         }
     }
     val isFullyDownloaded = totalCount > 0 && downloadedCount == totalCount && activeDownloadCount == 0
@@ -204,12 +210,13 @@ fun PlaylistDetailScreen(
                                     "Çalma listesi • $count şarkı" + if (playlist.isLocal) " • Bu cihaz" else " • Deezer",
                                     style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                                 )
-                                if (totalCount > 0 && (downloadedCount > 0 || activeDownloadCount > 0)) {
+                                if (totalCount > 0 && (downloadedCount > 0 || activeDownloadCount > 0 || failedDownloadCount > 0)) {
                                     Spacer(Modifier.height(6.dp))
                                     PlaylistDownloadStatusPill(
                                         downloadedCount = downloadedCount,
                                         totalCount = totalCount,
                                         activeCount = activeDownloadCount,
+                                        failedCount = failedDownloadCount,
                                         isFullyDownloaded = isFullyDownloaded
                                     )
                                 }
@@ -291,13 +298,14 @@ fun PlaylistDetailScreen(
                             modifier = Modifier.fillMaxWidth(),
                             style = MaterialTheme.typography.bodyMedium.copy(color = colors.textSecondary)
                         )
-                        if (totalCount > 0 && (downloadedCount > 0 || activeDownloadCount > 0)) {
+                        if (totalCount > 0 && (downloadedCount > 0 || activeDownloadCount > 0 || failedDownloadCount > 0)) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                                 PlaylistDownloadStatusPill(
                                     downloadedCount = downloadedCount,
                                     totalCount = totalCount,
                                     activeCount = activeDownloadCount,
+                                    failedCount = failedDownloadCount,
                                     isFullyDownloaded = isFullyDownloaded
                                 )
                             }
@@ -351,10 +359,14 @@ fun PlaylistDetailScreen(
                                 ) {
                                     Icon(Icons.Default.CloudDownload, contentDescription = null)
                                     Text(
-                                        if (downloadedCount > 0 && remainingDeezerCount > 0)
-                                            "  Eksikleri indir ($remainingDeezerCount şarkı)"
-                                        else
-                                            "  Listeyi indir"
+                                        when {
+                                            failedDownloadCount > 0 && failedDownloadCount == remainingDeezerCount ->
+                                                "  Başarısızları tekrar dene ($failedDownloadCount şarkı)"
+                                            downloadedCount > 0 && remainingDeezerCount > 0 ->
+                                                "  Eksikleri indir ($remainingDeezerCount şarkı)"
+                                            else ->
+                                                "  Listeyi indir"
+                                        }
                                     )
                                 }
                             }
@@ -433,22 +445,26 @@ private fun PlaylistDownloadStatusPill(
     downloadedCount: Int,
     totalCount: Int,
     activeCount: Int,
+    failedCount: Int,
     isFullyDownloaded: Boolean
 ) {
     val green = Color(0xFF10B981)
     val containerColor = when {
         isFullyDownloaded -> green.copy(alpha = 0.14f)
         activeCount > 0 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+        failedCount > 0 -> LocalPlasmaColors.current.negative.copy(alpha = 0.12f)
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
     }
     val contentColor = when {
         isFullyDownloaded -> green
         activeCount > 0 -> MaterialTheme.colorScheme.primary
+        failedCount > 0 -> LocalPlasmaColors.current.negative
         else -> LocalPlasmaColors.current.textSecondary
     }
     val label = when {
         isFullyDownloaded -> "Çevrimdışı hazır • $downloadedCount/$totalCount"
         activeCount > 0 -> "İndiriliyor • $downloadedCount/$totalCount"
+        failedCount > 0 -> "$downloadedCount/$totalCount indirildi • $failedCount indirilemedi"
         else -> "$downloadedCount/$totalCount şarkı indirildi"
     }
     Surface(

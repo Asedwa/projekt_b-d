@@ -1331,6 +1331,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) { saved, onDisk ->
         val completedIds = HashSet<String>(saved.size + onDisk.size)
         val activeProgress = HashMap<String, Int?>()
+        val failedErrors = HashMap<String, String>()
         val playlistCompletedIds = HashSet<String>()
 
         onDisk.forEach { track ->
@@ -1341,16 +1342,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val norm = DownloadStorage.normalizeTrackId(task.track.id)
             when (task.state) {
                 "completed" -> {
-                    if (norm.isNotBlank()) completedIds.add(norm)
+                    if (norm.isNotBlank()) {
+                        completedIds.add(norm)
+                        failedErrors.remove(norm)
+                    }
                     if (!task.playlistId.isNullOrBlank()) playlistCompletedIds.add(task.playlistId)
                 }
-                "running" -> if (norm.isNotBlank()) activeProgress[norm] = task.progress
-                "queued" -> if (norm.isNotBlank()) activeProgress.putIfAbsent(norm, null)
+                "running" -> if (norm.isNotBlank()) {
+                    activeProgress[norm] = task.progress
+                    failedErrors.remove(norm)
+                }
+                "queued" -> if (norm.isNotBlank()) {
+                    activeProgress.putIfAbsent(norm, null)
+                    failedErrors.remove(norm)
+                }
+                "failed" -> if (norm.isNotBlank() && norm !in completedIds && norm !in activeProgress) {
+                    failedErrors[norm] = task.error ?: "İndirilemedi"
+                }
             }
         }
         DownloadStatusSnapshot(
             downloadedTrackIds = completedIds,
             activeTrackProgress = activeProgress,
+            failedTrackErrors = failedErrors,
             downloadedPlaylistIds = playlistCompletedIds
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DownloadStatusSnapshot())

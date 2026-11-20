@@ -51,10 +51,33 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         queueMutex.withLock { drainQueue() }
     }
 
+    private fun resolveWithFallback(cleanId: String, requested: DownloadQuality): Pair<DeezerGateway.Media, DownloadQuality> {
+        val candidates = when (requested) {
+            DownloadQuality.FLAC -> listOf(DownloadQuality.FLAC, DownloadQuality.MP3_320, DownloadQuality.MP3_128)
+            DownloadQuality.MP3_320 -> listOf(DownloadQuality.MP3_320, DownloadQuality.MP3_128)
+            DownloadQuality.MP3_128 -> listOf(DownloadQuality.MP3_128)
+        }
+        val session = DeezerSession.get(applicationContext)
+        var lastError: Exception? = null
+        for (quality in candidates) {
+            try {
+                return session.resolveDownload(cleanId, quality.format) to quality
+            } catch (e: DeezerException) {
+                lastError = e
+                // Only fall back to a lower bitrate when the requested format is unavailable for this track
+                val msg = e.message.orEmpty()
+                if (!msg.contains("biçiminde", ignoreCase = true) && !msg.contains("format", ignoreCase = true) && !msg.contains("kullanılamıyor", ignoreCase = true)) {
+                    throw e
+                }
+            }
+        }
+        throw lastError ?: DeezerException("Bu şarkı indirilemiyor")
+    }
+
     private suspend fun drainQueue(): Result {
         var foregroundStarted = false
         notifications.createNotificationChannel(NotificationChannel("downloads", "Şarkı indirmeleri", NotificationManager.IMPORTANCE_LOW))
-        val prefetched = ConcurrentHashMap<String, Deferred<DeezerGateway.Media?>>()
+        val prefetched = ConcurrentHashMap<String, Deferred<Pair<DeezerGateway.Media, DownloadQuality>?>>()
         try {
             while (true) {
                 currentCoroutineContext().ensureActive()
@@ -105,20 +128,20 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
                         if (DownloadStorage.findExistingTrack(applicationContext, nextCleanId) == null) {
                             prefetched[nextTask.id] = CoroutineScope(currentCoroutineContext()).async(Dispatchers.IO) {
                                 runCatching {
-                                    DeezerSession.get(applicationContext).resolveDownload(nextCleanId, nextTask.quality.format)
+                                    resolveWithFallback(nextCleanId, nextTask.quality)
                                 }.getOrNull()
                             }
                         }
                     }
 
-                    val media = prefetched.remove(taskId)?.await()
-                        ?: DeezerSession.get(applicationContext).resolveDownload(cleanId, task.quality.format)
+                    val (media, effectiveQuality) = prefetched.remove(taskId)?.await()
+                        ?: resolveWithFallback(cleanId, task.quality)
                     currentCoroutineContext().ensureActive()
                     val network = allowedNetwork() ?: throw NetworkBlocked()
                     val safeWithoutMobilePermission = isUnmeteredWifiOrEthernet(network)
                     connection = openAudio(media.url, network)
                     val length = connection.contentLengthLong
-                    partial = createDestination(task)
+                    partial = createDestination(task.copy(quality = effectiveQuality))
                     downloads.updateActive(taskId) { it.copy(partialUri = partial.toString()) }
                     if (downloads.isCancelled(taskId)) throw UserCancelled()
                     val output = if (partial.scheme == "file") File(partial.path!!).outputStream()

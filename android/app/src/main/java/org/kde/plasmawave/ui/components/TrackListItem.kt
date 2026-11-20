@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +39,7 @@ import uniffi.plasmawave_core.FfiTrack
 data class DownloadStatusSnapshot(
     val downloadedTrackIds: Set<String> = emptySet(),
     val activeTrackProgress: Map<String, Int?> = emptyMap(),
+    val failedTrackErrors: Map<String, String> = emptyMap(),
     val downloadedPlaylistIds: Set<String> = emptySet()
 )
 
@@ -71,6 +73,7 @@ fun TrackListItem(
         downloadStatus.activeTrackProgress[normalizedId]
     } else null
     val isDownloading = !isDownloaded && normalizedId.isNotBlank() && normalizedId in downloadStatus.activeTrackProgress
+    val isFailed = !isDownloaded && !isDownloading && normalizedId.isNotBlank() && normalizedId in downloadStatus.failedTrackErrors
 
     Row(
         modifier = modifier
@@ -129,6 +132,14 @@ fun TrackListItem(
                         )
                     }
                     Spacer(modifier = Modifier.width(5.dp))
+                } else if (isFailed) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = "İndirilemedi",
+                        tint = customColors.negative,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                 }
                 if (track.origin == "development_fixture") {
                     Text(
