@@ -1424,26 +1424,6 @@ private fun CollapsingHomeHeader(
         modifier = modifier
             .fillMaxWidth()
             .onSizeChanged { headerWidthPx = it.width }
-            .drawBehind {
-                val f = fraction()
-                val headerBottomPx = statusBarTopPx + lerpFloat(expandedHeaderPx, collapsedHeaderPx, f)
-                if (f > 0.02f) {
-                    drawRect(
-                        color = bg.copy(alpha = (f * 0.98f).coerceIn(0f, 0.98f)),
-                        topLeft = Offset.Zero,
-                        size = Size(size.width, headerBottomPx)
-                    )
-                }
-                if (f > 0.85f) {
-                    val dividerAlpha = ((f - 0.85f) / 0.15f).coerceIn(0f, 1f)
-                    drawLine(
-                        color = borderColor.copy(alpha = dividerAlpha),
-                        start = Offset(0f, headerBottomPx),
-                        end = Offset(size.width, headerBottomPx),
-                        strokeWidth = dividerThicknessPx
-                    )
-                }
-            }
     ) {
         Box(
             modifier = Modifier
