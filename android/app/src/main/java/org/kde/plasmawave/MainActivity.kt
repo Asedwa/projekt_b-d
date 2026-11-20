@@ -465,6 +465,7 @@ private fun FullPlayerHost(
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val albumFrame by viewModel.albumFrame.collectAsState()
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
+    val soundBoostPercent by viewModel.playbackManager.soundBoostPercent.collectAsState()
     val jamState by viewModel.jamState.collectAsState()
     var showJamSheet by remember { mutableStateOf(false) }
     var showJamBlockedDialog by remember { mutableStateOf(false) }
@@ -499,6 +500,8 @@ private fun FullPlayerHost(
         seekbarStyle = seekbarStyle,
         albumFrame = albumFrame,
         swipeToSkipEnabled = swipeToSkipEnabled,
+        soundBoostPercent = soundBoostPercent,
+        onSoundBoostChange = viewModel.playbackManager::setSoundBoostPercent,
         onDismiss = onDismiss,
         onTogglePlayPause = {
             if (jamState.mode == JamMode.GUEST) {

@@ -2,6 +2,7 @@ package org.kde.plasmawave.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.audiofx.LoudnessEnhancer
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.Uri
@@ -19,6 +20,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.cache.CacheWriter
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
@@ -142,6 +144,51 @@ class PlaybackManager private constructor(private val context: Context) {
     val progress: StateFlow<PlaybackProgress> = _progress.asStateFlow()
     private val _sleepTimerState = MutableStateFlow<SleepTimerState>(SleepTimerState.Off)
     val sleepTimerState: StateFlow<SleepTimerState> = _sleepTimerState.asStateFlow()
+    private val audioFxPrefs = context.getSharedPreferences("audio_fx", Context.MODE_PRIVATE)
+    private val _soundBoostPercent = MutableStateFlow(audioFxPrefs.getInt("sound_boost_percent", 0).coerceIn(0, 100))
+    val soundBoostPercent: StateFlow<Int> = _soundBoostPercent.asStateFlow()
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var loudnessSessionId: Int = C.AUDIO_SESSION_ID_UNSET
+
+    fun setSoundBoostPercent(percent: Int) {
+        val clamped = percent.coerceIn(0, 100)
+        _soundBoostPercent.value = clamped
+        audioFxPrefs.edit().putInt("sound_boost_percent", clamped).apply()
+        scope.launch(Dispatchers.Main.immediate) {
+            applySoundBoostForPlayer(playbackPlayer)
+        }
+    }
+
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun applySoundBoostForPlayer(player: Player?, explicitSessionId: Int? = null) {
+        val sessionId = explicitSessionId
+            ?: (player as? ExoPlayer)?.audioSessionId
+            ?: C.AUDIO_SESSION_ID_UNSET
+        if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId == 0) return
+
+        val percent = _soundBoostPercent.value.coerceIn(0, 100)
+        if (percent == 0 && loudnessEnhancer == null) return
+
+        runCatching {
+            if (loudnessEnhancer == null || loudnessSessionId != sessionId) {
+                runCatching { loudnessEnhancer?.release() }
+                loudnessEnhancer = LoudnessEnhancer(sessionId)
+                loudnessSessionId = sessionId
+            }
+            val gainMb = (percent * 15).coerceIn(0, 1500) // 0 dB .. +15 dB
+            loudnessEnhancer?.setTargetGain(gainMb)
+            loudnessEnhancer?.enabled = percent > 0
+        }.onFailure { err ->
+            Log.w(TAG, "LoudnessEnhancer unavailable for session $sessionId", err)
+            releaseSoundBoost()
+        }
+    }
+
+    private fun releaseSoundBoost() {
+        runCatching { loudnessEnhancer?.release() }
+        loudnessEnhancer = null
+        loudnessSessionId = C.AUDIO_SESSION_ID_UNSET
+    }
     // Position ticks live in `progress`, so `overview` / `currentTrackId` never churn during playback.
     val currentTrackId = uiState.map { it.currentEntry?.track?.id }.distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, null)
@@ -200,6 +247,7 @@ class PlaybackManager private constructor(private val context: Context) {
         playbackPlayer = player
         this.onQueueChanged = onQueueChanged
         player.addListener(playerListener)
+        applySoundBoostForPlayer(player)
         player.repeatMode = if (_uiState.value.repeatMode == FfiRepeatMode.ONE) {
             Player.REPEAT_MODE_ONE
         } else {
@@ -228,6 +276,7 @@ class PlaybackManager private constructor(private val context: Context) {
         nextSyncJob = null
         clearErrorRecoveryNetworkCallback()
         releaseTransitionLocks()
+        releaseSoundBoost()
         player.removeListener(playerListener)
         playbackPlayer = null
         onQueueChanged = null
@@ -294,6 +343,10 @@ class PlaybackManager private constructor(private val context: Context) {
     }
 
     private val playerListener = object : Player.Listener {
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            applySoundBoostForPlayer(playbackPlayer, explicitSessionId = audioSessionId)
+        }
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
                 lastKnownPositionMs = 0L

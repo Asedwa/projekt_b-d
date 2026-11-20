@@ -1,11 +1,16 @@
 package org.kde.plasmawave.ui.components
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -20,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -63,6 +69,8 @@ fun FullPlayerSheet(
     seekbarStyle: SeekbarStyle,
     albumFrame: AlbumCoverFrame,
     swipeToSkipEnabled: Boolean,
+    soundBoostPercent: Int = 0,
+    onSoundBoostChange: (Int) -> Unit = {},
     onDismiss: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
@@ -95,6 +103,7 @@ fun FullPlayerSheet(
     val coroutineScope = rememberCoroutineScope()
 
     var showLyrics by remember { mutableStateOf(false) }
+    var showSoundBoost by remember { mutableStateOf(false) }
     var lyricsState by remember(entry.track.id) {
         mutableStateOf(
             LyricsRepository.getCached(entry.track.title, entry.track.artist) ?: LyricsState.Idle
@@ -291,8 +300,11 @@ fun FullPlayerSheet(
                             currentTrackIndex = currentTrackIndex,
                             totalTracks = totalTracks,
                             showLyrics = showLyrics,
+                            showSoundBoost = showSoundBoost,
+                            soundBoostPercent = soundBoostPercent,
                             isJamActive = isJamActive,
                             effectiveAccent = effectiveAccent,
+                            onToggleSoundBoost = { showSoundBoost = !showSoundBoost },
                             onToggleLyrics = { showLyrics = !showLyrics },
                             onOpenJam = onOpenJam,
                             onDismiss = onDismiss,
@@ -370,8 +382,11 @@ fun FullPlayerSheet(
                         currentTrackIndex = currentTrackIndex,
                         totalTracks = totalTracks,
                         showLyrics = showLyrics,
+                        showSoundBoost = showSoundBoost,
+                        soundBoostPercent = soundBoostPercent,
                         isJamActive = isJamActive,
                         effectiveAccent = effectiveAccent,
+                        onToggleSoundBoost = { showSoundBoost = !showSoundBoost },
                         onToggleLyrics = { showLyrics = !showLyrics },
                         onOpenJam = onOpenJam,
                         onDismiss = onDismiss,
@@ -452,6 +467,119 @@ fun FullPlayerSheet(
                     )
                 }
             }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 56.dp, start = 20.dp, end = 20.dp)
+            ) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showSoundBoost,
+                    enter = fadeIn(tween(160)) + expandVertically(expandFrom = Alignment.Top),
+                    exit = fadeOut(tween(140)) + shrinkVertically(shrinkTowards = Alignment.Top)
+                ) {
+                    SoundBoostOverlayCard(
+                        soundBoostPercent = soundBoostPercent,
+                        effectiveAccent = effectiveAccent,
+                        onSoundBoostChange = onSoundBoostChange,
+                        onClose = { showSoundBoost = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SoundBoostOverlayCard(
+    soundBoostPercent: Int,
+    effectiveAccent: Color,
+    onSoundBoostChange: (Int) -> Unit,
+    onClose: () -> Unit
+) {
+    val gainDb = soundBoostPercent * 0.15f
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xEE14161D),
+        tonalElevation = 6.dp,
+        shadowElevation = 10.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = null,
+                    tint = if (soundBoostPercent > 0) effectiveAccent else Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Ses Yükseltici",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = Color.White,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = if (soundBoostPercent == 0) "Kapalı" else "+%$soundBoostPercent (+${String.format("%.1f", gainDb)} dB)",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (soundBoostPercent > 0) effectiveAccent else Color.White.copy(alpha = 0.65f)
+                )
+                Spacer(Modifier.width(6.dp))
+                IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Kapat",
+                        tint = Color.White.copy(alpha = 0.75f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Slider(
+                value = soundBoostPercent.toFloat(),
+                onValueChange = { onSoundBoostChange(it.roundToInt()) },
+                valueRange = 0f..100f,
+                colors = SliderDefaults.colors(
+                    thumbColor = effectiveAccent,
+                    activeTrackColor = effectiveAccent,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.20f)
+                )
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(0, 25, 50, 75, 100).forEach { preset ->
+                    val selected = soundBoostPercent == preset
+                    Surface(
+                        onClick = { onSoundBoostChange(preset) },
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (selected) effectiveAccent.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.08f),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = if (preset == 0) "Kapalı" else "%$preset",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = if (selected) effectiveAccent else Color.White.copy(alpha = 0.85f),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+            if (soundBoostPercent >= 75) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Yüksek güçlendirmede kulaklık ses seviyesine dikkat edin.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFBBF24)
+                )
+            }
         }
     }
 }
@@ -461,8 +589,11 @@ private fun PlayerHeader(
     currentTrackIndex: Int,
     totalTracks: Int,
     showLyrics: Boolean,
+    showSoundBoost: Boolean,
+    soundBoostPercent: Int,
     isJamActive: Boolean,
     effectiveAccent: Color,
+    onToggleSoundBoost: () -> Unit,
     onToggleLyrics: () -> Unit,
     onOpenJam: () -> Unit,
     onDismiss: () -> Unit,
@@ -509,6 +640,23 @@ private fun PlayerHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = onToggleSoundBoost,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (showSoundBoost || soundBoostPercent > 0) effectiveAccent.copy(alpha = 0.32f)
+                        else Color.Black.copy(alpha = 0.28f)
+                    )
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = "Ses Yükseltici",
+                    modifier = Modifier.size(19.dp),
+                    tint = if (showSoundBoost || soundBoostPercent > 0) effectiveAccent else Color.White
+                )
+            }
             IconButton(
                 onClick = onToggleLyrics,
                 modifier = Modifier
