@@ -1,5 +1,6 @@
 package org.kde.plasmawave.player
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -21,6 +22,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import org.kde.plasmawave.MainActivity
 import org.kde.plasmawave.deezer.DeezerDataSource
 import org.kde.plasmawave.deezer.DeezerSession
 import java.io.File
@@ -112,7 +114,19 @@ class PlasmaPlaybackService : MediaSessionService() {
         val manager = PlaybackManager.getInstance(this)
         playbackManager = manager
         val sessionPlayer = QueueSessionPlayer(player!!, manager::skipNext, manager::skipPrevious)
-        mediaSession = MediaSession.Builder(this, sessionPlayer).build()
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("open_full_player", true)
+        }
+        val sessionActivity = PendingIntent.getActivity(
+            this,
+            0,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        mediaSession = MediaSession.Builder(this, sessionPlayer)
+            .setSessionActivity(sessionActivity)
+            .build()
         manager.attachPlayer(player!!, sessionPlayer::updateQueue)
     }
 

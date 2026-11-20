@@ -29,6 +29,7 @@
             android:name=".MainActivity"
             android:enabled="true"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.PlasmaWave"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             <intent-filter>

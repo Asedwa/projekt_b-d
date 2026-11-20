@@ -77,8 +77,13 @@ sealed class SubScreen {
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
+    private val openPlayerTrigger = kotlinx.coroutines.flow.MutableStateFlow(0L)
 
-    private fun handleJamIntent(intent: android.content.Intent?) {
+    private fun handleIncomingIntent(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra("open_full_player", false) == true) {
+            intent.removeExtra("open_full_player")
+            openPlayerTrigger.value = System.currentTimeMillis()
+        }
         val uri = intent?.data ?: return
         if (uri.scheme == "plasmawave" && uri.host == "jam") {
             val code = uri.lastPathSegment?.trim()?.uppercase().orEmpty()
@@ -92,13 +97,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleJamIntent(intent)
+        handleIncomingIntent(intent)
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handleJamIntent(intent)
+        handleIncomingIntent(intent)
         setContent {
             val activeTheme by viewModel.activeTheme.collectAsState()
             val legacyUiMode by viewModel.legacyUiMode.collectAsState()
@@ -139,6 +144,13 @@ class MainActivity : ComponentActivity() {
             val fullPlayerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             val menuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             val scope = rememberCoroutineScope()
+            val playerOpenSignal by openPlayerTrigger.collectAsState()
+            LaunchedEffect(playerOpenSignal, hasCurrentEntry) {
+                if (playerOpenSignal > 0L && hasCurrentEntry) {
+                    isFullPlayerVisible = true
+                    openPlayerTrigger.value = 0L
+                }
+            }
 
             LaunchedEffect(externalSearchTrigger) {
                 if (externalSearchTrigger != null) {
