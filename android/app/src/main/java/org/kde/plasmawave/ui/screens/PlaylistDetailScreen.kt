@@ -76,7 +76,7 @@ fun PlaylistDetailScreen(
     playlist: FfiPlaylist,
     viewModel: MainViewModel,
     onBack: () -> Unit,
-    onDownloadPlaylist: (List<FfiTrack>) -> Unit,
+    onDownloadPlaylist: (List<FfiTrack>, String?, String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var state by remember(playlist.id) {
@@ -187,7 +187,7 @@ fun PlaylistDetailScreen(
                                         }
                                     }
                                     if (entries.any { it.track.provider == "deezer" }) {
-                                        OutlinedButton(onClick = { onDownloadPlaylist(entries.map { it.track }) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
+                                        OutlinedButton(onClick = { onDownloadPlaylist(entries.map { it.track }, playlist.id, playlist.name) }, contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
                                             Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                                             Spacer(Modifier.width(4.dp))
                                             Text("İndir")
@@ -245,7 +245,7 @@ fun PlaylistDetailScreen(
                             }
                         }
                         if (entries.any { it.track.provider == "deezer" }) {
-                            OutlinedButton(onClick = { onDownloadPlaylist(entries.map { it.track }) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            OutlinedButton(onClick = { onDownloadPlaylist(entries.map { it.track }, playlist.id, playlist.name) }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                                 Icon(Icons.Default.CloudDownload, contentDescription = null)
                                 Text("  Listeyi indir")
                             }

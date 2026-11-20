@@ -110,19 +110,19 @@ class MainActivity : ComponentActivity() {
 
             var trackForPlaylist by remember { mutableStateOf<FfiTrack?>(null) }
             var showSleepTimerDialog by remember { mutableStateOf(false) }
-            var requestedDownloads by remember { mutableStateOf<List<FfiTrack>?>(null) }
+            var requestedDownloads by remember { mutableStateOf<Triple<List<FfiTrack>, String?, String?>?>(null) }
             val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
                 val request = requestedDownloads
-                if (granted && request != null) viewModel.downloadFullTracks(request)
+                if (granted && request != null) viewModel.downloadFullTracks(request.first, request.second, request.third)
                 else if (!granted) Toast.makeText(this@MainActivity, "Şarkıları kaydetmek için depolama izni gerekli", Toast.LENGTH_LONG).show()
                 requestedDownloads = null
             }
-            val requestDownload: (List<FfiTrack>) -> Unit = { tracks ->
+            val requestDownload: (List<FfiTrack>, String?, String?) -> Unit = { tracks, playlistId, playlistName ->
                 if (deezerUser == null) Toast.makeText(this@MainActivity, "Şarkıları indirmek için Deezer'a giriş yap", Toast.LENGTH_LONG).show()
                 else if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                    requestedDownloads = tracks
+                    requestedDownloads = Triple(tracks, playlistId, playlistName)
                     storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                } else viewModel.downloadFullTracks(tracks)
+                } else viewModel.downloadFullTracks(tracks, playlistId, playlistName)
             }
 
             var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
@@ -316,7 +316,7 @@ class MainActivity : ComponentActivity() {
                         viewModel = viewModel,
                         sheetState = menuSheetState,
                         onAddToPlaylist = { trackForPlaylist = it },
-                        onRequestDownload = { requestDownload(listOf(it)) },
+                        onRequestDownload = { requestDownload(listOf(it), null, null) },
                         onShowSleepTimer = { showSleepTimerDialog = true }
                     )
 

@@ -20,14 +20,14 @@ object DownloadStorage {
         val cleanId = normalizeTrackId(trackId)
         if (cleanId.isEmpty() || !cleanId.all(Char::isDigit)) return null
 
-        // 1. Direct file check in Music/PlasmaWave
+        // 1. Direct file check in Music/PlasmaWave (including playlist subfolders)
         try {
             @Suppress("DEPRECATION")
             val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "PlasmaWave")
             if (dir.isDirectory) {
-                val match = dir.listFiles { file ->
+                val match = dir.walkTopDown().maxDepth(2).firstOrNull { file ->
                     file.isFile && file.name.contains("[$cleanId]") && file.length() > 0
-                }?.firstOrNull()
+                }
                 if (match != null) return Uri.fromFile(match)
             }
         } catch (_: Exception) {}
@@ -58,13 +58,15 @@ object DownloadStorage {
     fun scanDownloadedTrackIds(context: Context): Set<String> {
         val ids = mutableSetOf<String>()
 
-        // 1. Direct directory scan (<5ms)
+        // 1. Direct directory scan (including playlist subfolders)
         try {
             @Suppress("DEPRECATION")
             val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "PlasmaWave")
             if (dir.isDirectory) {
-                dir.list()?.forEach { name ->
-                    bracketIdRegex.find(name)?.groupValues?.get(1)?.let { ids.add(it) }
+                dir.walkTopDown().maxDepth(2).forEach { file ->
+                    if (file.isFile) {
+                        bracketIdRegex.find(file.name)?.groupValues?.get(1)?.let { ids.add(it) }
+                    }
                 }
             }
         } catch (_: Exception) {}

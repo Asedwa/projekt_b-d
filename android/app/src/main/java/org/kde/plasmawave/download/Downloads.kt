@@ -25,7 +25,8 @@ enum class DownloadQuality(val label: String, val format: String, val extension:
 data class SavedDownload(
     val id: String, val track: FfiTrack, val quality: DownloadQuality,
     val state: String = "queued", val progress: Int = 0, val uri: String? = null,
-    val error: String? = null, val partialUri: String? = null, val attempts: Int = 0
+    val error: String? = null, val partialUri: String? = null, val attempts: Int = 0,
+    val playlistId: String? = null, val playlistName: String? = null
 )
 
 data class EnqueueResult(val added: Int, val skipped: Int)
@@ -81,19 +82,68 @@ class Downloads private constructor(private val context: Context) {
         _mobileAllowed.value = allowed
     }
 
-    @Synchronized fun enqueueAll(tracks: List<FfiTrack>, quality: DownloadQuality): EnqueueResult {
+    @Synchronized fun enqueueAll(
+        tracks: List<FfiTrack>,
+        quality: DownloadQuality,
+        playlistId: String? = null,
+        playlistName: String? = null
+    ): EnqueueResult {
+        val cleanPlaylistName = playlistName?.trim()?.takeIf { it.isNotBlank() }
+        val cleanPlaylistId = playlistId?.trim()?.takeIf { it.isNotBlank() }
         val diskIds = DownloadStorage.scanDownloadedTrackIds(context)
-        val added = selectTracksToEnqueue(tracks, quality, _items.value, diskIds).map { SavedDownload(UUID.randomUUID().toString(), it, quality) }
-        if (added.isEmpty()) return EnqueueResult(0, tracks.size)
-        database.insertAll(added)
-        _items.value = _items.value + added
-        try {
-            scheduleQueue()
-        } catch (e: Exception) {
-            added.forEach { update(it.id) { entry -> entry.copy(state = "failed", error = "İndirme başlatılamadı") } }
-            throw e
+        val toDownload = selectTracksToEnqueue(tracks, quality, _items.value, diskIds)
+            .map {
+                SavedDownload(
+                    id = UUID.randomUUID().toString(),
+                    track = it,
+                    quality = quality,
+                    playlistId = cleanPlaylistId,
+                    playlistName = cleanPlaylistName
+                )
+            }
+
+        // For playlist downloads, also link already-downloaded tracks into the playlist group
+        // without re-downloading them, so the downloaded playlist is complete and playable offline.
+        val linkedExisting = if (cleanPlaylistName != null) {
+            val existingInThisPlaylist = _items.value
+                .filter { it.playlistName == cleanPlaylistName && it.state in listOf("queued", "running", "completed") }
+                .map { DownloadStorage.normalizeTrackId(it.track.id) }
+                .toMutableSet()
+            toDownload.forEach { existingInThisPlaylist.add(DownloadStorage.normalizeTrackId(it.track.id)) }
+            tracks.mapNotNull { track ->
+                val cleanId = DownloadStorage.normalizeTrackId(track.id)
+                if (cleanId.isBlank() || !existingInThisPlaylist.add(cleanId)) return@mapNotNull null
+                val existingUri = findCompletedTrack(track.id)?.uri
+                    ?: DownloadStorage.findExistingTrack(context, cleanId)?.toString()
+                    ?: return@mapNotNull null
+                SavedDownload(
+                    id = UUID.randomUUID().toString(),
+                    track = track,
+                    quality = quality,
+                    state = "completed",
+                    progress = 100,
+                    uri = existingUri,
+                    playlistId = cleanPlaylistId,
+                    playlistName = cleanPlaylistName
+                )
+            }
+        } else {
+            emptyList()
         }
-        return EnqueueResult(added.size, tracks.size - added.size)
+
+        val allNew = linkedExisting + toDownload
+        if (allNew.isEmpty()) return EnqueueResult(0, tracks.size)
+        database.insertAll(allNew)
+        _items.value = _items.value + allNew
+        if (toDownload.isNotEmpty()) {
+            try {
+                scheduleQueue()
+            } catch (e: Exception) {
+                toDownload.forEach { update(it.id) { entry -> entry.copy(state = "failed", error = "İndirme başlatılamadı") } }
+                throw e
+            }
+        }
+        return EnqueueResult(toDownload.size, tracks.size - toDownload.size)
     }
 
     fun recover() {
@@ -187,9 +237,33 @@ class Downloads private constructor(private val context: Context) {
         }
     }
 
+    @Synchronized fun cancelGroup(ids: List<String>) {
+        val targetSet = ids.toSet()
+        val targets = _items.value.filter { it.id in targetSet && (it.state == "queued" || it.state == "running") }
+        if (targets.isEmpty()) return
+        val activeIds = targets.map { it.id }.toSet()
+        cancelled.addAll(activeIds)
+        database.cancelAll(activeIds.toList())
+        _items.value = _items.value.map { if (it.id in activeIds) it.copy(state = "cancelled", error = null, partialUri = null) else it }
+        targets.mapNotNull { it.partialUri }.forEach {
+            try {
+                val uri = Uri.parse(it)
+                if (uri.scheme == "file") uri.path?.let { path -> File(path).delete() }
+                else context.contentResolver.delete(uri, null, null)
+            } catch (_: Exception) { }
+        }
+    }
+
     @Synchronized fun forget(id: String) {
         if (find(id)?.state in listOf("queued", "running")) return
         database.remove(id)
         _items.value = _items.value.filterNot { it.id == id }
+    }
+
+    @Synchronized fun forgetGroup(ids: List<String>) {
+        val removable = ids.filter { find(it)?.state !in listOf("queued", "running") }.toSet()
+        if (removable.isEmpty()) return
+        removable.forEach { database.remove(it) }
+        _items.value = _items.value.filterNot { it.id in removable }
     }
 }

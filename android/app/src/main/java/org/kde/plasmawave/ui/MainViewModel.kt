@@ -1251,8 +1251,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setDownloadQuality(quality: DownloadQuality) = fullDownloadManager.setQuality(quality)
     fun setMobileDownloadsAllowed(allowed: Boolean) = fullDownloadManager.setMobileAllowed(allowed)
     fun cancelFullDownload(id: String) { viewModelScope.launch(Dispatchers.IO) { fullDownloadManager.cancel(id) } }
+    fun cancelDownloadGroup(ids: List<String>) { viewModelScope.launch(Dispatchers.IO) { fullDownloadManager.cancelGroup(ids) } }
     fun cancelAllDownloads() { viewModelScope.launch(Dispatchers.IO) { fullDownloadManager.cancelAll() } }
     fun forgetFullDownload(id: String) { viewModelScope.launch(Dispatchers.IO) { fullDownloadManager.forget(id) } }
+    fun forgetDownloadGroup(ids: List<String>) { viewModelScope.launch(Dispatchers.IO) { fullDownloadManager.forgetGroup(ids) } }
     val pins = pinnedItems.items
     fun togglePinnedTrack(track: FfiTrack) = pinnedItems.toggle(PinnedItem.Track(track))
     fun togglePinnedPlaylist(playlist: FfiPlaylist) = pinnedItems.toggle(PinnedItem.Playlist(playlist))
@@ -2100,13 +2102,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun downloadFullTracks(tracks: List<FfiTrack>) {
+    fun downloadFullTracks(tracks: List<FfiTrack>, playlistId: String? = null, playlistName: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val result = fullDownloadManager.enqueueAll(tracks, downloadQuality.value)
-                _statusMessage.value = if (result.added > 0) "${result.added} şarkı indirme sırasına eklendi" +
-                    if (result.skipped > 0) " • ${result.skipped} zaten var veya cihazda mevcut" else ""
-                    else if (result.skipped > 0) "Seçilen şarkıların tümü (${result.skipped}) zaten indirildi veya cihazda mevcut"
+                val result = fullDownloadManager.enqueueAll(
+                    tracks = tracks,
+                    quality = downloadQuality.value,
+                    playlistId = playlistId,
+                    playlistName = playlistName
+                )
+                val prefix = if (!playlistName.isNullOrBlank()) "\"$playlistName\": " else ""
+                _statusMessage.value = if (result.added > 0) "${prefix}${result.added} şarkı indirme sırasına eklendi" +
+                    if (result.skipped > 0) " • ${result.skipped} zaten cihazda mevcut" else ""
+                    else if (result.skipped > 0) "${prefix}Seçilen şarkıların tümü (${result.skipped}) zaten indirildi veya cihazda mevcut"
                     else "İndirilecek şarkı bulunamadı"
             } catch (_: Exception) { _statusMessage.value = "İndirme başlatılamadı" }
         }
@@ -2118,10 +2126,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         playbackManager.playTrackList(listOf(track))
     }
 
+    fun playDownloadedPlaylist(tasks: List<SavedDownload>, startIndex: Int = 0) {
+        val tracks = tasks.mapNotNull { task ->
+            val uri = task.uri ?: return@mapNotNull null
+            task.track.copy(id = "local:download-${task.id}", provider = "local", playbackUri = uri, isPreview = false)
+        }
+        if (tracks.isEmpty()) return
+        playbackManager.playTrackList(tracks, startIndex.coerceIn(0, tracks.lastIndex))
+    }
+
     fun retryFullDownload(task: SavedDownload) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (fullDownloadManager.enqueueAll(listOf(task.track), task.quality).added > 0) {
+                if (fullDownloadManager.enqueueAll(
+                        tracks = listOf(task.track),
+                        quality = task.quality,
+                        playlistId = task.playlistId,
+                        playlistName = task.playlistName
+                    ).added > 0
+                ) {
                     fullDownloadManager.forget(task.id)
                     _statusMessage.value = "İndirme yeniden sıraya eklendi"
                 } else _statusMessage.value = "Bu şarkı zaten indiriliyor veya indirildi"

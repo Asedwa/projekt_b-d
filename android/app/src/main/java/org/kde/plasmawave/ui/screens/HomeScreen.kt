@@ -1533,7 +1533,19 @@ private fun CollapsingHomeHeader(
                     }
             ) {
                 if (activeDownloads > 0) {
-                    BadgedBox(badge = { Badge { Text("$activeDownloads") } }) {
+                    val badgeLabel = if (activeDownloads > 99) "99+" else "$activeDownloads"
+                    BadgedBox(
+                        badge = {
+                            Badge {
+                                Text(
+                                    text = badgeLabel,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    ) {
                         Icon(Icons.Default.Download, contentDescription = "İndirmeler")
                     }
                 } else {

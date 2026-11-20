@@ -10,16 +10,22 @@ import org.kde.plasmawave.ui.jsonTrack
 import org.kde.plasmawave.ui.trackJson
 
 /** Stores queue entries individually so a long playlist does not rewrite a giant JSON file per song. */
-internal class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 1) {
+internal class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE downloads (
             position INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
             track TEXT NOT NULL, quality TEXT NOT NULL, state TEXT NOT NULL,
             progress INTEGER NOT NULL DEFAULT 0, uri TEXT, error TEXT, partial TEXT,
-            attempts INTEGER NOT NULL DEFAULT 0
+            attempts INTEGER NOT NULL DEFAULT 0,
+            playlist_id TEXT, playlist_name TEXT
         )""")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            runCatching { db.execSQL("ALTER TABLE downloads ADD COLUMN playlist_id TEXT") }
+            runCatching { db.execSQL("ALTER TABLE downloads ADD COLUMN playlist_name TEXT") }
+        }
+    }
 
     fun migrateLegacy(context: Context) {
         val prefs = context.getSharedPreferences("full_downloads", Context.MODE_PRIVATE)
@@ -40,13 +46,28 @@ internal class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "d
 
     fun load(): List<SavedDownload> {
         val output = mutableListOf<SavedDownload>()
-        readableDatabase.query("downloads", arrayOf("id", "track", "quality", "state", "progress", "uri", "error", "partial", "attempts"),
-            null, null, null, null, "position ASC").use { cursor ->
+        readableDatabase.query(
+            "downloads",
+            arrayOf("id", "track", "quality", "state", "progress", "uri", "error", "partial", "attempts", "playlist_id", "playlist_name"),
+            null, null, null, null, "position ASC"
+        ).use { cursor ->
             while (cursor.moveToNext()) {
                 runCatching {
-                    output.add(SavedDownload(cursor.getString(0), jsonTrack(JSONObject(cursor.getString(1))),
-                        DownloadQuality.valueOf(cursor.getString(2)), cursor.getString(3), cursor.getInt(4),
-                        cursor.getString(5), cursor.getString(6), cursor.getString(7), cursor.getInt(8)))
+                    output.add(
+                        SavedDownload(
+                            id = cursor.getString(0),
+                            track = jsonTrack(JSONObject(cursor.getString(1))),
+                            quality = DownloadQuality.valueOf(cursor.getString(2)),
+                            state = cursor.getString(3),
+                            progress = cursor.getInt(4),
+                            uri = cursor.getString(5),
+                            error = cursor.getString(6),
+                            partialUri = cursor.getString(7),
+                            attempts = cursor.getInt(8),
+                            playlistId = cursor.getString(9),
+                            playlistName = cursor.getString(10)
+                        )
+                    )
                 }
             }
         }
@@ -89,5 +110,7 @@ internal class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "d
         put("error", item.error)
         put("partial", item.partialUri)
         put("attempts", item.attempts)
+        put("playlist_id", item.playlistId)
+        put("playlist_name", item.playlistName)
     }
 }

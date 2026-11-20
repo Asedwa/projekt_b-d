@@ -250,18 +250,29 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         val base = "${task.track.artist} - ${task.track.title} [${task.track.id.substringAfter(':')}]"
             .replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").trim().take(150).ifBlank { "PlasmaWave" }
         val name = "$base.${task.quality.extension}"
+        val playlistSubdir = task.playlistName
+            ?.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")
+            ?.trim()
+            ?.take(80)
+            ?.takeIf { it.isNotBlank() }
+        val relPath = if (playlistSubdir != null) {
+            "${Environment.DIRECTORY_MUSIC}/PlasmaWave/$playlistSubdir/"
+        } else {
+            "${Environment.DIRECTORY_MUSIC}/PlasmaWave/"
+        }
         if (Build.VERSION.SDK_INT >= 29) {
             val values = ContentValues().apply {
                 put(MediaStore.Audio.Media.DISPLAY_NAME, name)
                 put(MediaStore.Audio.Media.MIME_TYPE, task.quality.mime)
-                put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/PlasmaWave/")
+                put(MediaStore.Audio.Media.RELATIVE_PATH, relPath)
                 put(MediaStore.Audio.Media.IS_PENDING, 1)
             }
             return applicationContext.contentResolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
                 ?: throw IOException("Müzik klasörü açılamadı")
         }
         @Suppress("DEPRECATION")
-        val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "PlasmaWave")
+        val rootDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "PlasmaWave")
+        val directory = if (playlistSubdir != null) File(rootDir, playlistSubdir) else rootDir
         if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Müzik klasörü oluşturulamadı")
         var file = File(directory, name)
         var suffix = 1
