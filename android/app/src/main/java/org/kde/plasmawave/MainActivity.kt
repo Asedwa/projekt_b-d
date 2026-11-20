@@ -103,6 +103,7 @@ class MainActivity : ComponentActivity() {
             val activeTheme by viewModel.activeTheme.collectAsState()
             val legacyUiMode by viewModel.legacyUiMode.collectAsState()
             val ambientBackgroundEnabled by viewModel.ambientBackgroundEnabled.collectAsState()
+            val ambientBackdropStyle by viewModel.ambientBackdropStyle.collectAsState()
             val hasCurrentEntry by remember {
                 viewModel.playbackManager.overview
                     .map { it.currentEntry != null }
@@ -208,7 +209,10 @@ class MainActivity : ComponentActivity() {
 
                     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                         if (ambientBackgroundEnabled) {
-                            AmbientBackdropLayer(modifier = Modifier.fillMaxSize())
+                            AmbientBackdropLayer(
+                                style = ambientBackdropStyle,
+                                modifier = Modifier.fillMaxSize()
+                            )
                         }
                         if (isLandscape) {
                             Row(modifier = Modifier.fillMaxSize()) {

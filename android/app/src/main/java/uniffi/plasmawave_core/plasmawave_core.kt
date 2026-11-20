@@ -958,6 +958,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1225,6 +1227,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_frame(`phase`: Float,`primaryArgb`: Int,`secondaryArgb`: Int,`backgroundArgb`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_styled(`style`: RustBuffer.ByValue,`phase`: Float,`primaryArgb`: Int,`secondaryArgb`: Int,`backgroundArgb`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun ffi_plasmawave_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_plasmawave_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1340,6 +1344,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_func_compute_adaptive_text_palette(
     ): Short
     fun uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_styled(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget(
     ): Short
@@ -1601,7 +1607,10 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_func_compute_adaptive_text_palette() != 18662.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame() != 24740.toShort()) {
+    if (lib.uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame() != 32836.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_styled() != 3939.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget() != 2433.toShort()) {
@@ -4380,7 +4389,8 @@ public object FfiConverterTypeFfiAlbumStatSummary: FfiConverterRustBuffer<FfiAlb
 
 data class FfiAmbientBackdropFrame (
     var `orbs`: List<FfiAmbientOrb>, 
-    var `ribbons`: List<FfiAmbientRibbon>
+    var `ribbons`: List<FfiAmbientRibbon>, 
+    var `rings`: List<FfiAmbientRing>
 ) {
     
     companion object
@@ -4394,17 +4404,20 @@ public object FfiConverterTypeFfiAmbientBackdropFrame: FfiConverterRustBuffer<Ff
         return FfiAmbientBackdropFrame(
             FfiConverterSequenceTypeFfiAmbientOrb.read(buf),
             FfiConverterSequenceTypeFfiAmbientRibbon.read(buf),
+            FfiConverterSequenceTypeFfiAmbientRing.read(buf),
         )
     }
 
     override fun allocationSize(value: FfiAmbientBackdropFrame) = (
             FfiConverterSequenceTypeFfiAmbientOrb.allocationSize(value.`orbs`) +
-            FfiConverterSequenceTypeFfiAmbientRibbon.allocationSize(value.`ribbons`)
+            FfiConverterSequenceTypeFfiAmbientRibbon.allocationSize(value.`ribbons`) +
+            FfiConverterSequenceTypeFfiAmbientRing.allocationSize(value.`rings`)
     )
 
     override fun write(value: FfiAmbientBackdropFrame, buf: ByteBuffer) {
             FfiConverterSequenceTypeFfiAmbientOrb.write(value.`orbs`, buf)
             FfiConverterSequenceTypeFfiAmbientRibbon.write(value.`ribbons`, buf)
+            FfiConverterSequenceTypeFfiAmbientRing.write(value.`rings`, buf)
     }
 }
 
@@ -4515,6 +4528,54 @@ public object FfiConverterTypeFfiAmbientRibbon: FfiConverterRustBuffer<FfiAmbien
             FfiConverterFloat.write(value.`x1`, buf)
             FfiConverterFloat.write(value.`y1`, buf)
             FfiConverterFloat.write(value.`thickness`, buf)
+            FfiConverterUInt.write(value.`colorArgb`, buf)
+            FfiConverterFloat.write(value.`alpha`, buf)
+    }
+}
+
+
+
+data class FfiAmbientRing (
+    var `cx`: kotlin.Float, 
+    var `cy`: kotlin.Float, 
+    var `radius`: kotlin.Float, 
+    var `strokeWidth`: kotlin.Float, 
+    var `colorArgb`: kotlin.UInt, 
+    var `alpha`: kotlin.Float
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAmbientRing: FfiConverterRustBuffer<FfiAmbientRing> {
+    override fun read(buf: ByteBuffer): FfiAmbientRing {
+        return FfiAmbientRing(
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterFloat.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAmbientRing) = (
+            FfiConverterFloat.allocationSize(value.`cx`) +
+            FfiConverterFloat.allocationSize(value.`cy`) +
+            FfiConverterFloat.allocationSize(value.`radius`) +
+            FfiConverterFloat.allocationSize(value.`strokeWidth`) +
+            FfiConverterUInt.allocationSize(value.`colorArgb`) +
+            FfiConverterFloat.allocationSize(value.`alpha`)
+    )
+
+    override fun write(value: FfiAmbientRing, buf: ByteBuffer) {
+            FfiConverterFloat.write(value.`cx`, buf)
+            FfiConverterFloat.write(value.`cy`, buf)
+            FfiConverterFloat.write(value.`radius`, buf)
+            FfiConverterFloat.write(value.`strokeWidth`, buf)
             FfiConverterUInt.write(value.`colorArgb`, buf)
             FfiConverterFloat.write(value.`alpha`, buf)
     }
@@ -7013,6 +7074,34 @@ public object FfiConverterSequenceTypeFfiAmbientRibbon: FfiConverterRustBuffer<L
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeFfiAmbientRing: FfiConverterRustBuffer<List<FfiAmbientRing>> {
+    override fun read(buf: ByteBuffer): List<FfiAmbientRing> {
+        val len = buf.getInt()
+        return List<FfiAmbientRing>(len) {
+            FfiConverterTypeFfiAmbientRing.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiAmbientRing>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiAmbientRing.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiAmbientRing>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiAmbientRing.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeFfiArtist: FfiConverterRustBuffer<List<FfiArtist>> {
     override fun read(buf: ByteBuffer): List<FfiArtist> {
         val len = buf.getInt()
@@ -7621,13 +7710,29 @@ public object FfiConverterMapStringSequenceTypeFfiPlaylistTrackEntry: FfiConvert
 
         /**
          * Pure-Rust, zero-texture ambient aurora & silk-ribbon motion engine.
-         * Accepts normalized phase in [0.0, 1.0) and theme ARGB colors, returning
-         * compact normalized coordinates for low-memory GPU vector rendering.
          */ fun `computeAmbientBackdropFrame`(`phase`: kotlin.Float, `primaryArgb`: kotlin.UInt, `secondaryArgb`: kotlin.UInt, `backgroundArgb`: kotlin.UInt): FfiAmbientBackdropFrame {
             return FfiConverterTypeFfiAmbientBackdropFrame.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_frame(
         FfiConverterFloat.lower(`phase`),FfiConverterUInt.lower(`primaryArgb`),FfiConverterUInt.lower(`secondaryArgb`),FfiConverterUInt.lower(`backgroundArgb`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Pure-Rust multi-style ambient backdrop engine supporting 6 distinct visual modes:
+         * - "silk_aurora" (İpek Aurora)
+         * - "nebula_orbs" (Nebula Küreleri)
+         * - "ocean_waves" (Okyanus Dalgaları)
+         * - "cyber_pulse" (Siber Halkalar)
+         * - "starlight_drift" (Yıldız Tozu)
+         * - "prism_beams" (Prizma Hüzmeleri)
+         */ fun `computeAmbientBackdropStyled`(`style`: kotlin.String, `phase`: kotlin.Float, `primaryArgb`: kotlin.UInt, `secondaryArgb`: kotlin.UInt, `backgroundArgb`: kotlin.UInt): FfiAmbientBackdropFrame {
+            return FfiConverterTypeFfiAmbientBackdropFrame.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_styled(
+        FfiConverterString.lower(`style`),FfiConverterFloat.lower(`phase`),FfiConverterUInt.lower(`primaryArgb`),FfiConverterUInt.lower(`secondaryArgb`),FfiConverterUInt.lower(`backgroundArgb`),_status)
 }
     )
     }

@@ -3136,9 +3136,20 @@ pub struct FfiAmbientRibbon {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAmbientRing {
+    pub cx: f32,
+    pub cy: f32,
+    pub radius: f32,
+    pub stroke_width: f32,
+    pub color_argb: u32,
+    pub alpha: f32,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiAmbientBackdropFrame {
     pub orbs: Vec<FfiAmbientOrb>,
     pub ribbons: Vec<FfiAmbientRibbon>,
+    pub rings: Vec<FfiAmbientRing>,
 }
 
 fn blend_argb(a: u32, b: u32, t: f32) -> u32 {
@@ -3157,10 +3168,32 @@ fn blend_argb(a: u32, b: u32, t: f32) -> u32 {
 }
 
 /// Pure-Rust, zero-texture ambient aurora & silk-ribbon motion engine.
-/// Accepts normalized phase in [0.0, 1.0) and theme ARGB colors, returning
-/// compact normalized coordinates for low-memory GPU vector rendering.
 #[uniffi::export]
 pub fn compute_ambient_backdrop_frame(
+    phase: f32,
+    primary_argb: u32,
+    secondary_argb: u32,
+    background_argb: u32,
+) -> FfiAmbientBackdropFrame {
+    compute_ambient_backdrop_styled(
+        "silk_aurora".into(),
+        phase,
+        primary_argb,
+        secondary_argb,
+        background_argb,
+    )
+}
+
+/// Pure-Rust multi-style ambient backdrop engine supporting 6 distinct visual modes:
+/// - "silk_aurora" (İpek Aurora)
+/// - "nebula_orbs" (Nebula Küreleri)
+/// - "ocean_waves" (Okyanus Dalgaları)
+/// - "cyber_pulse" (Siber Halkalar)
+/// - "starlight_drift" (Yıldız Tozu)
+/// - "prism_beams" (Prizma Hüzmeleri)
+#[uniffi::export]
+pub fn compute_ambient_backdrop_styled(
+    style: String,
     phase: f32,
     primary_argb: u32,
     secondary_argb: u32,
@@ -3172,71 +3205,352 @@ pub fn compute_ambient_backdrop_frame(
     let c1 = tau.cos();
     let s2 = (tau * 2.0 + 0.85).sin();
     let c2 = (tau * 2.0 + 0.85).cos();
+    let s3 = (tau * 3.0 + 1.7).sin();
 
-    // Harmonious theme-derived tints (soft lift + deep blend)
-    let soft_primary = blend_argb(primary_argb, 0xFFFF_FFFF, 0.14);
+    // Harmonious theme-derived tints
+    let soft_primary = blend_argb(primary_argb, 0xFFFF_FFFF, 0.16);
     let deep_primary = blend_argb(primary_argb, background_argb, 0.35);
-    let mid_accent = blend_argb(primary_argb, secondary_argb, 0.45);
+    let mid_accent = blend_argb(primary_argb, secondary_argb, 0.48);
+    let bright_accent = blend_argb(secondary_argb, 0xFFFF_FFFF, 0.22);
 
-    let orbs = vec![
-        // 1. Top-right / top-center aurora glow (signature header highlight)
-        FfiAmbientOrb {
-            cx: 0.72 + 0.08 * c1,
-            cy: 0.06 + 0.04 * s1,
-            radius: 0.78 + 0.05 * s2,
-            color_argb: soft_primary,
-            alpha: 0.22 + 0.03 * s1,
-        },
-        // 2. Bottom-right ambient glow rising gently behind the bottom bar
-        FfiAmbientOrb {
-            cx: 0.76 - 0.10 * s1,
-            cy: 0.94 + 0.04 * c1,
-            radius: 0.74 + 0.06 * c2,
-            color_argb: mid_accent,
-            alpha: 0.19 + 0.03 * c1,
-        },
-        // 3. Soft mid-left breathing whisper glow for depth
-        FfiAmbientOrb {
-            cx: 0.10 + 0.07 * s2,
-            cy: 0.48 + 0.06 * c1,
-            radius: 0.62 + 0.04 * s1,
-            color_argb: deep_primary,
-            alpha: 0.13 + 0.02 * s2,
-        },
-    ];
+    match style.as_str() {
+        "nebula_orbs" => {
+            let orbs = vec![
+                FfiAmbientOrb {
+                    cx: 0.75 + 0.14 * c1,
+                    cy: 0.12 + 0.07 * s1,
+                    radius: 0.82 + 0.06 * s2,
+                    color_argb: soft_primary,
+                    alpha: 0.26 + 0.04 * s1,
+                },
+                FfiAmbientOrb {
+                    cx: 0.22 - 0.12 * s1,
+                    cy: 0.26 + 0.08 * c2,
+                    radius: 0.70 + 0.05 * c1,
+                    color_argb: mid_accent,
+                    alpha: 0.20 + 0.03 * c1,
+                },
+                FfiAmbientOrb {
+                    cx: 0.80 - 0.15 * c2,
+                    cy: 0.62 + 0.09 * s1,
+                    radius: 0.75 + 0.07 * s1,
+                    color_argb: deep_primary,
+                    alpha: 0.22 + 0.03 * s2,
+                },
+                FfiAmbientOrb {
+                    cx: 0.24 + 0.14 * s2,
+                    cy: 0.88 - 0.06 * c1,
+                    radius: 0.78 + 0.05 * c2,
+                    color_argb: bright_accent,
+                    alpha: 0.18 + 0.03 * c2,
+                },
+            ];
+            FfiAmbientBackdropFrame {
+                orbs,
+                ribbons: Vec::new(),
+                rings: Vec::new(),
+            }
+        }
+        "ocean_waves" => {
+            let orbs = vec![
+                FfiAmbientOrb {
+                    cx: 0.50 + 0.10 * s1,
+                    cy: 0.04,
+                    radius: 0.88,
+                    color_argb: soft_primary,
+                    alpha: 0.18,
+                },
+                FfiAmbientOrb {
+                    cx: 0.50 - 0.10 * c1,
+                    cy: 0.96,
+                    radius: 0.82,
+                    color_argb: mid_accent,
+                    alpha: 0.16,
+                },
+            ];
+            let ribbons = vec![
+                // Top rolling wave 1
+                FfiAmbientRibbon {
+                    x0: -0.08,
+                    y0: 0.07 + 0.025 * s1,
+                    cx1: 0.30 + 0.05 * c1,
+                    cy1: 0.01 - 0.03 * c1,
+                    cx2: 0.68 - 0.05 * s1,
+                    cy2: 0.14 + 0.03 * s2,
+                    x1: 1.08,
+                    y1: 0.06 - 0.02 * c1,
+                    thickness: 0.10 + 0.015 * s1,
+                    color_argb: soft_primary,
+                    alpha: 0.20 + 0.03 * c1,
+                },
+                // Top rolling wave 2
+                FfiAmbientRibbon {
+                    x0: -0.08,
+                    y0: 0.13 - 0.02 * c1,
+                    cx1: 0.35 - 0.04 * s2,
+                    cy1: 0.20 + 0.025 * s1,
+                    cx2: 0.72 + 0.04 * c1,
+                    cy2: 0.07 - 0.025 * c2,
+                    x1: 1.08,
+                    y1: 0.15 + 0.02 * s1,
+                    thickness: 0.085 + 0.01 * c2,
+                    color_argb: mid_accent,
+                    alpha: 0.15 + 0.025 * s1,
+                },
+                // Bottom gentle undertow wave
+                FfiAmbientRibbon {
+                    x0: -0.08,
+                    y0: 0.86 + 0.02 * c2,
+                    cx1: 0.34 + 0.05 * s1,
+                    cy1: 0.80 - 0.025 * c1,
+                    cx2: 0.70 - 0.05 * c1,
+                    cy2: 0.92 + 0.025 * s1,
+                    x1: 1.08,
+                    y1: 0.85 - 0.02 * s2,
+                    thickness: 0.095,
+                    color_argb: deep_primary,
+                    alpha: 0.16,
+                },
+            ];
+            FfiAmbientBackdropFrame {
+                orbs,
+                ribbons,
+                rings: Vec::new(),
+            }
+        }
+        "cyber_pulse" => {
+            let center_x = 0.50 + 0.03 * s1;
+            let center_y = 0.13 + 0.02 * c1;
+            let orbs = vec![
+                FfiAmbientOrb {
+                    cx: center_x,
+                    cy: center_y,
+                    radius: 0.68 + 0.06 * s1,
+                    color_argb: soft_primary,
+                    alpha: 0.22 + 0.03 * s1,
+                },
+                FfiAmbientOrb {
+                    cx: 0.78 - 0.08 * c1,
+                    cy: 0.90 + 0.03 * s1,
+                    radius: 0.65,
+                    color_argb: mid_accent,
+                    alpha: 0.16,
+                },
+            ];
+            let mut rings = Vec::with_capacity(4);
+            for i in 0..4 {
+                let p = (wrapped + (i as f32) * 0.25).rem_euclid(1.0);
+                let radius = 0.12 + p * 0.58;
+                let fade = (1.0 - p) * (0.20 + 0.80 * (p * std::f32::consts::PI).sin());
+                rings.push(FfiAmbientRing {
+                    cx: center_x,
+                    cy: center_y,
+                    radius,
+                    stroke_width: 0.005 + (1.0 - p) * 0.004,
+                    color_argb: if i % 2 == 0 { soft_primary } else { bright_accent },
+                    alpha: (0.24 * fade).clamp(0.01, 0.26),
+                });
+            }
+            FfiAmbientBackdropFrame {
+                orbs,
+                ribbons: Vec::new(),
+                rings,
+            }
+        }
+        "starlight_drift" => {
+            let orbs = vec![
+                FfiAmbientOrb {
+                    cx: 0.68 + 0.08 * c1,
+                    cy: 0.10 + 0.04 * s1,
+                    radius: 0.74,
+                    color_argb: soft_primary,
+                    alpha: 0.19,
+                },
+                FfiAmbientOrb {
+                    cx: 0.25 - 0.06 * s1,
+                    cy: 0.82 + 0.05 * c1,
+                    radius: 0.68,
+                    color_argb: mid_accent,
+                    alpha: 0.15,
+                },
+            ];
+            let ribbons = vec![FfiAmbientRibbon {
+                x0: 0.15 + 0.04 * s1,
+                y0: -0.03,
+                cx1: 0.42 - 0.05 * c1,
+                cy1: 0.14 + 0.03 * s2,
+                cx2: 0.74 + 0.04 * s1,
+                cy2: 0.03 - 0.03 * c1,
+                x1: 1.06,
+                y1: 0.16 + 0.02 * c2,
+                thickness: 0.09,
+                color_argb: soft_primary,
+                alpha: 0.15,
+            }];
+            let seeds: [(f32, f32, f32, f32); 10] = [
+                (0.16, 0.08, 0.018, 0.0),
+                (0.84, 0.07, 0.024, 0.7),
+                (0.62, 0.16, 0.015, 1.4),
+                (0.28, 0.22, 0.021, 2.1),
+                (0.88, 0.27, 0.016, 2.8),
+                (0.12, 0.44, 0.022, 3.5),
+                (0.76, 0.54, 0.019, 4.2),
+                (0.34, 0.68, 0.016, 4.9),
+                (0.84, 0.80, 0.023, 5.5),
+                (0.20, 0.86, 0.018, 6.0),
+            ];
+            let rings = seeds
+                .iter()
+                .enumerate()
+                .map(|(idx, &(bx, by, rad, offset))| {
+                    let twinkle = 0.5 + 0.5 * (tau * 2.0 + offset).sin();
+                    let dx = 0.03 * (tau + offset).cos();
+                    let dy = 0.025 * (tau + offset * 1.3).sin();
+                    FfiAmbientRing {
+                        cx: bx + dx,
+                        cy: by + dy,
+                        radius: rad * (0.85 + 0.30 * twinkle),
+                        stroke_width: 0.0, // Filled glowing starlight bokeh particle
+                        color_argb: if idx % 2 == 0 { bright_accent } else { soft_primary },
+                        alpha: 0.12 + 0.22 * twinkle,
+                    }
+                })
+                .collect();
+            FfiAmbientBackdropFrame {
+                orbs,
+                ribbons,
+                rings,
+            }
+        }
+        "prism_beams" => {
+            let orbs = vec![
+                FfiAmbientOrb {
+                    cx: 0.82 + 0.06 * c1,
+                    cy: 0.04,
+                    radius: 0.76,
+                    color_argb: soft_primary,
+                    alpha: 0.21,
+                },
+                FfiAmbientOrb {
+                    cx: 0.18 - 0.06 * s1,
+                    cy: 0.06,
+                    radius: 0.68,
+                    color_argb: mid_accent,
+                    alpha: 0.17,
+                },
+            ];
+            let ribbons = vec![
+                // Diagonal prism shaft 1 from top-right
+                FfiAmbientRibbon {
+                    x0: 0.96,
+                    y0: -0.05,
+                    cx1: 0.72 + 0.05 * s1,
+                    cy1: 0.12,
+                    cx2: 0.45 + 0.06 * c1,
+                    cy2: 0.24,
+                    x1: 0.08 + 0.05 * s2,
+                    y1: 0.38,
+                    thickness: 0.12 + 0.02 * s1,
+                    color_argb: soft_primary,
+                    alpha: 0.17 + 0.03 * c1,
+                },
+                // Diagonal prism shaft 2 from top-center
+                FfiAmbientRibbon {
+                    x0: 0.64 + 0.04 * c1,
+                    y0: -0.05,
+                    cx1: 0.52 - 0.04 * s1,
+                    cy1: 0.10,
+                    cx2: 0.36 + 0.05 * c2,
+                    cy2: 0.20,
+                    x1: -0.04,
+                    y1: 0.28 + 0.03 * s1,
+                    thickness: 0.085 + 0.015 * c2,
+                    color_argb: bright_accent,
+                    alpha: 0.13 + 0.02 * s3,
+                },
+                // Counter beam from top-left
+                FfiAmbientRibbon {
+                    x0: 0.04,
+                    y0: -0.04,
+                    cx1: 0.32 + 0.04 * c1,
+                    cy1: 0.09,
+                    cx2: 0.64 - 0.04 * s1,
+                    cy2: 0.18,
+                    x1: 1.04,
+                    y1: 0.27 + 0.02 * c1,
+                    thickness: 0.075,
+                    color_argb: mid_accent,
+                    alpha: 0.12,
+                },
+            ];
+            FfiAmbientBackdropFrame {
+                orbs,
+                ribbons,
+                rings: Vec::new(),
+            }
+        }
+        _ => {
+            // Default: "silk_aurora" (İpek Aurora)
+            let orbs = vec![
+                FfiAmbientOrb {
+                    cx: 0.72 + 0.08 * c1,
+                    cy: 0.06 + 0.04 * s1,
+                    radius: 0.78 + 0.05 * s2,
+                    color_argb: soft_primary,
+                    alpha: 0.22 + 0.03 * s1,
+                },
+                FfiAmbientOrb {
+                    cx: 0.76 - 0.10 * s1,
+                    cy: 0.94 + 0.04 * c1,
+                    radius: 0.74 + 0.06 * c2,
+                    color_argb: mid_accent,
+                    alpha: 0.19 + 0.03 * c1,
+                },
+                FfiAmbientOrb {
+                    cx: 0.10 + 0.07 * s2,
+                    cy: 0.48 + 0.06 * c1,
+                    radius: 0.62 + 0.04 * s1,
+                    color_argb: deep_primary,
+                    alpha: 0.13 + 0.02 * s2,
+                },
+            ];
 
-    let ribbons = vec![
-        // Primary sweeping top-right silk aurora wave (matches screenshot header curve)
-        FfiAmbientRibbon {
-            x0: 0.22 + 0.05 * c1,
-            y0: -0.04,
-            cx1: 0.44 + 0.06 * s1,
-            cy1: 0.15 + 0.03 * c1,
-            cx2: 0.68 - 0.05 * c2,
-            cy2: 0.02 + 0.04 * s1,
-            x1: 1.08,
-            y1: 0.13 + 0.03 * c1,
-            thickness: 0.11 + 0.015 * s1,
-            color_argb: soft_primary,
-            alpha: 0.18 + 0.03 * c1,
-        },
-        // Secondary subtle counter-wave echoing the top ribbon
-        FfiAmbientRibbon {
-            x0: 0.34 - 0.04 * s1,
-            y0: 0.01,
-            cx1: 0.56 + 0.05 * c1,
-            cy1: 0.19 - 0.03 * s1,
-            cx2: 0.78 + 0.04 * s2,
-            cy2: 0.06 + 0.03 * c2,
-            x1: 1.12,
-            y1: 0.20 - 0.02 * s1,
-            thickness: 0.075 + 0.012 * c2,
-            color_argb: mid_accent,
-            alpha: 0.12 + 0.025 * s1,
-        },
-    ];
+            let ribbons = vec![
+                FfiAmbientRibbon {
+                    x0: 0.22 + 0.05 * c1,
+                    y0: -0.04,
+                    cx1: 0.44 + 0.06 * s1,
+                    cy1: 0.15 + 0.03 * c1,
+                    cx2: 0.68 - 0.05 * c2,
+                    cy2: 0.02 + 0.04 * s1,
+                    x1: 1.08,
+                    y1: 0.13 + 0.03 * c1,
+                    thickness: 0.11 + 0.015 * s1,
+                    color_argb: soft_primary,
+                    alpha: 0.18 + 0.03 * c1,
+                },
+                FfiAmbientRibbon {
+                    x0: 0.34 - 0.04 * s1,
+                    y0: 0.01,
+                    cx1: 0.56 + 0.05 * c1,
+                    cy1: 0.19 - 0.03 * s1,
+                    cx2: 0.78 + 0.04 * s2,
+                    cy2: 0.06 + 0.03 * c2,
+                    x1: 1.12,
+                    y1: 0.20 - 0.02 * s1,
+                    thickness: 0.075 + 0.012 * c2,
+                    color_argb: mid_accent,
+                    alpha: 0.12 + 0.025 * s1,
+                },
+            ];
 
-    FfiAmbientBackdropFrame { orbs, ribbons }
+            FfiAmbientBackdropFrame {
+                orbs,
+                ribbons,
+                rings: Vec::new(),
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, uniffi::Record)]

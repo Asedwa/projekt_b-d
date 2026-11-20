@@ -41,6 +41,7 @@ import org.kde.plasmawave.download.DownloadStorage
 import org.kde.plasmawave.download.SavedDownload
 import org.kde.plasmawave.ui.components.SeekbarStyle
 import org.kde.plasmawave.ui.components.AlbumCoverFrame
+import org.kde.plasmawave.ui.components.AmbientBackdropStyle
 import org.kde.plasmawave.ui.components.HeaderLogoStyle
 import org.kde.plasmawave.ui.components.HomeFeedType
 import org.kde.plasmawave.ui.components.HomeWidgetType
@@ -302,6 +303,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setAmbientBackgroundEnabled(enabled: Boolean) {
         _ambientBackgroundEnabled.value = enabled
         displayPrefs.edit().putBoolean("ambient_background_enabled", enabled).apply()
+    }
+
+    private val _ambientBackdropStyle = MutableStateFlow(
+        AmbientBackdropStyle.fromId(displayPrefs.getString("ambient_backdrop_style", AmbientBackdropStyle.SILK_AURORA.id))
+    )
+    val ambientBackdropStyle = _ambientBackdropStyle.asStateFlow()
+    fun setAmbientBackdropStyle(style: AmbientBackdropStyle) {
+        _ambientBackdropStyle.value = style
+        displayPrefs.edit().putString("ambient_backdrop_style", style.id).apply()
+        if (!_ambientBackgroundEnabled.value) {
+            setAmbientBackgroundEnabled(true)
+        }
     }
 
     private val _seekbarStyle = MutableStateFlow(

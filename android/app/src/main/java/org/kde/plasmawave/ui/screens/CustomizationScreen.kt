@@ -95,6 +95,7 @@ fun CustomizationScreen(
 ) {
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
     val ambientBackgroundEnabled by viewModel.ambientBackgroundEnabled.collectAsState()
+    val ambientBackdropStyle by viewModel.ambientBackdropStyle.collectAsState()
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val albumFrame by viewModel.albumFrame.collectAsState()
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
@@ -1735,7 +1736,7 @@ fun CustomizationScreen(
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                                 )
                                 Text(
-                                    text = if (ambientBackgroundEnabled) "Açık (Rust motoru • düşük bellek)" else "Kapalı (Düz tema arka planı)",
+                                    text = if (ambientBackgroundEnabled) "Açık (${ambientBackdropStyle.title} • Rust motoru)" else "Kapalı (Düz tema arka planı)",
                                     style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                                 )
                             }
@@ -1750,9 +1751,85 @@ fun CustomizationScreen(
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Tema renklerinizden üretilen hafif hareketli ışık dalgalarını ekler. Ekstra bitmap kullanmadan doğrudan Rust matematik motoruyla çizildiği için düşük bellek ve pil tüketir.",
+                            text = "Tema renklerinizden üretilen hafif hareketli ışık efektlerini seçin. Ekstra bitmap kullanmadan doğrudan Rust matematik motoruyla çizildiği için düşük bellek ve pil tüketir.",
                             style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                         )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AmbientBackdropStyle.entries.chunked(2).forEach { rowStyles ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    rowStyles.forEach { styleOption ->
+                                        val isSelected = ambientBackgroundEnabled && ambientBackdropStyle == styleOption
+                                        Surface(
+                                            onClick = { viewModel.setAmbientBackdropStyle(styleOption) },
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = MaterialTheme.colorScheme.background,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .border(
+                                                    width = if (isSelected) 2.dp else 1.dp,
+                                                    color = if (isSelected) primary else colors.border.copy(alpha = 0.45f),
+                                                    shape = RoundedCornerShape(14.dp)
+                                                )
+                                        ) {
+                                            Column {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(64.dp)
+                                                        .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                                                        .background(MaterialTheme.colorScheme.background)
+                                                ) {
+                                                    AmbientBackdropLayer(
+                                                        style = styleOption,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                    if (isSelected) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .padding(6.dp)
+                                                                .size(20.dp)
+                                                                .clip(CircleShape)
+                                                                .background(primary),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Check,
+                                                                contentDescription = null,
+                                                                tint = MaterialTheme.colorScheme.onPrimary,
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                                    Text(
+                                                        text = styleOption.title,
+                                                        style = MaterialTheme.typography.labelLarge.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isSelected) primary else MaterialTheme.colorScheme.onBackground
+                                                        ),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(
+                                                        text = styleOption.subtitle,
+                                                        style = MaterialTheme.typography.labelSmall.copy(color = colors.textSecondary),
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
