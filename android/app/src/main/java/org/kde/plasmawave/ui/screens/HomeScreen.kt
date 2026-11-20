@@ -1529,6 +1529,7 @@ private fun CollapsingHomeHeader(
                 ),
                 label = "downloadIconShift"
             )
+            val downloadExitShiftPx = with(density) { 40.dp.toPx() }
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -1536,12 +1537,17 @@ private fun CollapsingHomeHeader(
                     .graphicsLayer {
                         val f = fraction()
                         val s = f * f * (3f - 2f * f)
+                        val scale = 1f - 0.22f * s
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = (1f - s).coerceIn(0f, 1f)
+                        translationX = s * downloadExitShiftPx
                         translationY = lerpFloat(downloadTopExpandedPx, downloadTopCollapsedPx, s)
                     }
                     .height(48.dp)
                     .width(48.dp + animatedShift)
                     .clip(RoundedCornerShape(24.dp))
-                    .clickable(onClick = onDownloadsClick)
+                    .clickable(enabled = fraction() < 0.85f, onClick = onDownloadsClick)
             ) {
                 Icon(
                     imageVector = Icons.Default.Download,
