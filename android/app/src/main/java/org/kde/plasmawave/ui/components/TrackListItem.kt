@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -70,7 +71,7 @@ fun TrackListItem(
     val customColors = LocalPlasmaColors.current
     val deezerConnected = LocalDeezerConnected.current
     val downloadStatus = LocalDownloadStatus.current
-    val normalizedId = DownloadStorage.normalizeTrackId(track.id)
+    val normalizedId = remember(track.id) { DownloadStorage.normalizeTrackId(track.id) }
     val isDownloaded = track.provider == "local" ||
         (normalizedId.isNotBlank() && normalizedId in downloadStatus.downloadedTrackIds)
     val activeProgress = if (normalizedId.isNotBlank() && normalizedId in downloadStatus.activeTrackProgress) {

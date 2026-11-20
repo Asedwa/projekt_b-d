@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
+import kotlin.math.abs
+import uniffi.plasmawave_core.FfiAmbientBackdropFrame
 import uniffi.plasmawave_core.computeAmbientBackdropStyled
 
 enum class AmbientBackdropStyle(
@@ -68,67 +70,113 @@ enum class AmbientBackdropStyle(
 
 val LocalAmbientBackdropEnabled = compositionLocalOf { false }
 
+private class CachedBackdropFrame {
+    var styleId: String = ""
+    var quantizedPhase: Float = -1f
+    var primaryArgb: UInt = 0u
+    var secondaryArgb: UInt = 0u
+    var backgroundArgb: UInt = 0u
+    var frame: FfiAmbientBackdropFrame? = null
+
+    fun resolve(
+        styleId: String,
+        phase: Float,
+        primaryArgb: UInt,
+        secondaryArgb: UInt,
+        backgroundArgb: UInt
+    ): FfiAmbientBackdropFrame {
+        val current = frame
+        if (current != null &&
+            this.styleId == styleId &&
+            this.primaryArgb == primaryArgb &&
+            this.secondaryArgb == secondaryArgb &&
+            this.backgroundArgb == backgroundArgb &&
+            abs(phase - this.quantizedPhase) < 0.002f
+        ) {
+            return current
+        }
+        val computed = computeAmbientBackdropStyled(
+            style = styleId,
+            phase = phase,
+            primaryArgb = primaryArgb,
+            secondaryArgb = secondaryArgb,
+            backgroundArgb = backgroundArgb
+        )
+        this.styleId = styleId
+        this.quantizedPhase = phase
+        this.primaryArgb = primaryArgb
+        this.secondaryArgb = secondaryArgb
+        this.backgroundArgb = backgroundArgb
+        this.frame = computed
+        return computed
+    }
+}
+
 /**
  * Low-memory, Rust-computed animated ambient backdrop supporting 6 visual styles.
  *
- * Uses zero offscreen bitmaps and zero blur buffers: Rust computes compact
- * normalized orb, ribbon, and ring/particle geometry per draw frame, and Compose
- * renders them directly with GPU vector gradients inside Canvas (zero recompositions).
+ * Uses zero offscreen bitmaps and zero blur buffers, memoizes Rust JNA calls across
+ * sub-perceptible phase deltas (~30 Hz effective geometry step on 120 Hz displays),
+ * and pauses automatically when covered by full-screen sheets.
  */
 @Composable
 fun AmbientBackdropLayer(
     style: AmbientBackdropStyle = AmbientBackdropStyle.SILK_AURORA,
+    paused: Boolean = false,
+    phaseOverride: Float? = null,
     modifier: Modifier = Modifier
 ) {
+    if (paused) return
+
     val primaryArgb = MaterialTheme.colorScheme.primary.toArgb().toUInt()
     val secondaryArgb = MaterialTheme.colorScheme.secondary.toArgb().toUInt()
     val backgroundArgb = MaterialTheme.colorScheme.background.toArgb().toUInt()
 
-    val transition = rememberInfiniteTransition(label = "rustAmbientBackdrop")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 22_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "ambientPhase"
-    )
+    val effectivePhase = if (phaseOverride != null) {
+        phaseOverride
+    } else {
+        val transition = rememberInfiniteTransition(label = "rustAmbientBackdrop")
+        val animatedPhase by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 22_000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "ambientPhase"
+        )
+        animatedPhase
+    }
 
     val ribbonPath = remember { Path() }
+    val frameCache = remember { CachedBackdropFrame() }
 
     Canvas(modifier = modifier.fillMaxSize()) {
-        drawRustAmbientBackdrop(
+        val w = size.width
+        val h = size.height
+        if (w <= 0f || h <= 0f) return@Canvas
+
+        val frame = frameCache.resolve(
             styleId = style.id,
-            phase = phase,
+            phase = effectivePhase,
             primaryArgb = primaryArgb,
             secondaryArgb = secondaryArgb,
-            backgroundArgb = backgroundArgb,
+            backgroundArgb = backgroundArgb
+        )
+
+        drawRustAmbientBackdropFrame(
+            frame = frame,
             ribbonPath = ribbonPath
         )
     }
 }
 
-internal fun DrawScope.drawRustAmbientBackdrop(
-    styleId: String,
-    phase: Float,
-    primaryArgb: UInt,
-    secondaryArgb: UInt,
-    backgroundArgb: UInt,
+internal fun DrawScope.drawRustAmbientBackdropFrame(
+    frame: FfiAmbientBackdropFrame,
     ribbonPath: Path
 ) {
     val w = size.width
     val h = size.height
-    if (w <= 0f || h <= 0f) return
-
-    val frame = computeAmbientBackdropStyled(
-        style = styleId,
-        phase = phase,
-        primaryArgb = primaryArgb,
-        secondaryArgb = secondaryArgb,
-        backgroundArgb = backgroundArgb
-    )
-
     val minDim = minOf(w, h)
 
     // 1. Soft drifting ambient radial glow orbs

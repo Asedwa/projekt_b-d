@@ -106,7 +106,10 @@ class Downloads private constructor(private val context: Context) {
         // without re-downloading them, so the downloaded playlist is complete and playable offline.
         val linkedExisting = if (cleanPlaylistName != null) {
             val existingInThisPlaylist = _items.value
-                .filter { it.playlistName == cleanPlaylistName && it.state in listOf("queued", "running", "completed") }
+                .filter {
+                    ((cleanPlaylistId != null && it.playlistId == cleanPlaylistId) || it.playlistName == cleanPlaylistName) &&
+                        it.state in listOf("queued", "running", "completed")
+                }
                 .map { DownloadStorage.normalizeTrackId(it.track.id) }
                 .toMutableSet()
             toDownload.forEach { existingInThisPlaylist.add(DownloadStorage.normalizeTrackId(it.track.id)) }

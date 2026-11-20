@@ -940,7 +940,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         positionMs: Long,
         durationMs: Long,
         queueTracks: List<FfiTrack>,
-        queueIndex: Int
+        queueIndex: Int,
+        updateUiState: Boolean = true
     ) {
         if (!_saveResumePositionEnabled.value) return
         val safeDur = durationMs.takeIf { it > 0L } ?: track.durationMs.toLong().takeIf { it > 0L } ?: 210_000L
@@ -955,7 +956,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             queueTracks = trimmedQueue,
             queueIndex = safeIdx
         )
-        _resumePlaybackState.value = state
+        if (updateUiState) {
+            _resumePlaybackState.value = state
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 core.saveResumePlaybackState(state.toFfi())
@@ -1001,7 +1004,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun recordActiveListeningTick(track: FfiTrack, deltaMs: Long) {
+    private fun recordActiveListeningTick(track: FfiTrack, deltaMs: Long, refreshFullList: Boolean = false) {
         if (!_collectListeningStatsEnabled.value || deltaMs <= 0L) return
         try {
             val now = System.currentTimeMillis().toULong()
@@ -1012,7 +1015,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 timestampMs = now
             )
             _totalListeningTimeMs.value = updatedTotal.toLong()
-            _trackListeningStats.value = core.getListeningStats(300u).map { it.toUi() }
+            if (refreshFullList) {
+                _trackListeningStats.value = core.getListeningStats(300u).map { it.toUi() }
+            }
         } catch (e: Exception) {
             Log.e("MainViewModel", "recordActiveListeningTick failed", e)
         }
@@ -1027,17 +1032,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val storageBreakdown: StateFlow<StorageBreakdown> = _storageBreakdown.asStateFlow()
 
     fun setPrivateSession(enabled: Boolean, durationMs: Long = 0L) {
-        val status = core.setPrivateSession(
-            enabled = enabled,
-            durationMs = durationMs.coerceAtLeast(0L).toULong(),
-            nowMs = System.currentTimeMillis().toULong()
-        )
-        _privateSessionStatus.value = status
-        _statusMessage.value = if (status.active) {
-            if (durationMs > 0L) "Gizli dinleme oturumu açıldı (${durationMs / 3_600_000L} saat)"
-            else "Gizli dinleme oturumu açıldı"
-        } else {
-            "Gizli dinleme oturumu kapatıldı"
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val status = core.setPrivateSession(
+                    enabled = enabled,
+                    durationMs = durationMs.coerceAtLeast(0L).toULong(),
+                    nowMs = System.currentTimeMillis().toULong()
+                )
+                _privateSessionStatus.value = status
+                _statusMessage.value = if (status.active) {
+                    if (durationMs > 0L) "Gizli dinleme oturumu açıldı (${durationMs / 3_600_000L} saat)"
+                    else "Gizli dinleme oturumu açıldı"
+                } else {
+                    "Gizli dinleme oturumu kapatıldı"
+                }
+            }.onFailure { e ->
+                Log.e("MainViewModel", "setPrivateSession failed", e)
+            }
         }
     }
 
@@ -1356,6 +1367,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val failedErrors = HashMap<String, String>()
         val unavailableIds = HashSet<String>()
         val playlistCompletedIds = HashSet<String>()
+        val playlistActiveIds = HashSet<String>()
 
         onDisk.forEach { track ->
             val norm = DownloadStorage.normalizeTrackId(track.id)
@@ -1372,15 +1384,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     if (!task.playlistId.isNullOrBlank()) playlistCompletedIds.add(task.playlistId)
                 }
-                "running" -> if (norm.isNotBlank()) {
-                    activeProgress[norm] = task.progress
-                    failedErrors.remove(norm)
-                    unavailableIds.remove(norm)
+                "running" -> {
+                    if (norm.isNotBlank()) {
+                        // Quantize progress to 5% steps to prevent excessive UI list recompositions
+                        activeProgress[norm] = (task.progress / 5) * 5
+                        failedErrors.remove(norm)
+                        unavailableIds.remove(norm)
+                    }
+                    if (!task.playlistId.isNullOrBlank()) playlistActiveIds.add(task.playlistId)
                 }
-                "queued" -> if (norm.isNotBlank()) {
-                    activeProgress.putIfAbsent(norm, null)
-                    failedErrors.remove(norm)
-                    unavailableIds.remove(norm)
+                "queued" -> {
+                    if (norm.isNotBlank()) {
+                        activeProgress.putIfAbsent(norm, null)
+                        failedErrors.remove(norm)
+                        unavailableIds.remove(norm)
+                    }
+                    if (!task.playlistId.isNullOrBlank()) playlistActiveIds.add(task.playlistId)
                 }
                 "failed" -> if (norm.isNotBlank() && norm !in completedIds && norm !in activeProgress) {
                     val err = task.error ?: "İndirilemedi"
@@ -1395,6 +1414,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        playlistCompletedIds.removeAll(playlistActiveIds)
         DownloadStatusSnapshot(
             downloadedTrackIds = completedIds,
             activeTrackProgress = activeProgress,
@@ -1510,7 +1530,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (ui.isPlaying && curTrack != null) {
                     if (pendingTrack != null && pendingTrack.id != curTrack.id) {
                         if (pendingMs > 0L) {
-                            recordActiveListeningTick(pendingTrack, pendingMs)
+                            recordActiveListeningTick(pendingTrack, pendingMs, refreshFullList = true)
                             pendingMs = 0L
                         }
                         if (lastTrackDurMs > 0L && lastTrackPosMs >= 5_000L) {
@@ -1531,10 +1551,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     pendingMs += 1000L
                     tickCounter++
                     if (pendingMs >= 10_000L) {
-                        recordActiveListeningTick(curTrack, pendingMs)
+                        recordActiveListeningTick(curTrack, pendingMs, refreshFullList = (tickCounter % 30 == 0))
                         pendingMs = 0L
                     }
-                    if (tickCounter % 5 == 0) {
+                    if (tickCounter % 15 == 0) {
                         val snap = ui.queueSnapshot
                         val qTracks = snap?.entries?.map { it.track }.orEmpty().ifEmpty { listOf(curTrack) }
                         val qIdx = snap?.currentIndex?.toInt() ?: 0
@@ -1544,11 +1564,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             positionMs = prog.positionMs,
                             durationMs = prog.durationMs,
                             queueTracks = qTracks,
-                            queueIndex = qIdx
+                            queueIndex = qIdx,
+                            updateUiState = false
                         )
                     }
                 } else if (pendingTrack != null && pendingMs > 0L) {
-                    recordActiveListeningTick(pendingTrack, pendingMs)
+                    recordActiveListeningTick(pendingTrack, pendingMs, refreshFullList = true)
                     pendingMs = 0L
                     pendingTrack = null
                     val pausedTrack = curTrack ?: ui.currentEntry?.track
@@ -1562,15 +1583,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             positionMs = prog.positionMs,
                             durationMs = prog.durationMs,
                             queueTracks = qTracks,
-                            queueIndex = qIdx
+                            queueIndex = qIdx,
+                            updateUiState = true
                         )
                     }
                 }
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
-            fullDownloadManager.items.collect {
-                refreshDownloadedTracks()
+            var lastCompletedCount = -1
+            var lastTotalSize = -1
+            fullDownloadManager.items.collect { list ->
+                val completedCount = list.count { it.state == "completed" }
+                if (completedCount != lastCompletedCount || list.size != lastTotalSize) {
+                    lastCompletedCount = completedCount
+                    lastTotalSize = list.size
+                    refreshDownloadedTracks()
+                }
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
