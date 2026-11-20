@@ -38,6 +38,7 @@ import org.kde.plasmawave.deezer.DeezerLoginDialog
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.*
 import org.kde.plasmawave.ui.components.ArtworkImage
+import org.kde.plasmawave.ui.components.LocalDownloadStatus
 import org.kde.plasmawave.ui.components.TrackListItem
 import uniffi.plasmawave_core.FfiPlaylist
 import uniffi.plasmawave_core.FfiTrack
@@ -466,6 +467,8 @@ private fun PlaylistCell(
     compactHorizontal: Boolean = false
 ) {
     val colors = LocalPlasmaColors.current
+    val downloadStatus = LocalDownloadStatus.current
+    val isPlaylistDownloaded = playlist.id in downloadStatus.downloadedPlaylistIds
     var showMenu by remember { mutableStateOf(false) }
     var artwork by remember(playlist.id, playlist.artworkUrl, playlist.trackCount) { mutableStateOf(playlist.artworkUrl) }
     LaunchedEffect(playlist.id, playlist.artworkUrl, playlist.trackCount) {
@@ -566,6 +569,15 @@ private fun PlaylistCell(
                 if (contentMode == QuickCardContentMode.BOTH) {
                     Spacer(Modifier.height(7.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isPlaylistDownloaded) {
+                            Icon(
+                                Icons.Default.DownloadDone,
+                                contentDescription = "İndirildi",
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        }
                         Text(
                             playlist.name,
                             modifier = Modifier.weight(1f),
@@ -596,7 +608,18 @@ private fun PlaylistCell(
             if (contentMode != QuickCardContentMode.IMAGE_ONLY) {
                 Column(Modifier.weight(1f)) {
                     Text(playlist.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${playlist.trackCount} şarkı • " + if (playlist.isLocal) "Bu cihaz" else "Deezer", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isPlaylistDownloaded) {
+                            Icon(
+                                Icons.Default.DownloadDone,
+                                contentDescription = "İndirildi",
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        }
+                        Text("${playlist.trackCount} şarkı • " + if (playlist.isLocal) "Bu cihaz" else "Deezer", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                    }
                 }
             } else {
                 Spacer(Modifier.weight(1f))

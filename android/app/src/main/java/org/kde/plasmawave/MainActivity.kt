@@ -45,6 +45,7 @@ import org.kde.plasmawave.jam.JamMode
 import org.kde.plasmawave.ui.components.FullPlayerSheet
 import org.kde.plasmawave.ui.components.JamSheet
 import org.kde.plasmawave.ui.components.LocalDeezerConnected
+import org.kde.plasmawave.ui.components.LocalDownloadStatus
 import org.kde.plasmawave.ui.components.MiniPlayer
 import org.kde.plasmawave.ui.components.PlaylistPicker
 import org.kde.plasmawave.ui.components.SleepTimerDialog
@@ -105,6 +106,7 @@ class MainActivity : ComponentActivity() {
                     .distinctUntilChanged()
             }.collectAsState(initial = false)
             val deezerUser by viewModel.deezerUser.collectAsState()
+            val downloadStatus by viewModel.downloadStatus.collectAsState()
             val statusMessage by viewModel.statusMessage.collectAsState()
             val highRefresh by viewModel.highRefreshRate.collectAsState()
 
@@ -150,7 +152,10 @@ class MainActivity : ComponentActivity() {
             }
 
             PlasmaTheme(activeTheme = activeTheme, legacyUiMode = legacyUiMode) {
-                CompositionLocalProvider(LocalDeezerConnected provides (deezerUser != null)) {
+                CompositionLocalProvider(
+                    LocalDeezerConnected provides (deezerUser != null),
+                    LocalDownloadStatus provides downloadStatus
+                ) {
                     val colors = LocalPlasmaColors.current
                     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 

@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -24,14 +26,23 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.kde.plasmawave.download.DownloadStorage
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import uniffi.plasmawave_core.FfiTrack
 
+data class DownloadStatusSnapshot(
+    val downloadedTrackIds: Set<String> = emptySet(),
+    val activeTrackProgress: Map<String, Int?> = emptyMap(),
+    val downloadedPlaylistIds: Set<String> = emptySet()
+)
+
 val LocalDeezerConnected = compositionLocalOf { false }
+val LocalDownloadStatus = compositionLocalOf { DownloadStatusSnapshot() }
 
 fun formatDuration(ms: ULong): String {
     val totalSec = ms / 1000u
@@ -52,6 +63,14 @@ fun TrackListItem(
 ) {
     val customColors = LocalPlasmaColors.current
     val deezerConnected = LocalDeezerConnected.current
+    val downloadStatus = LocalDownloadStatus.current
+    val normalizedId = DownloadStorage.normalizeTrackId(track.id)
+    val isDownloaded = track.provider == "local" ||
+        (normalizedId.isNotBlank() && normalizedId in downloadStatus.downloadedTrackIds)
+    val activeProgress = if (normalizedId.isNotBlank() && normalizedId in downloadStatus.activeTrackProgress) {
+        downloadStatus.activeTrackProgress[normalizedId]
+    } else null
+    val isDownloading = !isDownloaded && normalizedId.isNotBlank() && normalizedId in downloadStatus.activeTrackProgress
 
     Row(
         modifier = modifier
@@ -88,6 +107,29 @@ fun TrackListItem(
                 overflow = TextOverflow.Ellipsis
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isDownloaded) {
+                    Icon(
+                        imageVector = Icons.Default.DownloadDone,
+                        contentDescription = "Cihaza indirildi",
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                } else if (isDownloading) {
+                    if (activeProgress != null && activeProgress > 0) {
+                        CircularProgressIndicator(
+                            progress = { (activeProgress / 100f).coerceIn(0f, 1f) },
+                            modifier = Modifier.size(13.dp),
+                            strokeWidth = 1.8.dp
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(13.dp),
+                            strokeWidth = 1.8.dp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(5.dp))
+                }
                 if (track.origin == "development_fixture") {
                     Text(
                         text = "[FIXTURE] ",

@@ -45,6 +45,7 @@ import org.kde.plasmawave.ui.components.HeaderLogoStyle
 import org.kde.plasmawave.ui.components.HomeFeedType
 import org.kde.plasmawave.ui.components.HomeWidgetType
 import org.kde.plasmawave.ui.components.AppLauncherIcon
+import org.kde.plasmawave.ui.components.DownloadStatusSnapshot
 import org.kde.plasmawave.ui.components.LauncherIconManager
 import org.json.JSONArray
 import org.json.JSONObject
@@ -1323,6 +1324,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _downloadedTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
     val downloadedTracks: StateFlow<List<FfiTrack>> = _downloadedTracks.asStateFlow()
+
+    val downloadStatus: StateFlow<DownloadStatusSnapshot> = combine(
+        fullDownloads,
+        downloadedTracks
+    ) { saved, onDisk ->
+        val completedIds = HashSet<String>(saved.size + onDisk.size)
+        val activeProgress = HashMap<String, Int?>()
+        val playlistCompletedIds = HashSet<String>()
+
+        onDisk.forEach { track ->
+            val norm = DownloadStorage.normalizeTrackId(track.id)
+            if (norm.isNotBlank()) completedIds.add(norm)
+        }
+        saved.forEach { task ->
+            val norm = DownloadStorage.normalizeTrackId(task.track.id)
+            when (task.state) {
+                "completed" -> {
+                    if (norm.isNotBlank()) completedIds.add(norm)
+                    if (!task.playlistId.isNullOrBlank()) playlistCompletedIds.add(task.playlistId)
+                }
+                "running" -> if (norm.isNotBlank()) activeProgress[norm] = task.progress
+                "queued" -> if (norm.isNotBlank()) activeProgress.putIfAbsent(norm, null)
+            }
+        }
+        DownloadStatusSnapshot(
+            downloadedTrackIds = completedIds,
+            activeTrackProgress = activeProgress,
+            downloadedPlaylistIds = playlistCompletedIds
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DownloadStatusSnapshot())
 
     val allKnownTracks: StateFlow<List<FfiTrack>> = combine(
         _recentTracks,

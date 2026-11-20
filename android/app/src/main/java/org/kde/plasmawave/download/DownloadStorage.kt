@@ -209,9 +209,9 @@ object DownloadStorage {
             @Suppress("DEPRECATION")
             val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "PlasmaWave")
             if (dir.isDirectory) {
-                dir.listFiles { f ->
+                dir.walkTopDown().maxDepth(2).filter { f ->
                     f.isFile && f.length() > 0 && (f.name.endsWith(".flac", true) || f.name.endsWith(".mp3", true) || f.name.endsWith(".m4a", true) || f.name.endsWith(".ogg", true))
-                }?.sortedByDescending { it.lastModified() }?.forEach { file ->
+                }.sortedByDescending { it.lastModified() }.forEach { file ->
                     val displayName = file.name
                     val cleanId = bracketIdRegex.find(displayName)?.groupValues?.get(1).orEmpty()
                     val fileUri = Uri.fromFile(file).toString()
