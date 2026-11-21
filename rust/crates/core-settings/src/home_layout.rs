@@ -447,13 +447,16 @@ impl SettingsService {
             .map(|k| k.to_string())
             .collect();
 
-        self.store
-            .set(keys::FLOW_HERO_CARD, &flow_enabled.to_string())?;
-        self.store
-            .set(keys::RESUME_PLAYBACK, &resume_enabled.to_string())?;
+        let flow_str = flow_enabled.to_string();
+        let resume_str = resume_enabled.to_string();
         let widgets_json =
             serde_json::to_string(&enabled_widgets).unwrap_or_else(|_| "[]".into());
-        self.store.set(keys::ENABLED_HOME_WIDGETS, &widgets_json)?;
+        self.store.set_batch(&[
+            (keys::FLOW_HERO_CARD, Some(&flow_str)),
+            (keys::RESUME_PLAYBACK, Some(&resume_str)),
+            (keys::ENABLED_HOME_WIDGETS, Some(&widgets_json)),
+        ])?;
+        self.invalidate_cache();
         Ok(())
     }
 

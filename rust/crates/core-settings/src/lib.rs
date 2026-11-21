@@ -378,6 +378,12 @@ impl SettingsService {
         self.save_locked(s)
     }
 
+    pub(crate) fn invalidate_cache(&self) {
+        if let Ok(mut guard) = self.cache.write() {
+            *guard = None;
+        }
+    }
+
     pub fn update(&self, f: impl FnOnce(&mut Settings)) -> DomainResult<Settings> {
         let _guard = self.write_lock.lock().map_err(poisoned)?;
         let mut s = self.load()?;
