@@ -5,7 +5,7 @@
 //! defaults instead of failing, so a corrupted value never blocks startup.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use core_domain::{DomainError, DomainResult};
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,20 @@ pub trait KeyValueStore: Send + Sync {
     fn get(&self, key: &str) -> DomainResult<Option<String>>;
     fn set(&self, key: &str, value: &str) -> DomainResult<()>;
     fn remove(&self, key: &str) -> DomainResult<()>;
+
+    fn get_all(&self) -> DomainResult<BTreeMap<String, String>> {
+        Ok(BTreeMap::new())
+    }
+
+    fn set_batch(&self, entries: &[(&str, Option<&str>)]) -> DomainResult<()> {
+        for &(key, value) in entries {
+            match value {
+                Some(v) => self.set(key, v)?,
+                None => self.remove(key)?,
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -164,10 +178,12 @@ mod keys {
 #[derive(Clone)]
 pub struct SettingsService {
     store: Arc<dyn KeyValueStore>,
+    cache: Arc<RwLock<Option<Settings>>>,
+    write_lock: Arc<Mutex<()>>,
 }
 
-fn parse_bool(v: Option<String>, default: bool) -> bool {
-    match v.as_deref() {
+fn parse_bool(v: Option<&str>, default: bool) -> bool {
+    match v {
         Some("true") => true,
         Some("false") => false,
         _ => default,
@@ -176,127 +192,120 @@ fn parse_bool(v: Option<String>, default: bool) -> bool {
 
 impl SettingsService {
     pub fn new(store: Arc<dyn KeyValueStore>) -> Self {
-        Self { store }
+        Self {
+            store,
+            cache: Arc::new(RwLock::new(None)),
+            write_lock: Arc::new(Mutex::new(())),
+        }
     }
 
-    pub fn load(&self) -> DomainResult<Settings> {
+    fn parse_from_map(map: &BTreeMap<String, String>) -> Settings {
+        let get = |k: &str| map.get(k).map(String::as_str);
         let d = Settings::default();
-        let theme_id = self
-            .store
-            .get(keys::THEME)?
+        let theme_id = get(keys::THEME)
             .filter(|t| is_valid_theme_id(t))
+            .map(str::to_owned)
             .unwrap_or(d.theme_id);
-        let language = self
-            .store
-            .get(keys::LANGUAGE)?
-            .and_then(|l| Language::from_key(&l))
+        let language = get(keys::LANGUAGE)
+            .and_then(Language::from_key)
             .unwrap_or(d.language);
-        let enabled_home_widgets = match self.store.get(keys::ENABLED_HOME_WIDGETS)? {
-            Some(raw) => serde_json::from_str::<Vec<String>>(&raw).unwrap_or(d.enabled_home_widgets),
+        let enabled_home_widgets = match get(keys::ENABLED_HOME_WIDGETS) {
+            Some(raw) => serde_json::from_str::<Vec<String>>(raw).unwrap_or(d.enabled_home_widgets),
             None => d.enabled_home_widgets,
         };
-        Ok(Settings {
+        Settings {
             theme_id,
             language,
-            show_dev_fixtures: parse_bool(self.store.get(keys::DEV_FIXTURES)?, d.show_dev_fixtures),
-            downloads_wifi_only: parse_bool(
-                self.store.get(keys::WIFI_ONLY)?,
-                d.downloads_wifi_only,
-            ),
-            download_storage_limit_mib: self
-                .store
-                .get(keys::STORAGE_LIMIT)?
+            show_dev_fixtures: parse_bool(get(keys::DEV_FIXTURES), d.show_dev_fixtures),
+            downloads_wifi_only: parse_bool(get(keys::WIFI_ONLY), d.downloads_wifi_only),
+            download_storage_limit_mib: get(keys::STORAGE_LIMIT)
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(d.download_storage_limit_mib),
-            mods_enabled: parse_bool(self.store.get(keys::MODS_ENABLED)?, d.mods_enabled),
-            deezer_user_id: self
-                .store
-                .get(keys::DEEZER_USER_ID)?
-                .filter(|s| !s.trim().is_empty()),
-            deezer_access_token: self
-                .store
-                .get(keys::DEEZER_ACCESS_TOKEN)?
-                .filter(|s| !s.trim().is_empty()),
-            custom_accent_color: self
-                .store
-                .get(keys::CUSTOM_ACCENT_COLOR)?
-                .filter(|c| is_valid_hex_color(c)),
-            high_refresh_rate: parse_bool(
-                self.store.get(keys::HIGH_REFRESH_RATE)?,
-                d.high_refresh_rate,
-            ),
+            mods_enabled: parse_bool(get(keys::MODS_ENABLED), d.mods_enabled),
+            deezer_user_id: get(keys::DEEZER_USER_ID)
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned),
+            deezer_access_token: get(keys::DEEZER_ACCESS_TOKEN)
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned),
+            custom_accent_color: get(keys::CUSTOM_ACCENT_COLOR)
+                .filter(|c| is_valid_hex_color(c))
+                .map(str::to_owned),
+            high_refresh_rate: parse_bool(get(keys::HIGH_REFRESH_RATE), d.high_refresh_rate),
             dynamic_color_enabled: parse_bool(
-                self.store.get(keys::DYNAMIC_COLOR_ENABLED)?,
+                get(keys::DYNAMIC_COLOR_ENABLED),
                 d.dynamic_color_enabled,
             ),
-            swipe_to_skip: parse_bool(self.store.get(keys::SWIPE_TO_SKIP)?, d.swipe_to_skip),
-            seekbar_style: self
-                .store
-                .get(keys::SEEKBAR_STYLE)?
+            swipe_to_skip: parse_bool(get(keys::SWIPE_TO_SKIP), d.swipe_to_skip),
+            seekbar_style: get(keys::SEEKBAR_STYLE)
                 .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned)
                 .unwrap_or(d.seekbar_style),
-            album_frame: self
-                .store
-                .get(keys::ALBUM_FRAME)?
+            album_frame: get(keys::ALBUM_FRAME)
                 .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned)
                 .unwrap_or(d.album_frame),
-            header_logo_style: self
-                .store
-                .get(keys::HEADER_LOGO_STYLE)?
+            header_logo_style: get(keys::HEADER_LOGO_STYLE)
                 .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned)
                 .unwrap_or(d.header_logo_style),
-            home_feed_type: self
-                .store
-                .get(keys::HOME_FEED_TYPE)?
+            home_feed_type: get(keys::HOME_FEED_TYPE)
                 .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned)
                 .unwrap_or(d.home_feed_type),
             flow_hero_card_enabled: parse_bool(
-                self.store.get(keys::FLOW_HERO_CARD)?,
+                get(keys::FLOW_HERO_CARD),
                 d.flow_hero_card_enabled,
             ),
             flow_quick_access_pinned: parse_bool(
-                self.store.get(keys::FLOW_QUICK_ACCESS)?,
+                get(keys::FLOW_QUICK_ACCESS),
                 d.flow_quick_access_pinned,
             ),
-            flow_library_pinned: parse_bool(
-                self.store.get(keys::FLOW_LIBRARY)?,
-                d.flow_library_pinned,
-            ),
+            flow_library_pinned: parse_bool(get(keys::FLOW_LIBRARY), d.flow_library_pinned),
             downloads_quick_access_pinned: parse_bool(
-                self.store.get(keys::DOWNLOADS_QUICK_ACCESS)?,
+                get(keys::DOWNLOADS_QUICK_ACCESS),
                 d.downloads_quick_access_pinned,
             ),
             downloads_library_pinned: parse_bool(
-                self.store.get(keys::DOWNLOADS_LIBRARY)?,
+                get(keys::DOWNLOADS_LIBRARY),
                 d.downloads_library_pinned,
             ),
             resume_playback_enabled: parse_bool(
-                self.store.get(keys::RESUME_PLAYBACK)?,
+                get(keys::RESUME_PLAYBACK),
                 d.resume_playback_enabled,
             ),
             collect_listening_stats: parse_bool(
-                self.store.get(keys::COLLECT_STATS)?,
+                get(keys::COLLECT_STATS),
                 d.collect_listening_stats,
             ),
             collect_listening_history: parse_bool(
-                self.store.get(keys::COLLECT_HISTORY)?,
+                get(keys::COLLECT_HISTORY),
                 d.collect_listening_history,
             ),
-            save_resume_position: parse_bool(
-                self.store.get(keys::SAVE_RESUME_POS)?,
-                d.save_resume_position,
-            ),
+            save_resume_position: parse_bool(get(keys::SAVE_RESUME_POS), d.save_resume_position),
             enabled_home_widgets,
-            home_edit_hold_seconds: self
-                .store
-                .get(keys::HOME_EDIT_HOLD_SECONDS)?
+            home_edit_hold_seconds: get(keys::HOME_EDIT_HOLD_SECONDS)
                 .and_then(|v| v.parse::<u8>().ok())
                 .map(|s| s.clamp(3, 10))
                 .unwrap_or(d.home_edit_hold_seconds),
-        })
+        }
     }
 
-    pub fn save(&self, s: &Settings) -> DomainResult<()> {
+    pub fn load(&self) -> DomainResult<Settings> {
+        if let Ok(guard) = self.cache.read() {
+            if let Some(cached) = &*guard {
+                return Ok(cached.clone());
+            }
+        }
+        let map = self.store.get_all()?;
+        let settings = Self::parse_from_map(&map);
+        if let Ok(mut guard) = self.cache.write() {
+            *guard = Some(settings.clone());
+        }
+        Ok(settings)
+    }
+
+    fn save_locked(&self, s: &Settings) -> DomainResult<()> {
         if !is_valid_theme_id(&s.theme_id) {
             return Err(DomainError::InvalidInput("invalid theme id".into()));
         }
@@ -307,94 +316,73 @@ impl SettingsService {
                 ));
             }
         }
-        self.store.set(keys::THEME, &s.theme_id)?;
-        self.store.set(keys::LANGUAGE, s.language.as_key())?;
-        self.store
-            .set(keys::DEV_FIXTURES, &s.show_dev_fixtures.to_string())?;
-        self.store
-            .set(keys::WIFI_ONLY, &s.downloads_wifi_only.to_string())?;
-        self.store.set(
-            keys::STORAGE_LIMIT,
-            &s.download_storage_limit_mib.to_string(),
-        )?;
-        self.store
-            .set(keys::MODS_ENABLED, &s.mods_enabled.to_string())?;
-        if let Some(uid) = &s.deezer_user_id {
-            self.store.set(keys::DEEZER_USER_ID, uid)?;
-        } else {
-            self.store.remove(keys::DEEZER_USER_ID)?;
-        }
-        if let Some(token) = &s.deezer_access_token {
-            self.store.set(keys::DEEZER_ACCESS_TOKEN, token)?;
-        } else {
-            self.store.remove(keys::DEEZER_ACCESS_TOKEN)?;
-        }
-        if let Some(color) = &s.custom_accent_color {
-            self.store.set(keys::CUSTOM_ACCENT_COLOR, color)?;
-        } else {
-            self.store.remove(keys::CUSTOM_ACCENT_COLOR)?;
-        }
-        self.store
-            .set(keys::HIGH_REFRESH_RATE, &s.high_refresh_rate.to_string())?;
-        self.store.set(
-            keys::DYNAMIC_COLOR_ENABLED,
-            &s.dynamic_color_enabled.to_string(),
-        )?;
-        self.store
-            .set(keys::SWIPE_TO_SKIP, &s.swipe_to_skip.to_string())?;
-        self.store.set(keys::SEEKBAR_STYLE, &s.seekbar_style)?;
-        self.store.set(keys::ALBUM_FRAME, &s.album_frame)?;
-        self.store
-            .set(keys::HEADER_LOGO_STYLE, &s.header_logo_style)?;
-        self.store.set(keys::HOME_FEED_TYPE, &s.home_feed_type)?;
-        self.store.set(
-            keys::FLOW_HERO_CARD,
-            &s.flow_hero_card_enabled.to_string(),
-        )?;
-        self.store.set(
-            keys::FLOW_QUICK_ACCESS,
-            &s.flow_quick_access_pinned.to_string(),
-        )?;
-        self.store
-            .set(keys::FLOW_LIBRARY, &s.flow_library_pinned.to_string())?;
-        self.store.set(
-            keys::DOWNLOADS_QUICK_ACCESS,
-            &s.downloads_quick_access_pinned.to_string(),
-        )?;
-        self.store.set(
-            keys::DOWNLOADS_LIBRARY,
-            &s.downloads_library_pinned.to_string(),
-        )?;
-        self.store.set(
-            keys::RESUME_PLAYBACK,
-            &s.resume_playback_enabled.to_string(),
-        )?;
-        self.store.set(
-            keys::COLLECT_STATS,
-            &s.collect_listening_stats.to_string(),
-        )?;
-        self.store.set(
-            keys::COLLECT_HISTORY,
-            &s.collect_listening_history.to_string(),
-        )?;
-        self.store.set(
-            keys::SAVE_RESUME_POS,
-            &s.save_resume_position.to_string(),
-        )?;
+        let dev_fixtures = s.show_dev_fixtures.to_string();
+        let wifi_only = s.downloads_wifi_only.to_string();
+        let storage_limit = s.download_storage_limit_mib.to_string();
+        let mods_enabled = s.mods_enabled.to_string();
+        let high_refresh_rate = s.high_refresh_rate.to_string();
+        let dynamic_color = s.dynamic_color_enabled.to_string();
+        let swipe_to_skip = s.swipe_to_skip.to_string();
+        let flow_hero = s.flow_hero_card_enabled.to_string();
+        let flow_qa = s.flow_quick_access_pinned.to_string();
+        let flow_lib = s.flow_library_pinned.to_string();
+        let dl_qa = s.downloads_quick_access_pinned.to_string();
+        let dl_lib = s.downloads_library_pinned.to_string();
+        let resume_pb = s.resume_playback_enabled.to_string();
+        let collect_stats = s.collect_listening_stats.to_string();
+        let collect_history = s.collect_listening_history.to_string();
+        let save_resume = s.save_resume_position.to_string();
         let widgets_json =
             serde_json::to_string(&s.enabled_home_widgets).unwrap_or_else(|_| "[]".into());
-        self.store.set(keys::ENABLED_HOME_WIDGETS, &widgets_json)?;
-        self.store.set(
-            keys::HOME_EDIT_HOLD_SECONDS,
-            &s.home_edit_hold_seconds.clamp(3, 10).to_string(),
-        )?;
+        let hold_secs = s.home_edit_hold_seconds.clamp(3, 10).to_string();
+
+        let entries: [(&str, Option<&str>); 27] = [
+            (keys::THEME, Some(&s.theme_id)),
+            (keys::LANGUAGE, Some(s.language.as_key())),
+            (keys::DEV_FIXTURES, Some(&dev_fixtures)),
+            (keys::WIFI_ONLY, Some(&wifi_only)),
+            (keys::STORAGE_LIMIT, Some(&storage_limit)),
+            (keys::MODS_ENABLED, Some(&mods_enabled)),
+            (keys::DEEZER_USER_ID, s.deezer_user_id.as_deref()),
+            (keys::DEEZER_ACCESS_TOKEN, s.deezer_access_token.as_deref()),
+            (keys::CUSTOM_ACCENT_COLOR, s.custom_accent_color.as_deref()),
+            (keys::HIGH_REFRESH_RATE, Some(&high_refresh_rate)),
+            (keys::DYNAMIC_COLOR_ENABLED, Some(&dynamic_color)),
+            (keys::SWIPE_TO_SKIP, Some(&swipe_to_skip)),
+            (keys::SEEKBAR_STYLE, Some(&s.seekbar_style)),
+            (keys::ALBUM_FRAME, Some(&s.album_frame)),
+            (keys::HEADER_LOGO_STYLE, Some(&s.header_logo_style)),
+            (keys::HOME_FEED_TYPE, Some(&s.home_feed_type)),
+            (keys::FLOW_HERO_CARD, Some(&flow_hero)),
+            (keys::FLOW_QUICK_ACCESS, Some(&flow_qa)),
+            (keys::FLOW_LIBRARY, Some(&flow_lib)),
+            (keys::DOWNLOADS_QUICK_ACCESS, Some(&dl_qa)),
+            (keys::DOWNLOADS_LIBRARY, Some(&dl_lib)),
+            (keys::RESUME_PLAYBACK, Some(&resume_pb)),
+            (keys::COLLECT_STATS, Some(&collect_stats)),
+            (keys::COLLECT_HISTORY, Some(&collect_history)),
+            (keys::SAVE_RESUME_POS, Some(&save_resume)),
+            (keys::ENABLED_HOME_WIDGETS, Some(&widgets_json)),
+            (keys::HOME_EDIT_HOLD_SECONDS, Some(&hold_secs)),
+        ];
+
+        self.store.set_batch(&entries)?;
+        if let Ok(mut guard) = self.cache.write() {
+            *guard = Some(s.clone());
+        }
         Ok(())
     }
 
+    pub fn save(&self, s: &Settings) -> DomainResult<()> {
+        let _guard = self.write_lock.lock().map_err(poisoned)?;
+        self.save_locked(s)
+    }
+
     pub fn update(&self, f: impl FnOnce(&mut Settings)) -> DomainResult<Settings> {
+        let _guard = self.write_lock.lock().map_err(poisoned)?;
         let mut s = self.load()?;
         f(&mut s);
-        self.save(&s)?;
+        self.save_locked(&s)?;
         Ok(s)
     }
 }
@@ -434,6 +422,23 @@ impl KeyValueStore for MemoryStore {
     }
     fn remove(&self, key: &str) -> DomainResult<()> {
         self.0.lock().map_err(poisoned)?.remove(key);
+        Ok(())
+    }
+    fn get_all(&self) -> DomainResult<BTreeMap<String, String>> {
+        Ok(self.0.lock().map_err(poisoned)?.clone())
+    }
+    fn set_batch(&self, entries: &[(&str, Option<&str>)]) -> DomainResult<()> {
+        let mut guard = self.0.lock().map_err(poisoned)?;
+        for &(key, value) in entries {
+            match value {
+                Some(v) => {
+                    guard.insert(key.into(), v.into());
+                }
+                None => {
+                    guard.remove(key);
+                }
+            }
+        }
         Ok(())
     }
 }

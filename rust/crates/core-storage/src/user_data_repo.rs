@@ -160,7 +160,7 @@ impl Database {
     pub fn get_listening_stats(&self, limit: u32) -> DomainResult<Vec<StoredTrackListeningStat>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT track_json, play_count, total_listened_ms, last_played_at_ms
                  FROM listening_stats
                  ORDER BY play_count DESC, total_listened_ms DESC, last_played_at_ms DESC
@@ -212,7 +212,7 @@ impl Database {
             .map_err(|e| DomainError::Storage(format!("tx error: {e}")))?;
         {
             let mut stmt = tx
-                .prepare(
+                .prepare_cached(
                     "INSERT INTO listening_stats (track_id, track_json, play_count, total_listened_ms, last_played_at_ms)
                      VALUES (?1, ?2, ?3, ?4, ?5)
                      ON CONFLICT(track_id) DO UPDATE SET
@@ -308,7 +308,7 @@ impl Database {
             .map_err(|e| DomainError::Storage(format!("tx error: {e}")))?;
         {
             let mut stmt = tx
-                .prepare(
+                .prepare_cached(
                     "INSERT INTO listening_history (track_id, track_json, play_count, played_at_ms)
                      VALUES (?1, ?2, ?3, ?4)
                      ON CONFLICT(track_id) DO UPDATE SET
@@ -338,7 +338,7 @@ impl Database {
     pub fn get_recent_tracks(&self, limit: u32) -> DomainResult<Vec<StoredTrackRecord>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT track_json FROM listening_history
                  ORDER BY played_at_ms DESC
                  LIMIT ?1;",
@@ -362,7 +362,7 @@ impl Database {
     pub fn get_most_played_tracks(&self, limit: u32) -> DomainResult<Vec<StoredTrackRecord>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT track_json FROM listening_stats
                  ORDER BY play_count DESC, total_listened_ms DESC, last_played_at_ms DESC
                  LIMIT ?1;",
@@ -387,7 +387,7 @@ impl Database {
 
         // Fallback to listening_history if listening_stats is empty
         let mut hist_stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT track_json FROM listening_history
                  ORDER BY play_count DESC, played_at_ms DESC
                  LIMIT ?1;",
@@ -552,7 +552,7 @@ impl Database {
     pub fn list_user_custom_themes(&self) -> DomainResult<Vec<CustomThemeSpec>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, name, background_hex, card_hex, accent_hex, text_hex
                  FROM user_custom_themes
                  ORDER BY updated_at_ms ASC, id ASC;",
@@ -587,7 +587,7 @@ impl Database {
     pub fn get_pinned_items(&self) -> DomainResult<Vec<StoredPinnedItem>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT payload_json FROM pinned_items
                  ORDER BY position ASC;",
             )
@@ -616,7 +616,7 @@ impl Database {
             .map_err(|e| DomainError::Storage(format!("clear pinned_items: {e}")))?;
         {
             let mut stmt = tx
-                .prepare(
+                .prepare_cached(
                     "INSERT INTO pinned_items (pin_id, pin_type, payload_json, position)
                      VALUES (?1, ?2, ?3, ?4);",
                 )
@@ -711,7 +711,7 @@ impl Database {
     ) -> DomainResult<Vec<(String, Vec<StoredPlaylistTrackEntry>)>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare("SELECT playlist_id, entries_json FROM playlist_entries_cache;")
+            .prepare_cached("SELECT playlist_id, entries_json FROM playlist_entries_cache;")
             .map_err(|e| DomainError::Storage(format!("prepare all playlist cache: {e}")))?;
 
         let rows = stmt

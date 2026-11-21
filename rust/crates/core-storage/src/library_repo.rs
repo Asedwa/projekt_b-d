@@ -74,7 +74,7 @@ impl LibraryRepository for Database {
 
         {
             let mut stmt = tx
-                .prepare(
+                .prepare_cached(
                     "INSERT INTO tracks (id, provider, title, artist, album, duration_ms, artwork_url, playback_uri, is_preview, origin)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT(id) DO UPDATE SET
@@ -114,7 +114,7 @@ impl LibraryRepository for Database {
     fn track(&self, id: &TrackId) -> DomainResult<Option<Track>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, provider, title, artist, album, duration_ms, artwork_url, playback_uri, is_preview, origin
                  FROM tracks WHERE id = ?1;",
             )
@@ -130,7 +130,7 @@ impl LibraryRepository for Database {
     fn tracks_by_provider(&self, provider: &ProviderId) -> DomainResult<Vec<Track>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, provider, title, artist, album, duration_ms, artwork_url, playback_uri, is_preview, origin
                  FROM tracks WHERE provider = ?1
                  ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, title COLLATE NOCASE;",
@@ -159,7 +159,7 @@ impl LibraryRepository for Database {
         let conn = self.lock()?;
         let pattern = format!("%{query}%");
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, provider, title, artist, album, duration_ms, artwork_url, playback_uri, is_preview, origin
                  FROM tracks
                  WHERE title LIKE ?1 ESCAPE '\\' OR artist LIKE ?1 ESCAPE '\\' OR album LIKE ?1 ESCAPE '\\'
@@ -213,7 +213,7 @@ impl LibraryRepository for Database {
     fn favorites(&self) -> DomainResult<Vec<Track>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.artwork_url, t.playback_uri, t.is_preview, t.origin
                  FROM tracks t
                  INNER JOIN favorites f ON t.id = f.track_id
@@ -295,7 +295,7 @@ impl LibraryRepository for Database {
     fn playlists(&self) -> DomainResult<Vec<Playlist>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT p.id, p.name, p.description, p.kind, p.artwork_url, p.origin,
                         (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = p.id) as track_count
                  FROM playlists p
@@ -358,7 +358,7 @@ impl LibraryRepository for Database {
     fn playlist(&self, id: &PlaylistId) -> DomainResult<Option<Playlist>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT p.id, p.name, p.description, p.kind, p.artwork_url, p.origin,
                         (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = p.id) as track_count
                  FROM playlists p
@@ -418,7 +418,7 @@ impl LibraryRepository for Database {
     fn playlist_tracks(&self, id: &PlaylistId) -> DomainResult<Vec<Track>> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT t.id, t.provider, t.title, t.artist, t.album, t.duration_ms, t.artwork_url, t.playback_uri, t.is_preview, t.origin
                  FROM tracks t
                  INNER JOIN playlist_tracks pt ON t.id = pt.track_id
@@ -454,7 +454,7 @@ impl LibraryRepository for Database {
 
         {
             let mut stmt = tx
-                .prepare(
+                .prepare_cached(
                     "INSERT INTO playlist_tracks (playlist_id, track_id, position)
                      VALUES (?1, ?2, ?3);",
                 )
