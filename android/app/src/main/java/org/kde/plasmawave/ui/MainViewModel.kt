@@ -88,6 +88,7 @@ import uniffi.plasmawave_core.FfiTrackListeningStat
 const val LOCAL_FAVORITES_ID = "local:favorite_tracks"
 const val DEEZER_FAVORITES_ID = "deezer:loved_tracks"
 const val LOCAL_DOWNLOADS_ID = "local:downloaded_tracks"
+const val LOCAL_DEVICE_MUSIC_ID = "local:device_music"
 
 enum class SearchCategory {
     TRACKS, ALBUMS, ARTISTS, PLAYLISTS
@@ -261,7 +262,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             collectListeningHistory = true,
             saveResumePosition = true,
             enabledHomeWidgets = HomeWidgetType.entries.filter { it.defaultEnabled }.map { it.id },
-            homeEditHoldSeconds = 3u
+            homeEditHoldSeconds = 3u,
+            localFilterShortTracks = true
         )
     }
 
@@ -302,6 +304,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setDynamicColorEnabled(enabled: Boolean) {
         _dynamicColorEnabled.value = enabled
         updateCoreSettings { it.copy(dynamicColorEnabled = enabled) }
+    }
+
+    private val _localFilterShortTracks = MutableStateFlow(initialCoreSettings.localFilterShortTracks)
+    val localFilterShortTracks: StateFlow<Boolean> = _localFilterShortTracks.asStateFlow()
+    fun setLocalFilterShortTracks(enabled: Boolean) {
+        _localFilterShortTracks.value = enabled
+        updateCoreSettings { it.copy(localFilterShortTracks = enabled) }
+        if (hasLocalAudioPermission(getApplication())) {
+            scanDeviceMusic(silent = true)
+        }
     }
 
     private val _ambientBackgroundEnabled = MutableStateFlow(
@@ -1342,6 +1354,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _localTracks = MutableStateFlow<List<FfiTrack>>(emptyList())
     val localTracks: StateFlow<List<FfiTrack>> = _localTracks.asStateFlow()
 
+    private val _localScanBusy = MutableStateFlow(false)
+    val localScanBusy: StateFlow<Boolean> = _localScanBusy.asStateFlow()
+
     private val _deezerUser = MutableStateFlow<FfiDeezerUser?>(deezerSession.cachedUser())
     val deezerUser: StateFlow<FfiDeezerUser?> = _deezerUser.asStateFlow()
 
@@ -1662,6 +1677,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _collectListeningHistoryEnabled.value = s.collectListeningHistory
                     _saveResumePositionEnabled.value = s.saveResumePosition
                     _homeEditHoldSeconds.value = s.homeEditHoldSeconds.toInt().coerceIn(3, 10)
+                    _localFilterShortTracks.value = s.localFilterShortTracks
                 }
                 val layout = runCatching { core.getHomeLayout() }.getOrDefault(emptyList())
                 _homeLayout.value = layout
@@ -2463,6 +2479,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 DEEZER_FAVORITES_ID -> deezerFavoriteEntries.takeIf { it.isNotEmpty() } ?: playlistTracksMemCache[playlistId]
                 LOCAL_DOWNLOADS_ID -> _downloadedTracks.value.takeIf { it.isNotEmpty() }
                     ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
+                LOCAL_DEVICE_MUSIC_ID -> _localTracks.value.takeIf { it.isNotEmpty() }
+                    ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
                 LOCAL_FAVORITES_ID -> _favorites.value.takeIf { it.isNotEmpty() }
                     ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
                 else -> playlistTracksMemCache[playlistId]
@@ -2547,6 +2565,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     fullDownloadManager.items.value,
                     hints
                 ).also { _downloadedTracks.value = it }
+            }
+            current.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
+        } else if (playlistId == LOCAL_DEVICE_MUSIC_ID) {
+            val current = _localTracks.value.ifEmpty {
+                core.getLocalTracks().also { _localTracks.value = it }
             }
             current.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
         } else if (playlistId.startsWith("deezer:") && deezerSession.hasSavedSession) {
@@ -2766,8 +2789,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _statusMessage.value = null
     }
 
-    fun scanDeviceMusic() {
+    fun hasLocalAudioPermission(context: android.content.Context = getApplication()): Boolean {
+        val perm = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            android.Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            android.Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            perm
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    fun scanDeviceMusic(silent: Boolean = false) {
+        if (_localScanBusy.value) return
+        if (!hasLocalAudioPermission()) return
         viewModelScope.launch(Dispatchers.IO) {
+            _localScanBusy.value = true
             val resolver = getApplication<Application>().contentResolver
             val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
             val projection = arrayOf(
@@ -2775,7 +2813,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 MediaStore.Audio.Media.TITLE,
                 MediaStore.Audio.Media.ARTIST,
                 MediaStore.Audio.Media.ALBUM,
-                MediaStore.Audio.Media.ALBUM_ID,
                 MediaStore.Audio.Media.DURATION,
                 MediaStore.Audio.Media.DISPLAY_NAME
             )
@@ -2789,7 +2826,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                     val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                     val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                    val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
                     val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                     val nameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
 
@@ -2799,8 +2835,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         val title = cursor.getString(titleCol)
                         val artist = cursor.getString(artistCol)
                         val album = cursor.getString(albumCol)
-                        val albumId = cursor.getLong(albumIdCol)
-                        val duration = cursor.getLong(durationCol)
+                        val duration = cursor.getLong(durationCol).coerceAtLeast(0L)
                         val displayName = cursor.getString(nameCol)
 
                         inputs.add(
@@ -2817,13 +2852,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                val count = core.ingestLocalTracks(inputs)
-                refreshLocalTracks()
-                withContext(Dispatchers.Main) {
-                    _statusMessage.value = "Scanned $count tracks"
+                val minDurationMs = if (_localFilterShortTracks.value) 10_000uL else 0uL
+                val stats = core.syncLocalTracks(inputs, minDurationMs)
+                if (stats.added > 0u || stats.updated > 0u || stats.removed > 0u || _localTracks.value.isEmpty()) {
+                    refreshLocalTracks()
+                    invalidatePlaylist(LOCAL_DEVICE_MUSIC_ID)
+                }
+                if (!silent) {
+                    withContext(Dispatchers.Main) {
+                        _statusMessage.value = if (stats.added > 0u || stats.removed > 0u) {
+                            "${stats.total} yerel şarkı hazır (${stats.added} yeni, ${stats.removed} kaldırıldı)"
+                        } else {
+                            "${stats.total} yerel şarkı güncel"
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error scanning media", e)
+            } finally {
+                _localScanBusy.value = false
             }
         }
     }

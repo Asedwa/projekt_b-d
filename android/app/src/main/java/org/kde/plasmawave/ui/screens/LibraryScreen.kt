@@ -1,6 +1,10 @@
 package org.kde.plasmawave.ui.screens
 
+import android.Manifest
 import android.content.Context
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -52,6 +56,8 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
     val favorites by viewModel.favorites.collectAsState()
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
     val downloadedTracks by viewModel.downloadedTracks.collectAsState()
+    val localTracks by viewModel.localTracks.collectAsState()
+    val localScanBusy by viewModel.localScanBusy.collectAsState()
     val downloadsLibraryPinned by viewModel.downloadsLibraryPinned.collectAsState()
     val downloadsQuickAccessPinned by viewModel.downloadsQuickAccessPinned.collectAsState()
     val currentTrackId by viewModel.playbackManager.currentTrackId.collectAsState()
@@ -82,7 +88,30 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
     val effectiveShape = if (librarySyncWithQuick) quickCardShape else libraryCardShape
     val effectiveLayout = if (librarySyncWithQuick) quickCardLayout else libraryCardLayout
     val effectiveContentMode = if (librarySyncWithQuick) quickCardContentMode else libraryCardContentMode
-    val prefs = LocalContext.current.getSharedPreferences("playlist_sort", Context.MODE_PRIVATE)
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences("playlist_sort", Context.MODE_PRIVATE)
+    var hasAudioPerm by remember { mutableStateOf(viewModel.hasLocalAudioPermission(context)) }
+    val audioPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasAudioPerm = granted
+        if (granted) {
+            viewModel.scanDeviceMusic()
+        }
+    }
+    val requestAudioScan = {
+        if (hasAudioPerm || viewModel.hasLocalAudioPermission(context)) {
+            hasAudioPerm = true
+            viewModel.scanDeviceMusic()
+        } else {
+            val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Manifest.permission.READ_MEDIA_AUDIO
+            } else {
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            }
+            audioPermLauncher.launch(perm)
+        }
+    }
     val colors = LocalPlasmaColors.current
     var filter by rememberSaveable { mutableStateOf(PlaylistFilter.ALL) }
     var sort by rememberSaveable { mutableStateOf(runCatching { LibraryPlaylistSort.valueOf(prefs.getString("library", null) ?: "DEFAULT") }.getOrDefault(LibraryPlaylistSort.DEFAULT)) }
@@ -110,6 +139,17 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
             isLocal = true,
             trackCount = downloadedTracks.size.toUInt(),
             artworkUrl = downloadedTracks.firstOrNull()?.artworkUrl,
+            origin = "real"
+        )
+    }
+    val deviceMusicPlaylist = remember(localTracks) {
+        FfiPlaylist(
+            id = LOCAL_DEVICE_MUSIC_ID,
+            name = "Cihazdaki Müzikler",
+            description = "Telefondaki yerel ses dosyaları",
+            isLocal = true,
+            trackCount = localTracks.size.toUInt(),
+            artworkUrl = localTracks.firstOrNull()?.artworkUrl,
             origin = "real"
         )
     }
@@ -142,6 +182,18 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
         matchesQuery && when (filter) {
             PlaylistFilter.LOCAL -> true
             PlaylistFilter.ALL, PlaylistFilter.PINNED -> downloadsLibraryPinned
+            PlaylistFilter.DEEZER -> false
+        }
+    }
+
+    val showDeviceMusicCard = remember(filter, query, localTracks, pinnedIds) {
+        val matchesQuery = query.isBlank() ||
+            "cihazdaki müzikler".contains(query.trim(), ignoreCase = true) ||
+            "yerel".contains(query.trim(), ignoreCase = true)
+        matchesQuery && when (filter) {
+            PlaylistFilter.LOCAL -> true
+            PlaylistFilter.ALL -> localTracks.isNotEmpty()
+            PlaylistFilter.PINNED -> "playlist:$LOCAL_DEVICE_MUSIC_ID" in pinnedIds
             PlaylistFilter.DEEZER -> false
         }
     }
@@ -200,7 +252,63 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
                 Icon(if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView, contentDescription = if (grid) "Liste görünümü" else "Izgara görünümü")
             }
         }
-        if (visible.isEmpty() && !showFlow && !showDownloadsCard && (filter != PlaylistFilter.LOCAL || filteredDownloadedTracks.isEmpty())) {
+        if (filter == PlaylistFilter.LOCAL) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = colors.card,
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.border.copy(alpha = 0.7f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (hasAudioPerm) Icons.Default.LibraryMusic else Icons.Default.FolderOpen,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (hasAudioPerm) "Cihazdaki Müzikler (${localTracks.size})" else "Cihazdaki müzikleri tara",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            if (hasAudioPerm) "Telefonundaki şarkıları yenilemek için dokun" else "Telefondaki şarkıları dinlemek için ses izni ver",
+                            style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    if (localScanBusy) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        FilledTonalButton(
+                            onClick = requestAudioScan,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                if (hasAudioPerm) Icons.Default.Refresh else Icons.Default.Search,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (hasAudioPerm) "Yenile" else "Tara", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+        }
+        if (visible.isEmpty() && !showFlow && !showDownloadsCard && !showDeviceMusicCard && (filter != PlaylistFilter.LOCAL || filteredDownloadedTracks.isEmpty())) {
             Column(Modifier.fillMaxWidth().padding(top = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (loading && entries.isEmpty()) { CircularProgressIndicator(modifier = Modifier.size(28.dp)); Spacer(Modifier.height(12.dp)); Text("Kitaplığın yükleniyor…", color = colors.textSecondary) }
                 else {
@@ -252,6 +360,23 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
                             isQuickAccessPinned = downloadsQuickAccessPinned,
                             viewModel = viewModel,
                             onClick = { onPlaylistClick(downloadedPlaylist) },
+                            cardStyle = effectiveStyle,
+                            cardShape = effectiveShape,
+                            contentMode = effectiveContentMode,
+                            cardScale = effectiveCardScale,
+                            iconScale = effectiveIconScale,
+                            compactHorizontal = isCompactHorizontal
+                        )
+                    }
+                }
+                if (showDeviceMusicCard) {
+                    item(key = "device_music:local") {
+                        PlaylistCell(
+                            playlist = deviceMusicPlaylist,
+                            pinned = "playlist:$LOCAL_DEVICE_MUSIC_ID" in pinnedIds,
+                            viewModel = viewModel,
+                            onClick = onPlaylistClick,
+                            grid = true,
                             cardStyle = effectiveStyle,
                             cardShape = effectiveShape,
                             contentMode = effectiveContentMode,
@@ -323,6 +448,22 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
                             isQuickAccessPinned = downloadsQuickAccessPinned,
                             viewModel = viewModel,
                             onClick = { onPlaylistClick(downloadedPlaylist) },
+                            cardStyle = effectiveStyle,
+                            cardShape = effectiveShape,
+                            contentMode = effectiveContentMode,
+                            cardScale = effectiveCardScale,
+                            iconScale = effectiveIconScale
+                        )
+                    }
+                }
+                if (showDeviceMusicCard) {
+                    item(key = "device_music:local") {
+                        PlaylistCell(
+                            playlist = deviceMusicPlaylist,
+                            pinned = "playlist:$LOCAL_DEVICE_MUSIC_ID" in pinnedIds,
+                            viewModel = viewModel,
+                            onClick = onPlaylistClick,
+                            grid = false,
                             cardStyle = effectiveStyle,
                             cardShape = effectiveShape,
                             contentMode = effectiveContentMode,

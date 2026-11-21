@@ -5,7 +5,7 @@
 //! owns the catalog; playback URIs are `content://` or `file://` URIs that the
 //! platform player opens directly.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -66,6 +66,24 @@ fn strip_extension(name: &str) -> String {
     }
 }
 
+/// Summary of an incremental local media synchronization pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LocalSyncStats {
+    pub added: u32,
+    pub updated: u32,
+    pub removed: u32,
+    pub skipped_short: u32,
+    pub total: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LocalSortOrder {
+    #[default]
+    ArtistAlbumTitle,
+    Title,
+    DurationDesc,
+}
+
 /// In-memory index of local tracks. Persistence lives in `core-storage`; the
 /// app reloads this index from the database on startup.
 #[derive(Debug, Default, Clone)]
@@ -95,6 +113,56 @@ impl LocalProvider {
         (added, rejected)
     }
 
+    /// Incrementally synchronizes scanned `content://` device tracks against the
+    /// current index, filtering out clips shorter than `min_duration_ms`.
+    /// Returns `(changed_tracks_to_upsert, removed_track_ids, stats)`.
+    pub fn sync(
+        &self,
+        inputs: Vec<LocalTrackInput>,
+        min_duration_ms: u64,
+    ) -> (Vec<Track>, Vec<TrackId>, LocalSyncStats) {
+        let mut changed = Vec::new();
+        let mut seen_ids = HashSet::with_capacity(inputs.len());
+        let mut stats = LocalSyncStats::default();
+
+        let mut map = self.tracks.write().unwrap_or_else(|e| e.into_inner());
+        for input in inputs {
+            if min_duration_ms > 0 && input.duration_ms < min_duration_ms {
+                stats.skipped_short += 1;
+                continue;
+            }
+            let Ok(track) = input.into_track() else {
+                continue;
+            };
+            seen_ids.insert(track.id.clone());
+            match map.get(&track.id) {
+                None => {
+                    stats.added += 1;
+                    changed.push(track.clone());
+                    map.insert(track.id.clone(), track);
+                }
+                Some(existing) if existing != &track => {
+                    stats.updated += 1;
+                    changed.push(track.clone());
+                    map.insert(track.id.clone(), track);
+                }
+                Some(_) => {}
+            }
+        }
+
+        let removed_ids: Vec<TrackId> = map
+            .keys()
+            .filter(|id| id.key().starts_with("content://") && !seen_ids.contains(*id))
+            .cloned()
+            .collect();
+        for id in &removed_ids {
+            map.remove(id);
+        }
+        stats.removed = removed_ids.len() as u32;
+        stats.total = map.len() as u32;
+        (changed, removed_ids, stats)
+    }
+
     pub fn load(&self, tracks: Vec<Track>) {
         let mut map = self.tracks.write().unwrap_or_else(|e| e.into_inner());
         for t in tracks
@@ -114,15 +182,40 @@ impl LocalProvider {
     }
 
     pub fn all(&self) -> Vec<Track> {
+        self.query(LocalSortOrder::ArtistAlbumTitle, None)
+    }
+
+    pub fn query(&self, sort: LocalSortOrder, search: Option<&str>) -> Vec<Track> {
+        let q = search.map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
         let map = self.tracks.read().unwrap_or_else(|e| e.into_inner());
-        let mut v: Vec<Track> = map.values().cloned().collect();
-        v.sort_by(|a, b| {
-            a.artist
-                .to_lowercase()
-                .cmp(&b.artist.to_lowercase())
-                .then_with(|| a.album.to_lowercase().cmp(&b.album.to_lowercase()))
-                .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-        });
+        let mut v: Vec<Track> = map
+            .values()
+            .filter(|t| {
+                q.as_ref().is_none_or(|needle| {
+                    t.title.to_lowercase().contains(needle)
+                        || t.artist.to_lowercase().contains(needle)
+                        || t.album.to_lowercase().contains(needle)
+                })
+            })
+            .cloned()
+            .collect();
+        match sort {
+            LocalSortOrder::ArtistAlbumTitle => {
+                v.sort_by(|a, b| {
+                    a.artist
+                        .to_lowercase()
+                        .cmp(&b.artist.to_lowercase())
+                        .then_with(|| a.album.to_lowercase().cmp(&b.album.to_lowercase()))
+                        .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+                });
+            }
+            LocalSortOrder::Title => {
+                v.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+            }
+            LocalSortOrder::DurationDesc => {
+                v.sort_by(|a, b| b.duration_ms.cmp(&a.duration_ms));
+            }
+        }
         v
     }
 
@@ -252,5 +345,37 @@ mod tests {
         assert!(p.remove(&added[1].id));
         assert_eq!(p.len(), 1);
         assert!(p.resolve_download(&added[0]).await.is_err());
+    }
+
+    #[test]
+    fn sync_diffs_filters_short_and_preserves_file_tracks() {
+        let p = LocalProvider::new();
+        p.upsert(vec![input("file:///music/offline.mp3", Some("Offline"), None)]);
+
+        let mut t1 = input("content://media/1", Some("Song 1"), None);
+        t1.duration_ms = 120_000;
+        let mut short = input("content://media/2", Some("Ringtone"), None);
+        short.duration_ms = 4_000;
+
+        let (changed, removed, stats) = p.sync(vec![t1.clone(), short], 10_000);
+        assert_eq!(
+            (stats.added, stats.updated, stats.removed, stats.skipped_short),
+            (1, 0, 0, 1)
+        );
+        assert_eq!(changed.len(), 1);
+        assert!(removed.is_empty());
+
+        // Resync with no changes -> 0 DB writes
+        let (changed2, removed2, stats2) = p.sync(vec![t1], 10_000);
+        assert_eq!((stats2.added, stats2.updated, stats2.removed), (0, 0, 0));
+        assert!(changed2.is_empty());
+        assert!(removed2.is_empty());
+
+        // Resync with content://media/1 deleted -> removed, file:// preserved
+        let (changed3, removed3, stats3) = p.sync(vec![], 10_000);
+        assert!(changed3.is_empty());
+        assert_eq!(removed3.len(), 1);
+        assert_eq!(stats3.removed, 1);
+        assert_eq!(p.len(), 1);
     }
 }

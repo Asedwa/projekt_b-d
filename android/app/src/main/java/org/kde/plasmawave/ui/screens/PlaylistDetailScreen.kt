@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -61,6 +63,7 @@ import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.LOCAL_FAVORITES_ID
 import org.kde.plasmawave.ui.DEEZER_FAVORITES_ID
 import org.kde.plasmawave.ui.LOCAL_DOWNLOADS_ID
+import org.kde.plasmawave.ui.LOCAL_DEVICE_MUSIC_ID
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.PlaylistTrackEntry
 import org.kde.plasmawave.ui.PlaylistTrackSort
@@ -186,7 +189,20 @@ fun PlaylistDetailScreen(
                 title = { Text(playlist.name, maxLines = 1) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri") } },
                 actions = {
-                    if (playlist.id != LOCAL_FAVORITES_ID && playlist.id != DEEZER_FAVORITES_ID && playlist.id != LOCAL_DOWNLOADS_ID) {
+                    if (playlist.id == LOCAL_DEVICE_MUSIC_ID) {
+                        val scanBusy by viewModel.localScanBusy.collectAsState()
+                        if (scanBusy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.padding(end = 12.dp).size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            IconButton(onClick = { viewModel.scanDeviceMusic() }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Yenile")
+                            }
+                        }
+                    }
+                    if (playlist.id != LOCAL_FAVORITES_ID && playlist.id != DEEZER_FAVORITES_ID && playlist.id != LOCAL_DOWNLOADS_ID && playlist.id != LOCAL_DEVICE_MUSIC_ID) {
                         IconButton(onClick = { showDelete = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Listeyi sil", tint = colors.negative)
                         }
@@ -205,6 +221,7 @@ fun PlaylistDetailScreen(
                 val fallbackIcon = when (playlist.id) {
                     LOCAL_FAVORITES_ID -> Icons.Default.Favorite
                     LOCAL_DOWNLOADS_ID -> Icons.Default.DownloadDone
+                    LOCAL_DEVICE_MUSIC_ID -> Icons.Default.LibraryMusic
                     else -> Icons.AutoMirrored.Filled.PlaylistPlay
                 }
                 if (isLandscape) {

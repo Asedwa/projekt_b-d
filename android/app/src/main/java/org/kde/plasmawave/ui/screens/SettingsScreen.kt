@@ -136,6 +136,7 @@ fun SettingsScreen(
     val collectStats by viewModel.collectListeningStatsEnabled.collectAsState()
     val collectHistory by viewModel.collectListeningHistoryEnabled.collectAsState()
     val saveResumePos by viewModel.saveResumePositionEnabled.collectAsState()
+    val localFilterShortTracks by viewModel.localFilterShortTracks.collectAsState()
     val soundBoostEnabled by viewModel.playbackManager.soundBoostEnabled.collectAsState()
     val soundBoostPercent by viewModel.playbackManager.soundBoostPercent.collectAsState()
     val resumeCardEnabled by viewModel.resumePlaybackEnabled.collectAsState()
@@ -967,6 +968,14 @@ fun SettingsScreen(
                                 icon = Icons.Default.Folder,
                                 title = "Kayıt konumu",
                                 subtitle = "Müzik / PlasmaWave"
+                            )
+                            PhoneSettingsDivider()
+                            SettingsToggle(
+                                icon = Icons.Default.FilterAlt,
+                                title = "Cihazdaki kısa sesleri gizle (10 sn altı)",
+                                subtitle = "Zil sesleri ve kısa sesli mesajları yerel müzik listesinden çıkarır",
+                                checked = localFilterShortTracks,
+                                onChange = viewModel::setLocalFilterShortTracks
                             )
                         }
 

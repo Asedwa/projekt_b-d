@@ -109,6 +109,7 @@ pub struct Settings {
     pub save_resume_position: bool,
     pub enabled_home_widgets: Vec<String>,
     pub home_edit_hold_seconds: u8,
+    pub local_filter_short_tracks: bool,
 }
 
 impl Default for Settings {
@@ -141,6 +142,7 @@ impl Default for Settings {
             save_resume_position: true,
             enabled_home_widgets: default_home_widgets(),
             home_edit_hold_seconds: 3,
+            local_filter_short_tracks: true,
         }
     }
 }
@@ -173,6 +175,7 @@ mod keys {
     pub const SAVE_RESUME_POS: &str = "privacy.save_resume_position";
     pub const ENABLED_HOME_WIDGETS: &str = "ui.enabled_home_widgets";
     pub const HOME_EDIT_HOLD_SECONDS: &str = "ui.home_edit_hold_seconds";
+    pub const LOCAL_FILTER_SHORT_TRACKS: &str = "local.filter_short_tracks";
 }
 
 #[derive(Clone)]
@@ -288,6 +291,10 @@ impl SettingsService {
                 .and_then(|v| v.parse::<u8>().ok())
                 .map(|s| s.clamp(3, 10))
                 .unwrap_or(d.home_edit_hold_seconds),
+            local_filter_short_tracks: parse_bool(
+                get(keys::LOCAL_FILTER_SHORT_TRACKS),
+                d.local_filter_short_tracks,
+            ),
         }
     }
 
@@ -335,8 +342,9 @@ impl SettingsService {
         let widgets_json =
             serde_json::to_string(&s.enabled_home_widgets).unwrap_or_else(|_| "[]".into());
         let hold_secs = s.home_edit_hold_seconds.clamp(3, 10).to_string();
+        let local_filter_short = s.local_filter_short_tracks.to_string();
 
-        let entries: [(&str, Option<&str>); 27] = [
+        let entries: [(&str, Option<&str>); 28] = [
             (keys::THEME, Some(&s.theme_id)),
             (keys::LANGUAGE, Some(s.language.as_key())),
             (keys::DEV_FIXTURES, Some(&dev_fixtures)),
@@ -364,6 +372,7 @@ impl SettingsService {
             (keys::SAVE_RESUME_POS, Some(&save_resume)),
             (keys::ENABLED_HOME_WIDGETS, Some(&widgets_json)),
             (keys::HOME_EDIT_HOLD_SECONDS, Some(&hold_secs)),
+            (keys::LOCAL_FILTER_SHORT_TRACKS, Some(&local_filter_short)),
         ];
 
         self.store.set_batch(&entries)?;

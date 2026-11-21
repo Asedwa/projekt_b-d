@@ -962,6 +962,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1076,6 +1080,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_listening_stats(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_local_tracks(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_local_tracks_filtered(`ptr`: Pointer,`sort`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_most_played_tracks(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1216,6 +1222,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_sort_library_playlists(`ptr`: Pointer,`playlists`: RustBuffer.ByValue,`sort`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_sort_playlist_tracks(`ptr`: Pointer,`entries`: RustBuffer.ByValue,`sort`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_sync_local_tracks(`ptr`: Pointer,`inputs`: RustBuffer.ByValue,`minDurationMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_toggle_favorite(`ptr`: Pointer,`track`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
@@ -1443,6 +1451,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_local_tracks(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_local_tracks_filtered(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_most_played_tracks(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_offline_path(
@@ -1582,6 +1592,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_sort_library_playlists(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_sort_playlist_tracks(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_sync_local_tracks(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_toggle_favorite(
     ): Short
@@ -1755,6 +1767,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_local_tracks() != 5213.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_local_tracks_filtered() != 43915.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_most_played_tracks() != 39421.toShort()) {
@@ -1965,6 +1980,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_sort_playlist_tracks() != 19866.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_sync_local_tracks() != 27315.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_toggle_favorite() != 63653.toShort()) {
@@ -2478,6 +2496,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `getLocalTracks`(): List<FfiTrack>
     
+    fun `getLocalTracksFiltered`(`sort`: FfiLocalSortOrder, `query`: kotlin.String?): List<FfiTrack>
+    
     fun `getMostPlayedTracks`(`limit`: kotlin.UInt): List<FfiTrack>
     
     fun `getOfflinePath`(`trackIdStr`: kotlin.String): kotlin.String?
@@ -2617,6 +2637,8 @@ public interface PlasmaWaveCoreInterface {
     fun `sortLibraryPlaylists`(`playlists`: List<FfiLibraryPlaylistEntry>, `sort`: FfiLibraryPlaylistSort): List<FfiPlaylist>
     
     fun `sortPlaylistTracks`(`entries`: List<FfiPlaylistTrackEntry>, `sort`: FfiPlaylistTrackSort): List<FfiPlaylistTrackEntry>
+    
+    fun `syncLocalTracks`(`inputs`: List<FfiLocalTrackInput>, `minDurationMs`: kotlin.ULong): FfiLocalSyncStats
     
     fun `toggleFavorite`(`track`: FfiTrack): kotlin.Boolean
     
@@ -3279,6 +3301,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_local_tracks(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    override fun `getLocalTracksFiltered`(`sort`: FfiLocalSortOrder, `query`: kotlin.String?): List<FfiTrack> {
+            return FfiConverterSequenceTypeFfiTrack.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_local_tracks_filtered(
+        it, FfiConverterTypeFfiLocalSortOrder.lower(`sort`),FfiConverterOptionalString.lower(`query`),_status)
 }
     }
     )
@@ -4157,6 +4191,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_sort_playlist_tracks(
         it, FfiConverterSequenceTypeFfiPlaylistTrackEntry.lower(`entries`),FfiConverterTypeFfiPlaylistTrackSort.lower(`sort`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `syncLocalTracks`(`inputs`: List<FfiLocalTrackInput>, `minDurationMs`: kotlin.ULong): FfiLocalSyncStats {
+            return FfiConverterTypeFfiLocalSyncStats.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_sync_local_tracks(
+        it, FfiConverterSequenceTypeFfiLocalTrackInput.lower(`inputs`),FfiConverterULong.lower(`minDurationMs`),_status)
 }
     }
     )
@@ -5376,6 +5423,50 @@ public object FfiConverterTypeFfiListeningAnalytics: FfiConverterRustBuffer<FfiL
 
 
 
+data class FfiLocalSyncStats (
+    var `added`: kotlin.UInt, 
+    var `updated`: kotlin.UInt, 
+    var `removed`: kotlin.UInt, 
+    var `skippedShort`: kotlin.UInt, 
+    var `total`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiLocalSyncStats: FfiConverterRustBuffer<FfiLocalSyncStats> {
+    override fun read(buf: ByteBuffer): FfiLocalSyncStats {
+        return FfiLocalSyncStats(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiLocalSyncStats) = (
+            FfiConverterUInt.allocationSize(value.`added`) +
+            FfiConverterUInt.allocationSize(value.`updated`) +
+            FfiConverterUInt.allocationSize(value.`removed`) +
+            FfiConverterUInt.allocationSize(value.`skippedShort`) +
+            FfiConverterUInt.allocationSize(value.`total`)
+    )
+
+    override fun write(value: FfiLocalSyncStats, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`added`, buf)
+            FfiConverterUInt.write(value.`updated`, buf)
+            FfiConverterUInt.write(value.`removed`, buf)
+            FfiConverterUInt.write(value.`skippedShort`, buf)
+            FfiConverterUInt.write(value.`total`, buf)
+    }
+}
+
+
+
 data class FfiLocalTrackInput (
     var `uri`: kotlin.String, 
     var `title`: kotlin.String?, 
@@ -5923,7 +6014,8 @@ data class FfiSettings (
     var `collectListeningHistory`: kotlin.Boolean, 
     var `saveResumePosition`: kotlin.Boolean, 
     var `enabledHomeWidgets`: List<kotlin.String>, 
-    var `homeEditHoldSeconds`: kotlin.UByte
+    var `homeEditHoldSeconds`: kotlin.UByte, 
+    var `localFilterShortTracks`: kotlin.Boolean
 ) {
     
     companion object
@@ -5962,6 +6054,7 @@ public object FfiConverterTypeFfiSettings: FfiConverterRustBuffer<FfiSettings> {
             FfiConverterBoolean.read(buf),
             FfiConverterSequenceString.read(buf),
             FfiConverterUByte.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -5992,7 +6085,8 @@ public object FfiConverterTypeFfiSettings: FfiConverterRustBuffer<FfiSettings> {
             FfiConverterBoolean.allocationSize(value.`collectListeningHistory`) +
             FfiConverterBoolean.allocationSize(value.`saveResumePosition`) +
             FfiConverterSequenceString.allocationSize(value.`enabledHomeWidgets`) +
-            FfiConverterUByte.allocationSize(value.`homeEditHoldSeconds`)
+            FfiConverterUByte.allocationSize(value.`homeEditHoldSeconds`) +
+            FfiConverterBoolean.allocationSize(value.`localFilterShortTracks`)
     )
 
     override fun write(value: FfiSettings, buf: ByteBuffer) {
@@ -6023,6 +6117,7 @@ public object FfiConverterTypeFfiSettings: FfiConverterRustBuffer<FfiSettings> {
             FfiConverterBoolean.write(value.`saveResumePosition`, buf)
             FfiConverterSequenceString.write(value.`enabledHomeWidgets`, buf)
             FfiConverterUByte.write(value.`homeEditHoldSeconds`, buf)
+            FfiConverterBoolean.write(value.`localFilterShortTracks`, buf)
     }
 }
 
@@ -6388,6 +6483,37 @@ public object FfiConverterTypeFfiLibraryPlaylistSort: FfiConverterRustBuffer<Ffi
     override fun allocationSize(value: FfiLibraryPlaylistSort) = 4UL
 
     override fun write(value: FfiLibraryPlaylistSort, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
+enum class FfiLocalSortOrder {
+    
+    ARTIST_ALBUM_TITLE,
+    TITLE,
+    DURATION_DESC;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiLocalSortOrder: FfiConverterRustBuffer<FfiLocalSortOrder> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiLocalSortOrder.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiLocalSortOrder) = 4UL
+
+    override fun write(value: FfiLocalSortOrder, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }

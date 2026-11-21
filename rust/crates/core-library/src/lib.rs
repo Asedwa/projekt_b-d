@@ -18,6 +18,12 @@ pub trait LibraryRepository: Send + Sync {
     fn track(&self, id: &TrackId) -> DomainResult<Option<Track>>;
     fn tracks_by_provider(&self, provider: &ProviderId) -> DomainResult<Vec<Track>>;
     fn delete_track(&self, id: &TrackId) -> DomainResult<()>;
+    fn delete_tracks_batch(&self, ids: &[TrackId]) -> DomainResult<usize> {
+        for id in ids {
+            self.delete_track(id)?;
+        }
+        Ok(ids.len())
+    }
     fn search_tracks(&self, query: &str, limit: u32) -> DomainResult<Vec<Track>>;
 
     fn set_favorite(&self, id: &TrackId, favorite: bool) -> DomainResult<()>;

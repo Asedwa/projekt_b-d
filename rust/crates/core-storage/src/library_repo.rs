@@ -155,6 +155,30 @@ impl LibraryRepository for Database {
         Ok(())
     }
 
+    fn delete_tracks_batch(&self, ids: &[TrackId]) -> DomainResult<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("transaction error: {e}")))?;
+        let mut removed = 0usize;
+        {
+            let mut stmt = tx
+                .prepare_cached("DELETE FROM tracks WHERE id = ?1;")
+                .map_err(|e| DomainError::Storage(format!("prepare error: {e}")))?;
+            for id in ids {
+                removed += stmt
+                    .execute(params![id.to_string()])
+                    .map_err(|e| DomainError::Storage(format!("delete track error: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit error: {e}")))?;
+        Ok(removed)
+    }
+
     fn search_tracks(&self, query: &str, limit: u32) -> DomainResult<Vec<Track>> {
         let conn = self.lock()?;
         let pattern = format!("%{query}%");

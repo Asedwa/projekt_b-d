@@ -28,7 +28,7 @@ use core_storage::{
 use core_themes::{CustomThemeSpec, ThemeManifest, ThemeRegistry};
 use provider_deezer::{DeezerAppConfig, DeezerProvider};
 use provider_dev::DevProvider;
-use provider_local::{LocalProvider, LocalTrackInput};
+use provider_local::{LocalProvider, LocalSortOrder, LocalSyncStats, LocalTrackInput};
 
 uniffi::setup_scaffolding!();
 
@@ -335,6 +335,7 @@ pub struct FfiSettings {
     pub save_resume_position: bool,
     pub enabled_home_widgets: Vec<String>,
     pub home_edit_hold_seconds: u8,
+    pub local_filter_short_tracks: bool,
 }
 
 impl From<Settings> for FfiSettings {
@@ -367,6 +368,7 @@ impl From<Settings> for FfiSettings {
             save_resume_position: s.save_resume_position,
             enabled_home_widgets: s.enabled_home_widgets,
             home_edit_hold_seconds: s.home_edit_hold_seconds,
+            local_filter_short_tracks: s.local_filter_short_tracks,
         }
     }
 }
@@ -807,6 +809,44 @@ pub struct FfiLocalTrackInput {
     pub file_name: Option<String>,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiLocalSyncStats {
+    pub added: u32,
+    pub updated: u32,
+    pub removed: u32,
+    pub skipped_short: u32,
+    pub total: u32,
+}
+
+impl From<LocalSyncStats> for FfiLocalSyncStats {
+    fn from(s: LocalSyncStats) -> Self {
+        Self {
+            added: s.added,
+            updated: s.updated,
+            removed: s.removed,
+            skipped_short: s.skipped_short,
+            total: s.total,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiLocalSortOrder {
+    ArtistAlbumTitle,
+    Title,
+    DurationDesc,
+}
+
+impl From<FfiLocalSortOrder> for LocalSortOrder {
+    fn from(v: FfiLocalSortOrder) -> Self {
+        match v {
+            FfiLocalSortOrder::ArtistAlbumTitle => Self::ArtistAlbumTitle,
+            FfiLocalSortOrder::Title => Self::Title,
+            FfiLocalSortOrder::DurationDesc => Self::DurationDesc,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FfiAdvanceReason {
     TrackEnded,
@@ -1215,6 +1255,50 @@ impl PlasmaWaveCore {
         self.local_provider
             .all()
             .into_iter()
+            .filter(|t| t.id.key().starts_with("content://"))
+            .map(FfiTrack::from)
+            .collect()
+    }
+
+    pub fn sync_local_tracks(
+        &self,
+        inputs: Vec<FfiLocalTrackInput>,
+        min_duration_ms: u64,
+    ) -> FfiResult<FfiLocalSyncStats> {
+        self.ensure_local_tracks_loaded();
+        let core_inputs: Vec<LocalTrackInput> = inputs
+            .into_iter()
+            .map(|i| LocalTrackInput {
+                uri: i.uri,
+                title: i.title,
+                artist: i.artist,
+                album: i.album,
+                duration_ms: i.duration_ms,
+                artwork_uri: i.artwork_uri,
+                file_name: i.file_name,
+            })
+            .collect();
+
+        let (changed, removed_ids, stats) = self.local_provider.sync(core_inputs, min_duration_ms);
+        if !changed.is_empty() {
+            self.database.upsert_tracks(&changed)?;
+        }
+        if !removed_ids.is_empty() {
+            self.database.delete_tracks_batch(&removed_ids)?;
+        }
+        Ok(FfiLocalSyncStats::from(stats))
+    }
+
+    pub fn get_local_tracks_filtered(
+        &self,
+        sort: FfiLocalSortOrder,
+        query: Option<String>,
+    ) -> Vec<FfiTrack> {
+        self.ensure_local_tracks_loaded();
+        self.local_provider
+            .query(sort.into(), query.as_deref())
+            .into_iter()
+            .filter(|t| t.id.key().starts_with("content://"))
             .map(FfiTrack::from)
             .collect()
     }
@@ -2186,6 +2270,7 @@ impl PlasmaWaveCore {
             s.save_resume_position = settings.save_resume_position;
             s.enabled_home_widgets = settings.enabled_home_widgets.clone();
             s.home_edit_hold_seconds = settings.home_edit_hold_seconds.clamp(3, 10);
+            s.local_filter_short_tracks = settings.local_filter_short_tracks;
         })?;
         *self.active_theme_id.write().unwrap() = updated.theme_id.clone();
         Ok(FfiSettings::from(updated))
