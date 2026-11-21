@@ -1021,6 +1021,17 @@ pub struct PlasmaWaveCore {
     tokio_runtime: tokio::runtime::Runtime,
     private_session_until_ms: Mutex<Option<u64>>,
     local_tz_offset_ms: Mutex<i64>,
+    local_tracks_loaded: std::sync::Once,
+}
+
+impl PlasmaWaveCore {
+    fn ensure_local_tracks_loaded(&self) {
+        self.local_tracks_loaded.call_once(|| {
+            if let Ok(tracks) = self.database.tracks_by_provider(&ProviderId::local()) {
+                self.local_provider.load(tracks);
+            }
+        });
+    }
 }
 
 #[uniffi::export]
@@ -1062,11 +1073,6 @@ impl PlasmaWaveCore {
                 reason: format!("tokio init error: {e}"),
             })?;
 
-        // Load existing local tracks from DB into memory
-        if let Ok(tracks) = database.tracks_by_provider(&ProviderId::local()) {
-            local_provider.load(tracks);
-        }
-
         Ok(Arc::new(Self {
             queue: Mutex::new(Queue::default()),
             database,
@@ -1082,6 +1088,7 @@ impl PlasmaWaveCore {
             tokio_runtime,
             private_session_until_ms: Mutex::new(None),
             local_tz_offset_ms: Mutex::new(3 * 3_600_000),
+            local_tracks_loaded: std::sync::Once::new(),
         }))
     }
 
@@ -1135,6 +1142,7 @@ impl PlasmaWaveCore {
     // Search & Catalog
     // ------------------------------------------------------------------------
     pub fn search_all(&self, query: String) -> FfiResult<Vec<FfiTrack>> {
+        self.ensure_local_tracks_loaded();
         let q = query.trim();
         let mut results = Vec::new();
 
@@ -1181,6 +1189,7 @@ impl PlasmaWaveCore {
     }
 
     pub fn ingest_local_tracks(&self, inputs: Vec<FfiLocalTrackInput>) -> FfiResult<u32> {
+        self.ensure_local_tracks_loaded();
         let core_inputs: Vec<LocalTrackInput> = inputs
             .into_iter()
             .map(|i| LocalTrackInput {
@@ -1202,6 +1211,7 @@ impl PlasmaWaveCore {
     }
 
     pub fn get_local_tracks(&self) -> Vec<FfiTrack> {
+        self.ensure_local_tracks_loaded();
         self.local_provider
             .all()
             .into_iter()
