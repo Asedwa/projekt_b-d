@@ -49,7 +49,7 @@ trap 'rm -rf -- "$artifact_dir"' EXIT
 artifact_name="projekt_b-d-${version}.apk"
 cp android/app/build/outputs/apk/release/app-release.apk "$artifact_dir/$artifact_name"
 
-tag="build-$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%d%H%M%S)"
+tag="build-$(date -u +%Y%m%d%H%M%S)-$(git rev-parse --short=12 HEAD)"
 # Publish only after the upload succeeds, so the latest link never points at an empty release.
 gh release create "$tag" "$artifact_dir/$artifact_name" --repo "$repo_name" --target "$target" \
     --title "projekt_b-d $version" --notes "Android APK built from source commit $target." --draft
