@@ -21,6 +21,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import java.io.File
 import kotlin.math.roundToInt
 import org.kde.plasmawave.R
@@ -1762,6 +1766,20 @@ fun CustomizationScreen(
                             style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                         )
                         Spacer(modifier = Modifier.height(14.dp))
+                        var showFullAmbientPreview by remember { mutableStateOf(false) }
+                        if (showFullAmbientPreview) {
+                            AmbientBackdropPreviewDialog(
+                                initialStyle = ambientBackdropStyle,
+                                onApply = { selected ->
+                                    viewModel.setAmbientBackdropStyle(selected)
+                                    if (!ambientBackgroundEnabled) {
+                                        viewModel.setAmbientBackgroundEnabled(true)
+                                    }
+                                    showFullAmbientPreview = false
+                                },
+                                onDismiss = { showFullAmbientPreview = false }
+                            )
+                        }
                         val previewTransition = rememberInfiniteTransition(label = "ambientPreviewShared")
                         val sharedPreviewPhase by previewTransition.animateFloat(
                             initialValue = 0f,
@@ -1772,6 +1790,136 @@ fun CustomizationScreen(
                             ),
                             label = "sharedPreviewPhase"
                         )
+                        Surface(
+                            onClick = { showFullAmbientPreview = true },
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.background,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(168.dp)
+                                .border(
+                                    width = 1.dp,
+                                    color = primary.copy(alpha = 0.55f),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                AmbientBackdropLayer(
+                                    style = ambientBackdropStyle,
+                                    phaseOverride = sharedPreviewPhase,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                // Simulated PlasmaWave mini UI overlay
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(999.dp),
+                                            color = colors.card.copy(alpha = 0.78f)
+                                        ) {
+                                            Text(
+                                                text = "Canlı Önizleme • ${ambientBackdropStyle.title}",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                        FilledTonalButton(
+                                            onClick = { showFullAmbientPreview = true },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Fullscreen,
+                                                contentDescription = "Tam ekran önizle",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Tam Ekran", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        repeat(2) { idx ->
+                                            Surface(
+                                                modifier = Modifier.weight(1f).height(44.dp),
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = colors.card.copy(alpha = 0.72f)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(28.dp)
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(primary.copy(alpha = if (idx == 0) 0.35f else 0.22f))
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Column {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .width(58.dp)
+                                                                .height(8.dp)
+                                                                .clip(RoundedCornerShape(4.dp))
+                                                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+                                                        )
+                                                        Spacer(Modifier.height(4.dp))
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .width(38.dp)
+                                                                .height(6.dp)
+                                                                .clip(RoundedCornerShape(3.dp))
+                                                                .background(colors.textSecondary.copy(alpha = 0.5f))
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth().height(34.dp),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = colors.card.copy(alpha = 0.85f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Default.MusicNote,
+                                                contentDescription = null,
+                                                tint = primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                text = "Şimdi Çalınıyor • Örnek Parça",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1
+                                            )
+                                            Icon(
+                                                Icons.Default.PlayArrow,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             AmbientBackdropStyle.entries.chunked(2).forEach { rowStyles ->
                                 Row(
@@ -2377,4 +2525,201 @@ private fun sectionHeading(raw: String, legacyUi: Boolean): String {
     if (legacyUi) return raw
     val trLocale = java.util.Locale("tr", "TR")
     return raw.lowercase(trLocale).replaceFirstChar { it.titlecase(trLocale) }
+}
+
+@Composable
+private fun AmbientBackdropPreviewDialog(
+    initialStyle: AmbientBackdropStyle,
+    onApply: (AmbientBackdropStyle) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val styles = AmbientBackdropStyle.entries
+    var previewStyle by remember { mutableStateOf(initialStyle) }
+    var showMockUi by remember { mutableStateOf(true) }
+    val colors = LocalPlasmaColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    val currentIndex = styles.indexOf(previewStyle).coerceAtLeast(0)
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            AmbientBackdropLayer(
+                style = previewStyle,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Top bar
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = colors.card.copy(alpha = 0.82f),
+                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.6f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${previewStyle.title} (${currentIndex + 1}/${styles.size})",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                text = previewStyle.subtitle,
+                                style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = { showMockUi = !showMockUi }) {
+                            Icon(
+                                imageVector = if (showMockUi) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = "Arayüz örneğini aç/kapat"
+                            )
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Kapat")
+                        }
+                    }
+                }
+
+                // Middle optional mock app UI
+                if (showMockUi) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            listOf("Son Çalınanlar", "Cihazdaki Müzikler").forEach { label ->
+                                Surface(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = colors.card.copy(alpha = 0.76f),
+                                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.45f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(primary.copy(alpha = 0.28f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.MusicNote, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                                        }
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            color = colors.card.copy(alpha = 0.84f),
+                            border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(primary.copy(alpha = 0.30f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.GraphicEq, contentDescription = null, tint = primary)
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("Örnek Parça", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                                    Text("PlasmaWave Sanatçı", style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary))
+                                }
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = primary)
+                            }
+                        }
+                    }
+                } else {
+                    Spacer(Modifier.height(1.dp))
+                }
+
+                // Bottom style switcher & apply
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = colors.card.copy(alpha = 0.88f),
+                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.6f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            itemsIndexed(styles) { _, option ->
+                                FilterChip(
+                                    selected = option == previewStyle,
+                                    onClick = { previewStyle = option },
+                                    label = { Text(option.title) }
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    val prevIdx = if (currentIndex == 0) styles.lastIndex else currentIndex - 1
+                                    previewStyle = styles[prevIdx]
+                                }
+                            ) {
+                                Text("Önceki")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    val nextIdx = (currentIndex + 1) % styles.size
+                                    previewStyle = styles[nextIdx]
+                                }
+                            ) {
+                                Text("Sonraki")
+                            }
+                            Button(
+                                onClick = { onApply(previewStyle) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Uygula")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

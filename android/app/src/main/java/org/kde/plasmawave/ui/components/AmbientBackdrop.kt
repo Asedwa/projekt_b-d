@@ -61,6 +61,36 @@ enum class AmbientBackdropStyle(
         id = "prism_beams",
         title = "Prizma Hüzmeleri",
         subtitle = "Üst köşelerden çapraz süzülen sahne ışıkları"
+    ),
+    AURORA_CURTAINS(
+        id = "aurora_curtains",
+        title = "Kuzey Perdesi",
+        subtitle = "Dikey süzülen katmanlı kuzey ışığı perdeleri"
+    ),
+    SOLAR_FLARE(
+        id = "solar_flare",
+        title = "Güneş Patlaması",
+        subtitle = "Köşeden yayılan sıcak plazma halkaları"
+    ),
+    MATRIX_RAIN(
+        id = "matrix_rain",
+        title = "Dijital Yağmur",
+        subtitle = "Aşağı süzülen neon şeritler ve ışık izleri"
+    ),
+    VELVET_RIBBONS(
+        id = "velvet_ribbons",
+        title = "Kadife Dalgalar",
+        subtitle = "Çapraz kesişen geniş ve yumuşak ışık şeritleri"
+    ),
+    COSMIC_VORTEX(
+        id = "cosmic_vortex",
+        title = "Kozmik Girdap",
+        subtitle = "Yörüngede dönen spiral küreler ve halkalar"
+    ),
+    FIREFLY_MEADOW(
+        id = "firefly_meadow",
+        title = "Ateş Böcekleri",
+        subtitle = "Organik yörüngelerde süzülen sıcak parıltılar"
     );
 
     companion object {
@@ -137,8 +167,8 @@ internal class MutableRing(
 }
 
 internal class AmbientFrameScratch {
-    val orbs = Array(4) { MutableOrb() }
-    val ribbons = Array(3) { MutableRibbon() }
+    val orbs = Array(5) { MutableOrb() }
+    val ribbons = Array(4) { MutableRibbon() }
     val rings = Array(10) { MutableRing() }
     var orbCount = 0
     var ribbonCount = 0
@@ -340,6 +370,182 @@ private fun fillAmbientFrame(
                 1.12f, 0.20f - 0.02f * s1,
                 0.075f + 0.012f * c2, midAccent, 0.12f + 0.025f * s1
             )
+        }
+        AmbientBackdropStyle.AURORA_CURTAINS -> {
+            scratch.orbCount = 2
+            scratch.ribbonCount = 4
+            scratch.ringCount = 0
+            scratch.orbs[0].set(0.45f + 0.12f * s1, 0.05f, 0.90f, softPrimary, 0.20f + 0.03f * c1)
+            scratch.orbs[1].set(0.55f - 0.10f * c1, 0.94f, 0.72f, deepPrimary, 0.14f)
+            for (i in 0 until 4) {
+                val baseX = 0.16f + i * 0.22f
+                val sway = 0.06f * sin(tau + i * 1.1f)
+                val sway2 = 0.05f * cos(tau * 2f + i * 0.8f)
+                scratch.ribbons[i].set(
+                    baseX + sway, -0.05f,
+                    baseX - sway2, 0.28f,
+                    baseX + sway2, 0.62f,
+                    baseX - sway, 1.05f,
+                    0.11f + 0.02f * sin(tau + i),
+                    if (i % 2 == 0) softPrimary else brightAccent,
+                    0.14f + 0.04f * (0.5f + 0.5f * sin(tau + i * 1.4f))
+                )
+            }
+        }
+        AmbientBackdropStyle.SOLAR_FLARE -> {
+            val sunX = 0.88f + 0.03f * c1
+            val sunY = 0.08f + 0.03f * s1
+            scratch.orbCount = 3
+            scratch.ribbonCount = 1
+            scratch.ringCount = 4
+            scratch.orbs[0].set(sunX, sunY, 0.78f + 0.06f * s1, brightAccent, 0.26f + 0.04f * s1)
+            scratch.orbs[1].set(sunX - 0.12f, sunY + 0.10f, 0.62f, softPrimary, 0.20f)
+            scratch.orbs[2].set(0.18f + 0.06f * s1, 0.86f - 0.04f * c1, 0.70f, deepPrimary, 0.15f)
+            scratch.ribbons[0].set(
+                1.05f, 0.02f,
+                0.76f + 0.04f * s1, 0.18f + 0.04f * c1,
+                0.48f - 0.05f * c2, 0.34f + 0.03f * s2,
+                0.06f, 0.62f + 0.04f * s1,
+                0.13f, midAccent, 0.14f
+            )
+            for (i in 0 until 4) {
+                val p = (((wrapped + i * 0.25f) % 1f) + 1f) % 1f
+                val fade = (1f - p) * sin(p * PI_F)
+                scratch.rings[i].set(
+                    sunX,
+                    sunY,
+                    0.14f + p * 0.72f,
+                    0.006f + (1f - p) * 0.005f,
+                    if (i % 2 == 0) brightAccent else softPrimary,
+                    (0.24f * fade).coerceIn(0.01f, 0.24f)
+                )
+            }
+        }
+        AmbientBackdropStyle.MATRIX_RAIN -> {
+            scratch.orbCount = 2
+            scratch.ribbonCount = 4
+            scratch.ringCount = 8
+            scratch.orbs[0].set(0.50f, 0.10f + 0.04f * s1, 0.80f, deepPrimary, 0.18f)
+            scratch.orbs[1].set(0.50f, 0.90f - 0.04f * c1, 0.75f, softPrimary, 0.14f)
+            val cols = floatArrayOf(0.14f, 0.38f, 0.62f, 0.86f)
+            for (i in 0 until 4) {
+                val x = cols[i] + 0.015f * sin(tau + i)
+                val drop = (((wrapped + i * 0.23f) % 1f) + 1f) % 1f
+                val headY = -0.15f + drop * 1.30f
+                scratch.ribbons[i].set(
+                    x, headY - 0.35f,
+                    x + 0.01f, headY - 0.20f,
+                    x - 0.01f, headY - 0.08f,
+                    x, headY,
+                    0.022f,
+                    if (i % 2 == 0) brightAccent else softPrimary,
+                    0.16f + 0.06f * sin(drop * PI_F)
+                )
+            }
+            for (i in 0 until 8) {
+                val seed = STARLIGHT_SEEDS[i]
+                val drop = (((wrapped * 1.5f + i * 0.125f) % 1f) + 1f) % 1f
+                scratch.rings[i].set(
+                    seed[0],
+                    -0.05f + drop * 1.10f,
+                    0.012f + 0.006f * (i % 3),
+                    0f,
+                    if (i % 2 == 0) brightAccent else softPrimary,
+                    0.18f * sin(drop * PI_F).coerceAtLeast(0.05f)
+                )
+            }
+        }
+        AmbientBackdropStyle.VELVET_RIBBONS -> {
+            scratch.orbCount = 2
+            scratch.ribbonCount = 4
+            scratch.ringCount = 0
+            scratch.orbs[0].set(0.24f + 0.08f * c1, 0.24f + 0.06f * s1, 0.76f, deepPrimary, 0.17f)
+            scratch.orbs[1].set(0.76f - 0.08f * s1, 0.76f - 0.06f * c1, 0.76f, midAccent, 0.17f)
+            scratch.ribbons[0].set(
+                -0.10f, 0.22f + 0.05f * s1,
+                0.32f, 0.08f + 0.06f * c1,
+                0.68f, 0.38f - 0.06f * s2,
+                1.10f, 0.24f + 0.05f * c1,
+                0.15f, softPrimary, 0.18f
+            )
+            scratch.ribbons[1].set(
+                -0.10f, 0.56f - 0.05f * c1,
+                0.30f, 0.72f - 0.05f * s1,
+                0.70f, 0.40f + 0.05f * c2,
+                1.10f, 0.54f - 0.04f * s1,
+                0.13f, midAccent, 0.15f
+            )
+            scratch.ribbons[2].set(
+                -0.10f, 0.84f + 0.04f * s2,
+                0.35f, 0.68f + 0.04f * c1,
+                0.65f, 0.94f - 0.04f * s1,
+                1.10f, 0.78f + 0.04f * c2,
+                0.12f, brightAccent, 0.13f
+            )
+            scratch.ribbons[3].set(
+                0.12f + 0.04f * c1, -0.08f,
+                0.40f, 0.32f + 0.05f * s1,
+                0.62f, 0.68f - 0.05f * c1,
+                0.92f - 0.04f * s1, 1.08f,
+                0.10f, deepPrimary, 0.14f
+            )
+        }
+        AmbientBackdropStyle.COSMIC_VORTEX -> {
+            val cx = 0.50f
+            val cy = 0.46f
+            scratch.orbCount = 4
+            scratch.ribbonCount = 0
+            scratch.ringCount = 3
+            for (i in 0 until 4) {
+                val angle = tau + i * (PI_F * 0.5f)
+                val dist = 0.24f + 0.04f * sin(tau * 2f + i)
+                scratch.orbs[i].set(
+                    cx + dist * cos(angle),
+                    cy + dist * 0.75f * sin(angle),
+                    0.56f + 0.06f * sin(tau + i),
+                    when (i) {
+                        0 -> softPrimary
+                        1 -> midAccent
+                        2 -> brightAccent
+                        else -> deepPrimary
+                    },
+                    0.20f + 0.03f * cos(tau + i)
+                )
+            }
+            for (i in 0 until 3) {
+                val pulse = 0.5f + 0.5f * sin(tau + i * 1.2f)
+                scratch.rings[i].set(
+                    cx,
+                    cy,
+                    0.18f + i * 0.13f + 0.02f * pulse,
+                    0.004f,
+                    if (i % 2 == 0) softPrimary else brightAccent,
+                    0.12f + 0.08f * pulse
+                )
+            }
+        }
+        AmbientBackdropStyle.FIREFLY_MEADOW -> {
+            scratch.orbCount = 3
+            scratch.ribbonCount = 0
+            scratch.ringCount = STARLIGHT_SEEDS.size
+            scratch.orbs[0].set(0.26f + 0.08f * s1, 0.82f + 0.04f * c1, 0.78f, deepPrimary, 0.18f)
+            scratch.orbs[1].set(0.76f - 0.08f * c1, 0.76f - 0.04f * s1, 0.72f, midAccent, 0.16f)
+            scratch.orbs[2].set(0.50f + 0.06f * s2, 0.18f + 0.05f * c2, 0.68f, softPrimary, 0.15f)
+            for (idx in STARLIGHT_SEEDS.indices) {
+                val seed = STARLIGHT_SEEDS[idx]
+                val offset = seed[3]
+                val glow = 0.5f + 0.5f * sin(tau * 2f + offset * 1.5f)
+                val x = seed[0] + 0.06f * sin(tau + offset)
+                val y = seed[1] + 0.05f * cos(tau * 1.3f + offset * 0.9f)
+                scratch.rings[idx].set(
+                    x,
+                    y,
+                    seed[2] * (1.1f + 0.45f * glow),
+                    0f,
+                    if (idx % 3 == 0) brightAccent else softPrimary,
+                    0.14f + 0.24f * glow
+                )
+            }
         }
     }
 }
