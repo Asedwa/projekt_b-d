@@ -162,6 +162,21 @@ object ArtworkResolver {
         return null
     }
 
+    private val DEEZER_SIZE_REGEX = Regex("""/(?:56x56|120x120|250x250|500x500)(?=[-./]|$)""")
+    private val ITUNES_SIZE_REGEX = Regex("""/\d+x\d+bb(?=\.)""")
+
+    /** Upgrades CDN cover URLs to 1000x1000 for large full-screen player surfaces. */
+    fun highResUrl(url: String?): String? {
+        if (url.isNullOrBlank()) return url
+        return when {
+            url.contains("dzcdn.net/images/", ignoreCase = true) ->
+                url.replace(DEEZER_SIZE_REGEX, "/1000x1000")
+            url.contains("mzstatic.com/", ignoreCase = true) ->
+                url.replace(ITUNES_SIZE_REGEX, "/1000x1000bb")
+            else -> url
+        }
+    }
+
     private fun artistTokensMatch(expectedNorm: String, candidateNorm: String): Boolean {
         if (expectedNorm.isEmpty()) return true
         if (candidateNorm.contains(expectedNorm) || expectedNorm.contains(candidateNorm)) return true

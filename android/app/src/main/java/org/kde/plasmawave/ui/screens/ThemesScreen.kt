@@ -779,6 +779,32 @@ private fun CustomThemeEditorDialog(
         value = refreshed[2]
     }
 
+    fun applyRandomTheme() {
+        val generated = uniffi.plasmawave_core.generateRandomCustomTheme(isDarkMode)
+        if (initialSpec == null) {
+            name = generated.name
+        }
+        bgHex = generated.backgroundHex
+        cardHex = generated.cardHex
+        accentHex = generated.accentHex
+        textHex = generated.textHex
+        isDarkMode = parseHexColor(bgHex, previewBg).luminance() < 0.5f
+        val refreshed = colorToHsv(
+            parseHexColor(
+                when (activeRole) {
+                    ThemeColorRole.ACCENT -> accentHex
+                    ThemeColorRole.BACKGROUND -> bgHex
+                    ThemeColorRole.CARD -> cardHex
+                    ThemeColorRole.TEXT -> textHex
+                },
+                previewAccent
+            )
+        )
+        hue = refreshed[0]
+        sat = refreshed[1]
+        value = refreshed[2]
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -816,6 +842,32 @@ private fun CustomThemeEditorDialog(
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.weight(1f))
+                    Surface(
+                        onClick = { applyRandomTheme() },
+                        shape = RoundedCornerShape(999.dp),
+                        color = previewAccent.copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, previewAccent.copy(alpha = 0.45f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Casino,
+                                contentDescription = "Rastgele Tema",
+                                tint = previewAccent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Rastgele",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = previewAccent
+                                )
+                            )
+                        }
+                    }
                     IconButton(onClick = onDismiss) {
                         Icon(
                             Icons.Default.Close,

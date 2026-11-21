@@ -3626,6 +3626,12 @@ fn pick_foreground_pair(surface_argb: u32, primary_argb: u32) -> (u32, u32, bool
     }
 }
 
+/// Generates a harmonious, contrast-aware random custom theme in Rust.
+#[uniffi::export]
+pub fn generate_random_custom_theme(prefer_dark: Option<bool>) -> FfiCustomThemeSpec {
+    core_themes::generate_random_custom_theme(prefer_dark).into()
+}
+
 /// Pure-Rust WCAG 2.1 contrast-aware foreground text palette engine.
 /// Automatically adapts primary/secondary text and icon colors to the effective
 /// background (including ambient aurora glow lift) and card surfaces.

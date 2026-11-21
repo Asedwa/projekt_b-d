@@ -960,6 +960,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1229,6 +1231,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_styled(`style`: RustBuffer.ByValue,`phase`: Float,`primaryArgb`: Int,`secondaryArgb`: Int,`backgroundArgb`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_func_generate_random_custom_theme(`preferDark`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun ffi_plasmawave_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_plasmawave_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1346,6 +1350,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame(
     ): Short
     fun uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_styled(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_func_generate_random_custom_theme(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget(
     ): Short
@@ -1611,6 +1617,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_styled() != 3939.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_func_generate_random_custom_theme() != 50979.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_add_home_widget() != 2433.toShort()) {
@@ -7733,6 +7742,18 @@ public object FfiConverterMapStringSequenceTypeFfiPlaylistTrackEntry: FfiConvert
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_styled(
         FfiConverterString.lower(`style`),FfiConverterFloat.lower(`phase`),FfiConverterUInt.lower(`primaryArgb`),FfiConverterUInt.lower(`secondaryArgb`),FfiConverterUInt.lower(`backgroundArgb`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Generates a harmonious, contrast-aware random custom theme in Rust.
+         */ fun `generateRandomCustomTheme`(`preferDark`: kotlin.Boolean?): FfiCustomThemeSpec {
+            return FfiConverterTypeFfiCustomThemeSpec.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_func_generate_random_custom_theme(
+        FfiConverterOptionalBoolean.lower(`preferDark`),_status)
 }
     )
     }

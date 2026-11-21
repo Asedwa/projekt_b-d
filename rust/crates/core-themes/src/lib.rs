@@ -4,8 +4,11 @@
 //! and never execute arbitrary code. Themes are validated against a schema
 //! version and fallback cleanly to Breeze Dark if invalid.
 
+mod generator;
 mod manifest;
 mod registry;
+
+pub use generator::generate_random_custom_theme;
 
 pub use manifest::{
     ColorTokens, CustomThemeSpec, ElevationTokens, MotionTokens, ShapeTokens, SpacingTokens,

@@ -907,9 +907,11 @@ private fun PlayerArtwork(
             },
         contentAlignment = Alignment.Center
     ) {
+        val rawArtworkUrl = entry.track.artworkUrl?.takeUnless(ArtworkResolver::isPlaceholderOrBlank)
+            ?: ArtworkResolver.getCached(androidx.compose.ui.platform.LocalContext.current, entry.track.title, entry.track.artist)
+        val highResArtworkUrl = remember(rawArtworkUrl) { ArtworkResolver.highResUrl(rawArtworkUrl) }
         ArtworkFramedView(
-            artworkUrl = entry.track.artworkUrl?.takeUnless(ArtworkResolver::isPlaceholderOrBlank)
-                ?: ArtworkResolver.getCached(androidx.compose.ui.platform.LocalContext.current, entry.track.title, entry.track.artist),
+            artworkUrl = highResArtworkUrl,
             frame = albumFrame,
             accentColor = effectiveAccent,
             isPlaying = isPlaying,
