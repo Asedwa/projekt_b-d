@@ -12,8 +12,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -37,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +72,7 @@ fun FullPlayerSheet(
     seekbarStyle: SeekbarStyle,
     albumFrame: AlbumCoverFrame,
     swipeToSkipEnabled: Boolean,
+    pinnedPlayerActions: List<PlayerActionButton> = PlayerActionButton.DEFAULT_PINNED,
     soundBoostEnabled: Boolean = false,
     soundBoostPercent: Int = 0,
     onSoundBoostChange: (Int) -> Unit = {},
@@ -351,6 +355,7 @@ fun FullPlayerSheet(
                             canStartMix = canStartMix,
                             isFavorite = isFavorite,
                             effectiveAccent = effectiveAccent,
+                            pinnedActions = pinnedPlayerActions,
                             onToggleRepeat = onToggleRepeat,
                             onToggleShuffle = onToggleShuffle,
                             onStartMix = onStartMix,
@@ -462,6 +467,7 @@ fun FullPlayerSheet(
                         canStartMix = canStartMix,
                         isFavorite = isFavorite,
                         effectiveAccent = effectiveAccent,
+                        pinnedActions = pinnedPlayerActions,
                         onToggleRepeat = onToggleRepeat,
                         onToggleShuffle = onToggleShuffle,
                         onStartMix = onStartMix,
@@ -1110,6 +1116,7 @@ private fun PlayerActionBar(
     canStartMix: Boolean,
     isFavorite: Boolean,
     effectiveAccent: Color,
+    pinnedActions: List<PlayerActionButton> = PlayerActionButton.DEFAULT_PINNED,
     onToggleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
     onStartMix: () -> Unit,
@@ -1130,68 +1137,212 @@ private fun PlayerActionBar(
         if (isFavorite) Color.White else Color.White.copy(alpha = 0.65f)
     }
 
-    Row(
+    val visiblePinned = remember(pinnedActions) {
+        val sanitized = pinnedActions.distinct().take(2)
+        if (sanitized.size == 2) sanitized else PlayerActionButton.DEFAULT_PINNED
+    }
+    val pocketActions = remember(visiblePinned) {
+        PlayerActionButton.entries.filter { it !in visiblePinned }
+    }
+
+    var isPocketOpen by remember { mutableStateOf(false) }
+    var dragAccumulator by remember { mutableFloatStateOf(0f) }
+
+    fun resolveActionVisuals(action: PlayerActionButton): Triple<ImageVector, Color, Boolean> {
+        return when (action) {
+            PlayerActionButton.REPEAT -> {
+                val (icon, tint) = when (repeatMode) {
+                    FfiRepeatMode.OFF -> Icons.Default.Repeat to Color.White.copy(alpha = 0.55f)
+                    FfiRepeatMode.ALL -> Icons.Default.Repeat to activeIconTint
+                    FfiRepeatMode.ONE -> Icons.Default.RepeatOne to activeIconTint
+                }
+                Triple(icon, tint, true)
+            }
+            PlayerActionButton.SHUFFLE -> Triple(
+                Icons.Default.Shuffle,
+                if (isShuffle) activeIconTint else Color.White.copy(alpha = 0.55f),
+                true
+            )
+            PlayerActionButton.MIX -> Triple(
+                Icons.Default.Radio,
+                if (canStartMix) Color.White.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.30f),
+                canStartMix
+            )
+            PlayerActionButton.SLEEP_TIMER -> Triple(
+                Icons.Default.Bedtime,
+                Color.White.copy(alpha = 0.85f),
+                true
+            )
+            PlayerActionButton.FAVORITE -> Triple(
+                if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                favIconTint,
+                true
+            )
+            PlayerActionButton.ADD_TO_PLAYLIST -> Triple(
+                Icons.AutoMirrored.Filled.PlaylistAdd,
+                Color.White.copy(alpha = 0.85f),
+                true
+            )
+            PlayerActionButton.OPTIONS -> Triple(
+                Icons.Default.GraphicEq,
+                Color.White.copy(alpha = 0.85f),
+                true
+            )
+        }
+    }
+
+    fun invokeAction(action: PlayerActionButton, fromPocket: Boolean) {
+        when (action) {
+            PlayerActionButton.REPEAT -> onToggleRepeat()
+            PlayerActionButton.SHUFFLE -> onToggleShuffle()
+            PlayerActionButton.MIX -> {
+                if (fromPocket) isPocketOpen = false
+                onStartMix()
+            }
+            PlayerActionButton.SLEEP_TIMER -> {
+                if (fromPocket) isPocketOpen = false
+                onShowSleepTimer()
+            }
+            PlayerActionButton.FAVORITE -> onToggleFavorite()
+            PlayerActionButton.ADD_TO_PLAYLIST -> {
+                if (fromPocket) isPocketOpen = false
+                onAddToPlaylist()
+            }
+            PlayerActionButton.OPTIONS -> {
+                if (fromPocket) isPocketOpen = false
+                onOpenMenu()
+            }
+        }
+    }
+
+    val pocketShape = RoundedCornerShape(22.dp)
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onToggleRepeat) {
-            val (icon, tint) = when (repeatMode) {
-                FfiRepeatMode.OFF -> Icons.Default.Repeat to Color.White.copy(alpha = 0.55f)
-                FfiRepeatMode.ALL -> Icons.Default.Repeat to activeIconTint
-                FfiRepeatMode.ONE -> Icons.Default.RepeatOne to activeIconTint
+            .padding(horizontal = 4.dp)
+            .clip(pocketShape)
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, Color.White.copy(alpha = 0.14f), pocketShape)
+            .pointerInput(isPocketOpen) {
+                detectVerticalDragGestures(
+                    onDragStart = { dragAccumulator = 0f },
+                    onDragEnd = { dragAccumulator = 0f },
+                    onDragCancel = { dragAccumulator = 0f }
+                ) { change, dragAmount ->
+                    change.consume()
+                    dragAccumulator += dragAmount
+                    if (!isPocketOpen && dragAccumulator < -28f) {
+                        isPocketOpen = true
+                        dragAccumulator = 0f
+                    } else if (isPocketOpen && dragAccumulator > 28f) {
+                        isPocketOpen = false
+                        dragAccumulator = 0f
+                    }
+                }
             }
-            Icon(icon, contentDescription = "Tekrarla", tint = tint, modifier = Modifier.size(iconSize))
+    ) {
+        AnimatedVisibility(
+            visible = isPocketOpen,
+            enter = expandVertically(
+                expandFrom = Alignment.Bottom,
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = 420f)
+            ) + fadeIn(tween(180)),
+            exit = shrinkVertically(
+                shrinkTowards = Alignment.Bottom,
+                animationSpec = spring(dampingRatio = 0.90f, stiffness = 460f)
+            ) + fadeOut(tween(140))
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = if (compact) 8.dp else 10.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    pocketActions.forEach { action ->
+                        val (icon, tint, enabled) = resolveActionVisuals(action)
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable(enabled = enabled) { invokeAction(action, fromPocket = true) }
+                                .padding(vertical = if (compact) 6.dp else 8.dp, horizontal = 2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = action.title,
+                                tint = tint,
+                                modifier = Modifier.size(if (compact) 19.dp else 21.dp)
+                            )
+                            Text(
+                                text = action.shortLabel,
+                                color = if (enabled) Color.White.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.35f),
+                                fontSize = if (compact) 9.5.sp else 10.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+            }
         }
-        IconButton(onClick = onToggleShuffle) {
-            Icon(
-                Icons.Default.Shuffle,
-                contentDescription = "Karıştır",
-                tint = if (isShuffle) activeIconTint else Color.White.copy(alpha = 0.55f),
-                modifier = Modifier.size(iconSize)
-            )
-        }
-        IconButton(onClick = onStartMix, enabled = canStartMix) {
-            Icon(
-                Icons.Default.Radio,
-                contentDescription = "Şarkı miksi",
-                tint = if (canStartMix) Color.White.copy(alpha = 0.80f) else Color.White.copy(alpha = 0.30f),
-                modifier = Modifier.size(iconSize)
-            )
-        }
-        IconButton(onClick = onShowSleepTimer) {
-            Icon(
-                Icons.Default.Bedtime,
-                contentDescription = "Uyku zamanlayıcı",
-                tint = Color.White.copy(alpha = 0.80f),
-                modifier = Modifier.size((iconSize.value - 1).dp)
-            )
-        }
-        IconButton(onClick = onToggleFavorite) {
-            Icon(
-                if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = if (isFavorite) "Beğeniyi kaldır" else "Şarkıyı beğen",
-                tint = favIconTint,
-                modifier = Modifier.size(favSize)
-            )
-        }
-        IconButton(onClick = onAddToPlaylist) {
-            Icon(
-                Icons.AutoMirrored.Filled.PlaylistAdd,
-                contentDescription = "Listeye ekle",
-                tint = Color.White.copy(alpha = 0.80f),
-                modifier = Modifier.size(favSize)
-            )
-        }
-        IconButton(onClick = onOpenMenu) {
-            Icon(
-                Icons.Default.GraphicEq,
-                contentDescription = "Seçenekler",
-                tint = Color.White.copy(alpha = 0.80f),
-                modifier = Modifier.size(iconSize)
-            )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = if (compact) 2.dp else 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            visiblePinned.forEachIndexed { index, action ->
+                if (index == 1) {
+                    Column(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { isPocketOpen = !isPocketOpen }
+                            .padding(horizontal = 24.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(34.dp)
+                                .height(3.5.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.45f))
+                        )
+                        Icon(
+                            imageVector = if (isPocketOpen) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                            contentDescription = if (isPocketOpen) "Cebi kapat" else "Cebi yukarı çek",
+                            tint = Color.White.copy(alpha = 0.65f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                val (icon, tint, enabled) = resolveActionVisuals(action)
+                val targetSize = when (action) {
+                    PlayerActionButton.FAVORITE, PlayerActionButton.ADD_TO_PLAYLIST -> favSize
+                    PlayerActionButton.SLEEP_TIMER -> (iconSize.value - 1).dp
+                    else -> iconSize
+                }
+                IconButton(
+                    onClick = { invokeAction(action, fromPocket = false) },
+                    enabled = enabled
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = action.title,
+                        tint = tint,
+                        modifier = Modifier.size(targetSize)
+                    )
+                }
+            }
         }
     }
 }

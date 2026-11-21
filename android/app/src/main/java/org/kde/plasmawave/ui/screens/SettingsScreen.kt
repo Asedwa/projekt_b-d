@@ -150,6 +150,7 @@ fun SettingsScreen(
     val dynamicColor by viewModel.dynamicColorEnabled.collectAsState()
     val legacyUiMode by viewModel.legacyUiMode.collectAsState()
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
+    val pinnedPlayerActions by viewModel.pinnedPlayerActions.collectAsState()
     val downloads by viewModel.fullDownloads.collectAsState()
     val theme by viewModel.activeTheme.collectAsState()
     val settings by viewModel.settings.collectAsState()
@@ -885,8 +886,8 @@ fun SettingsScreen(
                             PhoneSettingsDivider()
                             SettingsLink(
                                 icon = Icons.Default.LinearScale,
-                                title = "İlerleme çubuğu ve kapak çerçevesi",
-                                subtitle = "Seçili çubuk: ${seekbarStyle.title}",
+                                title = "Oynatıcı görünümü ve alt cep tuşları",
+                                subtitle = "Çubuk: ${seekbarStyle.title} • Açık: ${pinnedPlayerActions.joinToString(" + ") { it.shortLabel }}",
                                 onClick = { onNavigateCustomization(CustomizationCategory.PLAYER_AND_VISUALS) }
                             )
                         }

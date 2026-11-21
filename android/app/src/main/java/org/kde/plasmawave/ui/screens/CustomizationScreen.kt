@@ -109,6 +109,7 @@ fun CustomizationScreen(
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val albumFrame by viewModel.albumFrame.collectAsState()
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
+    val pinnedPlayerActions by viewModel.pinnedPlayerActions.collectAsState()
     val flowHeroCardEnabled by viewModel.flowHeroCardEnabled.collectAsState()
     val flowQuickAccessPinned by viewModel.flowQuickAccessPinned.collectAsState()
     val flowLibraryPinned by viewModel.flowLibraryPinned.collectAsState()
@@ -691,6 +692,10 @@ fun CustomizationScreen(
                         }
                     }
                 }
+            }
+
+            item {
+                // end of icon picker
             }
 
                     }
@@ -2505,6 +2510,127 @@ fun CustomizationScreen(
                                 isPlaying = true,
                                 showTimeLabels = true
                             )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = sectionHeading("OYNATICI ALT CEP TUŞLARI (2 SABİT TUŞ)", colors.legacyUiMode),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textSecondary
+                        )
+                    )
+                    if (pinnedPlayerActions != PlayerActionButton.DEFAULT_PINNED) {
+                        TextButton(
+                            onClick = { viewModel.resetPinnedPlayerActions() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Varsayılana Sıfırla",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    color = primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Oynatıcı altındaki cepte her zaman dışarıda kalacak 2 tuşu seçin. Kalan 5 tuş cebi yukarı kaydırdığınızda açılır.",
+                    style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, colors.border, RoundedCornerShape(14.dp)),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = colors.card)
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        PlayerActionButton.entries.forEachIndexed { idx, action ->
+                            val pinnedIndex = pinnedPlayerActions.indexOf(action)
+                            val isPinned = pinnedIndex >= 0
+                            val slotLabel = when (pinnedIndex) {
+                                0 -> "Açıkta (Sol)"
+                                1 -> "Açıkta (Sağ)"
+                                else -> "Cep içinde"
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.togglePinnedPlayerAction(action) }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isPinned) primary.copy(alpha = 0.16f)
+                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = action.icon,
+                                        contentDescription = action.title,
+                                        tint = if (isPinned) primary else colors.textSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = action.title,
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontWeight = if (isPinned) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (isPinned) primary else MaterialTheme.colorScheme.onBackground
+                                        )
+                                    )
+                                    Text(
+                                        text = slotLabel,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = if (isPinned) primary.copy(alpha = 0.85f) else colors.textSecondary
+                                        )
+                                    )
+                                }
+                                if (isPinned) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(primary),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Seçili",
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            if (idx < PlayerActionButton.entries.lastIndex) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 14.dp),
+                                    color = colors.border.copy(alpha = 0.5f)
+                                )
+                            }
                         }
                     }
                 }

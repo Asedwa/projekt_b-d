@@ -482,6 +482,7 @@ private fun FullPlayerHost(
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val albumFrame by viewModel.albumFrame.collectAsState()
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
+    val pinnedPlayerActions by viewModel.pinnedPlayerActions.collectAsState()
     val soundBoostEnabled by viewModel.playbackManager.soundBoostEnabled.collectAsState()
     val soundBoostPercent by viewModel.playbackManager.soundBoostPercent.collectAsState()
     val jamState by viewModel.jamState.collectAsState()
@@ -518,6 +519,7 @@ private fun FullPlayerHost(
         seekbarStyle = seekbarStyle,
         albumFrame = albumFrame,
         swipeToSkipEnabled = swipeToSkipEnabled,
+        pinnedPlayerActions = pinnedPlayerActions,
         soundBoostEnabled = soundBoostEnabled,
         soundBoostPercent = soundBoostPercent,
         onSoundBoostChange = viewModel.playbackManager::setSoundBoostPercent,

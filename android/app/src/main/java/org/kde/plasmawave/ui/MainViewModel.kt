@@ -41,6 +41,7 @@ import org.kde.plasmawave.download.DownloadStorage
 import org.kde.plasmawave.download.SavedDownload
 import org.kde.plasmawave.ui.components.SeekbarStyle
 import org.kde.plasmawave.ui.components.AlbumCoverFrame
+import org.kde.plasmawave.ui.components.PlayerActionButton
 import org.kde.plasmawave.ui.components.AmbientBackdropStyle
 import org.kde.plasmawave.ui.components.HeaderLogoStyle
 import org.kde.plasmawave.ui.components.HomeFeedType
@@ -459,6 +460,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setLegacyUiMode(enabled: Boolean) {
         _legacyUiMode.value = enabled
         displayPrefs.edit().putBoolean("legacy_ui_mode", enabled).apply()
+    }
+
+    private fun loadPinnedPlayerActions(): List<PlayerActionButton> {
+        val raw = displayPrefs.getString("pinned_player_actions", null).orEmpty()
+        val parsed = raw.split(",")
+            .mapNotNull { token -> runCatching { PlayerActionButton.valueOf(token.trim()) }.getOrNull() }
+            .distinct()
+        return if (parsed.size == 2) parsed else PlayerActionButton.DEFAULT_PINNED
+    }
+
+    private val _pinnedPlayerActions = MutableStateFlow(loadPinnedPlayerActions())
+    val pinnedPlayerActions = _pinnedPlayerActions.asStateFlow()
+
+    fun setPinnedPlayerActions(actions: List<PlayerActionButton>) {
+        val sanitized = actions.distinct().take(2)
+        val finalPair = if (sanitized.size == 2) {
+            sanitized
+        } else {
+            (sanitized + PlayerActionButton.DEFAULT_PINNED).distinct().take(2)
+        }
+        _pinnedPlayerActions.value = finalPair
+        displayPrefs.edit().putString("pinned_player_actions", finalPair.joinToString(",") { it.name }).apply()
+    }
+
+    fun togglePinnedPlayerAction(action: PlayerActionButton) {
+        val current = _pinnedPlayerActions.value
+        if (action in current) return
+        val next = listOf(current.last(), action)
+        setPinnedPlayerActions(next)
+    }
+
+    fun resetPinnedPlayerActions() {
+        setPinnedPlayerActions(PlayerActionButton.DEFAULT_PINNED)
     }
     fun setLibrarySyncWithQuick(sync: Boolean) {
         if (!sync && _librarySyncWithQuick.value && !displayPrefs.contains("lib_card_style")) {
