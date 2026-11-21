@@ -1639,11 +1639,12 @@ private fun HeaderLogoView(
             }
         }
         HeaderLogoStyle.ORIGINAL -> {
-            Icon(
-                Icons.Default.GraphicEq,
+            Image(
+                painter = painterResource(R.drawable.ic_header_logo),
                 contentDescription = "projekt_b-d",
-                tint = headerTint,
-                modifier = Modifier.size(size * 0.75f)
+                modifier = Modifier.size(size * 0.85f),
+                contentScale = ContentScale.Fit,
+                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(headerTint)
             )
         }
     }

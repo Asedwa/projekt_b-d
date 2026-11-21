@@ -619,11 +619,12 @@ fun CustomizationScreen(
                                         }
                                     }
                                     HeaderLogoStyle.ORIGINAL -> {
-                                        Icon(
-                                            Icons.Default.GraphicEq,
+                                        Image(
+                                            painter = painterResource(R.drawable.ic_header_logo),
                                             contentDescription = null,
-                                            tint = primary,
-                                            modifier = Modifier.size(28.dp)
+                                            modifier = Modifier.size(34.dp),
+                                            contentScale = ContentScale.Fit,
+                                            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(primary)
                                         )
                                     }
                                 }
