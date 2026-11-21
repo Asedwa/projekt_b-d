@@ -222,7 +222,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val privacyPrefs = application.getSharedPreferences("privacy_and_stats_v1", android.content.Context.MODE_PRIVATE)
     private val resumePrefs = application.getSharedPreferences("resume_playback_v1", android.content.Context.MODE_PRIVATE)
     private val playlistCachePrefs = application.getSharedPreferences("fast_playlist_cache_v1", android.content.Context.MODE_PRIVATE)
-    private val playlistTracksMemCache = ConcurrentHashMap<String, List<PlaylistTrackEntry>>()
+    private val playlistTracksMemCache = object : LinkedHashMap<String, List<PlaylistTrackEntry>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<PlaylistTrackEntry>>?): Boolean = size > 16
+    }
     private val playlistCacheLock = Any()
     private val playlistCacheVersions = ConcurrentHashMap<String, Long>()
 
@@ -278,8 +280,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateSettings(settings: FfiSettings) {
-        try { _settings.value = core.updateSettings(settings) }
-        catch (_: Exception) { _statusMessage.value = "Ayar kaydedilemedi" }
+        _settings.value = settings
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _settings.value = core.updateSettings(settings)
+            } catch (_: Exception) {
+                _statusMessage.value = "Ayar kaydedilemedi"
+            }
+        }
     }
 
     private val _highRefreshRate = MutableStateFlow(initialCoreSettings.highRefreshRate)
@@ -935,12 +943,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    @Volatile private var lastPersistedResumeTrackId: String? = null
+    @Volatile private var lastPersistedResumePosMs: Long = -1L
+    @Volatile private var lastPersistedResumeQueueSig: Int = 0
+
     private fun saveResumePlaybackSnapshot(
         track: FfiTrack,
         positionMs: Long,
         durationMs: Long,
         queueTracks: List<FfiTrack>,
-        queueIndex: Int
+        queueIndex: Int,
+        forcePersist: Boolean = false
     ) {
         if (!_saveResumePositionEnabled.value) return
         val safeDur = durationMs.takeIf { it > 0L } ?: track.durationMs.toLong().takeIf { it > 0L } ?: 210_000L
@@ -956,6 +969,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             queueIndex = safeIdx
         )
         _resumePlaybackState.value = state
+        val queueSig = (trimmedQueue.size * 31 + safeIdx) * 31 +
+            (trimmedQueue.firstOrNull()?.id?.hashCode() ?: 0)
+        val sameTrackAndQueue = lastPersistedResumeTrackId == track.id && lastPersistedResumeQueueSig == queueSig
+        val posDelta = kotlin.math.abs(safePos - lastPersistedResumePosMs)
+        if (!forcePersist && sameTrackAndQueue && lastPersistedResumePosMs >= 0L && posDelta < 15_000L) {
+            return
+        }
+        lastPersistedResumeTrackId = track.id
+        lastPersistedResumePosMs = safePos
+        lastPersistedResumeQueueSig = queueSig
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 core.saveResumePlaybackState(state.toFfi())
@@ -1012,7 +1035,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 timestampMs = now
             )
             _totalListeningTimeMs.value = updatedTotal.toLong()
-            _trackListeningStats.value = core.getListeningStats(300u).map { it.toUi() }
         } catch (e: Exception) {
             Log.e("MainViewModel", "recordActiveListeningTick failed", e)
         }
@@ -1562,7 +1584,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             positionMs = prog.positionMs,
                             durationMs = prog.durationMs,
                             queueTracks = qTracks,
-                            queueIndex = qIdx
+                            queueIndex = qIdx,
+                            forcePersist = true
                         )
                     }
                 }
@@ -1618,7 +1641,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val selectedIcon = LauncherIconManager.getSelectedIcon(getApplication())
             _launcherIcon.value = selectedIcon
-            LauncherIconManager.syncLauncherIcon(getApplication())
 
             _userCustomThemes.value = runCatching { core.listUserCustomThemes().map { it.toUi() } }.getOrDefault(emptyList())
             _homeWidgetCatalog.value = runCatching { core.getHomeWidgetCatalog() }.getOrDefault(emptyList())
@@ -1975,7 +1997,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _deezerFavorites.value = emptyList()
         deezerFavoriteEntries = emptyList()
         _deezerFlow.value = emptyList()
-        playlistTracksMemCache.remove(DEEZER_FAVORITES_ID)
+        synchronized(playlistCacheLock) { playlistTracksMemCache.remove(DEEZER_FAVORITES_ID) }
         playlistCachePrefs.edit().remove("deezer:playlists").apply()
         _statusMessage.value = "Deezer oturumu kapatıldı"
         viewModelScope.launch(Dispatchers.IO) {
@@ -2323,12 +2345,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun warmupPlaylistCacheFromDisk() {
         try {
-            val cachedFromRust = core.getAllCachedPlaylistEntries()
+            val cachedFavEntries = runCatching {
+                core.getCachedPlaylistEntries(DEEZER_FAVORITES_ID)?.map { it.toUi() }
+            }.getOrNull()
             synchronized(playlistCacheLock) {
-                for ((playlistId, entries) in cachedFromRust) {
-                    if (entries.isNotEmpty() && playlistCacheVersion(playlistId) == 0L) {
-                        playlistTracksMemCache.putIfAbsent(playlistId, entries.map { it.toUi() })
-                    }
+                if (!cachedFavEntries.isNullOrEmpty() && playlistCacheVersion(DEEZER_FAVORITES_ID) == 0L) {
+                    playlistTracksMemCache.putIfAbsent(DEEZER_FAVORITES_ID, cachedFavEntries)
                 }
                 // Also migrate any legacy SharedPreferences playlist cache into Rust SQLite once
                 val migratedLegacyKeys = mutableListOf<String>()
@@ -2383,6 +2405,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {}
     }
 
+    private fun getOrLoadDiskPlaylistCache(playlistId: String): List<PlaylistTrackEntry>? {
+        synchronized(playlistCacheLock) {
+            playlistTracksMemCache[playlistId]?.let { return it }
+        }
+        if (playlistCacheVersion(playlistId) != 0L) return null
+        val diskEntries = runCatching {
+            core.getCachedPlaylistEntries(playlistId)?.map { it.toUi() }
+        }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
+        synchronized(playlistCacheLock) {
+            if (playlistCacheVersion(playlistId) == 0L) {
+                playlistTracksMemCache.putIfAbsent(playlistId, diskEntries)
+            }
+            return playlistTracksMemCache[playlistId] ?: diskEntries
+        }
+    }
+
     private fun persistCachedPlaylistEntries(playlistId: String, entries: List<PlaylistTrackEntry>) {
         try {
             core.setCachedPlaylistEntries(playlistId, entries.take(300).map { it.toFfi() })
@@ -2390,13 +2428,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getCachedPlaylistTrackEntries(playlistId: String): List<PlaylistTrackEntry>? {
-        return when (playlistId) {
-            DEEZER_FAVORITES_ID -> deezerFavoriteEntries.takeIf { it.isNotEmpty() } ?: playlistTracksMemCache[playlistId]
-            LOCAL_DOWNLOADS_ID -> _downloadedTracks.value.takeIf { it.isNotEmpty() }
-                ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
-            LOCAL_FAVORITES_ID -> _favorites.value.takeIf { it.isNotEmpty() }
-                ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
-            else -> playlistTracksMemCache[playlistId]
+        return synchronized(playlistCacheLock) {
+            when (playlistId) {
+                DEEZER_FAVORITES_ID -> deezerFavoriteEntries.takeIf { it.isNotEmpty() } ?: playlistTracksMemCache[playlistId]
+                LOCAL_DOWNLOADS_ID -> _downloadedTracks.value.takeIf { it.isNotEmpty() }
+                    ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
+                LOCAL_FAVORITES_ID -> _favorites.value.takeIf { it.isNotEmpty() }
+                    ?.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
+                else -> playlistTracksMemCache[playlistId]
+            }
         }
     }
 
@@ -2480,7 +2520,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             current.mapIndexed { index, track -> PlaylistTrackEntry(track, addedAt = null, originalIndex = index) }
         } else if (playlistId.startsWith("deezer:") && deezerSession.hasSavedSession) {
-            val cached = playlistTracksMemCache[playlistId]
+            val cached = getOrLoadDiskPlaylistCache(playlistId)
             if (cached != null) {
                 val startVersion = playlistCacheVersion(playlistId)
                 val generation = deezerGeneration.get()
@@ -2504,7 +2544,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 fetched
             } else {
                 currentCoroutineContext().ensureActive()
-                playlistTracksMemCache[playlistId] ?: run {
+                synchronized(playlistCacheLock) { playlistTracksMemCache[playlistId] } ?: run {
                     val latestVersion = playlistCacheVersion(playlistId)
                     val latestGeneration = deezerGeneration.get()
                     deezerSession.playlistTrackEntries(playlistId).also { latest ->

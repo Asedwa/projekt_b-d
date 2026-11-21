@@ -46,6 +46,7 @@ internal fun deezerStreamCacheKey(trackId: String, quality: StreamingQuality): S
 /** Owns the user's session. ARL is encrypted by a non-exportable Android Keystore key. */
 class DeezerSession private constructor(context: Context) {
     companion object {
+        private val MD5_HEX_REGEX = Regex("[a-fA-F0-9]{32}")
         @Volatile private var instance: DeezerSession? = null
         fun get(context: Context): DeezerSession = instance ?: synchronized(this) {
             instance ?: DeezerSession(context.applicationContext).also { instance = it }
@@ -308,7 +309,7 @@ class DeezerSession private constructor(context: Context) {
 
     private fun cover(type: String, hash: String): String? =
         hash.takeIf {
-            it.matches(Regex("[a-fA-F0-9]{32}")) &&
+            MD5_HEX_REGEX.matches(it) &&
                 !it.equals("d41d8cd98f00b204e9800998ecf8427e", ignoreCase = true) &&
                 it != "00000000000000000000000000000000"
         }

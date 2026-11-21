@@ -11,6 +11,11 @@ import org.kde.plasmawave.ui.trackJson
 
 /** Stores queue entries individually so a long playlist does not rewrite a giant JSON file per song. */
 internal class DownloadDatabase(context: Context) : SQLiteOpenHelper(context, "downloads.db", null, 2) {
+    override fun onConfigure(db: SQLiteDatabase) {
+        super.onConfigure(db)
+        db.enableWriteAheadLogging()
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE downloads (
             position INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
