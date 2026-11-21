@@ -223,6 +223,7 @@ class MainActivity : ComponentActivity() {
                         if (ambientBackgroundEnabled) {
                             AmbientBackdropLayer(
                                 style = ambientBackdropStyle,
+                                paused = isFullPlayerVisible,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

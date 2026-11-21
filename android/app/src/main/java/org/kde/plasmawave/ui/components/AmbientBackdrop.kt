@@ -349,34 +349,44 @@ private fun fillAmbientFrame(
  *
  * Uses zero offscreen bitmaps, zero blur buffers, and pre-allocated frame scratch
  * buffers: normalized orb, ribbon, and ring/particle geometry is computed in-place
- * per draw frame and rendered directly with GPU vector gradients inside Canvas.
+ * per draw frame, rendered directly with GPU vector gradients inside Canvas,
+ * and pauses automatically when covered by full-screen sheets.
  */
 @Composable
 fun AmbientBackdropLayer(
     style: AmbientBackdropStyle = AmbientBackdropStyle.SILK_AURORA,
+    paused: Boolean = false,
+    phaseOverride: Float? = null,
     modifier: Modifier = Modifier
 ) {
+    if (paused) return
+
     val primaryArgb = MaterialTheme.colorScheme.primary.toArgb()
     val secondaryArgb = MaterialTheme.colorScheme.secondary.toArgb()
     val backgroundArgb = MaterialTheme.colorScheme.background.toArgb()
 
-    val transition = rememberInfiniteTransition(label = "ambientBackdrop")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 22_000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "ambientPhase"
-    )
+    val effectivePhase = if (phaseOverride != null) {
+        phaseOverride
+    } else {
+        val transition = rememberInfiniteTransition(label = "ambientBackdrop")
+        val animatedPhase by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 22_000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "ambientPhase"
+        )
+        animatedPhase
+    }
 
     val scratch = remember { AmbientFrameScratch() }
 
     Canvas(modifier = modifier.fillMaxSize()) {
         drawAmbientBackdrop(
             style = style,
-            phase = phase,
+            phase = effectivePhase,
             primaryArgb = primaryArgb,
             secondaryArgb = secondaryArgb,
             backgroundArgb = backgroundArgb,

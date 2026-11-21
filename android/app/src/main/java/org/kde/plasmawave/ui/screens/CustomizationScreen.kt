@@ -8,6 +8,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1755,6 +1761,16 @@ fun CustomizationScreen(
                             style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary)
                         )
                         Spacer(modifier = Modifier.height(14.dp))
+                        val previewTransition = rememberInfiniteTransition(label = "ambientPreviewShared")
+                        val sharedPreviewPhase by previewTransition.animateFloat(
+                            initialValue = 0f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 22_000, easing = LinearEasing),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "sharedPreviewPhase"
+                        )
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             AmbientBackdropStyle.entries.chunked(2).forEach { rowStyles ->
                                 Row(
@@ -1785,6 +1801,7 @@ fun CustomizationScreen(
                                                 ) {
                                                     AmbientBackdropLayer(
                                                         style = styleOption,
+                                                        phaseOverride = sharedPreviewPhase,
                                                         modifier = Modifier.fillMaxSize()
                                                     )
                                                     if (isSelected) {
