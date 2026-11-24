@@ -11,6 +11,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -18,6 +19,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,7 +44,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -2661,14 +2666,36 @@ private fun AmbientBackdropPreviewDialog(
 ) {
     val styles = AmbientBackdropStyle.entries
     var previewStyle by remember { mutableStateOf(initialStyle) }
-    var showMockUi by remember { mutableStateOf(true) }
+    var isPeekingPattern by remember { mutableStateOf(false) }
+    val uiAlpha by animateFloatAsState(
+        targetValue = if (isPeekingPattern) 0f else 1f,
+        animationSpec = tween(durationMillis = 150),
+        label = "ambientPreviewUiAlpha"
+    )
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
     val currentIndex = styles.indexOf(previewStyle).coerceAtLeast(0)
 
+    val holdToPeekModifier = Modifier.pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            isPeekingPattern = true
+            try {
+                do {
+                    val event = awaitPointerEvent()
+                } while (event.changes.any { it.pressed })
+            } finally {
+                isPeekingPattern = false
+            }
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
         Box(
             modifier = Modifier
@@ -2683,9 +2710,10 @@ private fun AmbientBackdropPreviewDialog(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer { alpha = uiAlpha }
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .padding(16.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 36.dp),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
                 // Top bar
@@ -2712,10 +2740,16 @@ private fun AmbientBackdropPreviewDialog(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                        IconButton(onClick = { showMockUi = !showMockUi }) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .then(holdToPeekModifier),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(
-                                imageVector = if (showMockUi) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = "Arayüz örneğini aç/kapat"
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = "Deseni görmek için basılı tut"
                             )
                         }
                         IconButton(onClick = onDismiss) {
@@ -2724,123 +2758,153 @@ private fun AmbientBackdropPreviewDialog(
                     }
                 }
 
-                // Middle optional mock app UI
-                if (showMockUi) {
-                    Column(
+                // Middle mock app UI
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            listOf("Son Çalınanlar", "Cihazdaki Müzikler").forEach { label ->
-                                Surface(
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = colors.card.copy(alpha = 0.76f),
-                                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.45f))
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(34.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(primary.copy(alpha = 0.28f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(Icons.Default.MusicNote, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
-                                        }
-                                        Spacer(Modifier.width(10.dp))
-                                        Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
-                            }
-                        }
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
-                            color = colors.card.copy(alpha = 0.84f),
-                            border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        listOf("Son Çalınanlar", "Cihazdaki Müzikler").forEach { label ->
+                            Surface(
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp),
+                                color = colors.card.copy(alpha = 0.76f),
+                                border = BorderStroke(1.dp, colors.border.copy(alpha = 0.45f))
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(primary.copy(alpha = 0.30f)),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.GraphicEq, contentDescription = null, tint = primary)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(primary.copy(alpha = 0.28f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text("Örnek Parça", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                                    Text("PlasmaWave Sanatçı", style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary))
-                                }
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = primary)
                             }
                         }
                     }
-                } else {
-                    Spacer(Modifier.height(1.dp))
-                }
-
-                // Bottom style switcher & apply
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = colors.card.copy(alpha = 0.88f),
-                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.6f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = colors.card.copy(alpha = 0.84f),
+                        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
                     ) {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            itemsIndexed(styles) { _, option ->
-                                FilterChip(
-                                    selected = option == previewStyle,
-                                    onClick = { previewStyle = option },
-                                    label = { Text(option.title) }
-                                )
-                            }
-                        }
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            OutlinedButton(
-                                onClick = {
-                                    val prevIdx = if (currentIndex == 0) styles.lastIndex else currentIndex - 1
-                                    previewStyle = styles[prevIdx]
-                                }
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(primary.copy(alpha = 0.30f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text("Önceki")
+                                Icon(Icons.Default.GraphicEq, contentDescription = null, tint = primary)
                             }
-                            OutlinedButton(
-                                onClick = {
-                                    val nextIdx = (currentIndex + 1) % styles.size
-                                    previewStyle = styles[nextIdx]
-                                }
-                            ) {
-                                Text("Sonraki")
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Örnek Parça", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
+                                Text("PlasmaWave Sanatçı", style = MaterialTheme.typography.bodySmall.copy(color = colors.textSecondary))
                             }
-                            Button(
-                                onClick = { onApply(previewStyle) },
-                                modifier = Modifier.weight(1f)
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = primary)
+                        }
+                    }
+                }
+
+                // Bottom hold-to-peek pill + style switcher & apply
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = colors.card.copy(alpha = 0.82f),
+                        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.6f)),
+                        modifier = holdToPeekModifier
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                tint = primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Deseni görmek için basılı tut",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = colors.card.copy(alpha = 0.88f),
+                        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.6f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                itemsIndexed(styles) { _, option ->
+                                    FilterChip(
+                                        selected = option == previewStyle,
+                                        onClick = { previewStyle = option },
+                                        label = { Text(option.title) }
+                                    )
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Uygula")
+                                OutlinedButton(
+                                    onClick = {
+                                        val prevIdx = if (currentIndex == 0) styles.lastIndex else currentIndex - 1
+                                        previewStyle = styles[prevIdx]
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Text("Önceki", maxLines = 1, softWrap = false)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        val nextIdx = (currentIndex + 1) % styles.size
+                                        previewStyle = styles[nextIdx]
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Text("Sonraki", maxLines = 1, softWrap = false)
+                                }
+                                Button(
+                                    onClick = { onApply(previewStyle) },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Uygula", maxLines = 1, softWrap = false)
+                                }
                             }
                         }
                     }
