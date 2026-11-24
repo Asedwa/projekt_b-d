@@ -63,11 +63,16 @@ fun MiniPlayer(
     val context = LocalContext.current
     val usePalette = !customColors.legacyUiMode && dynamicColorEnabled
 
-    var extractedColors by remember(entry.track.artworkUrl) { mutableStateOf<ExtractedArtworkColors?>(null) }
+    var extractedColors by remember(entry.track.artworkUrl, usePalette) {
+        mutableStateOf(
+            if (usePalette) DynamicThemeHelper.getCachedColors(entry.track.artworkUrl, calmMode = true)
+            else null
+        )
+    }
     LaunchedEffect(entry.track.artworkUrl, usePalette) {
-        if (usePalette && !entry.track.artworkUrl.isNullOrBlank()) {
+        if (usePalette && !entry.track.artworkUrl.isNullOrBlank() && extractedColors == null) {
             extractedColors = DynamicThemeHelper.extractColors(context, entry.track.artworkUrl, calmMode = true)
-        } else {
+        } else if (!usePalette || entry.track.artworkUrl.isNullOrBlank()) {
             extractedColors = null
         }
     }

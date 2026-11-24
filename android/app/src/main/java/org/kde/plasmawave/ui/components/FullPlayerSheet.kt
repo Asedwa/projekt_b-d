@@ -1,10 +1,13 @@
 package org.kde.plasmawave.ui.components
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -14,8 +17,11 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -34,20 +40,31 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.kde.plasmawave.deezer.DeezerSession
@@ -62,12 +79,113 @@ import org.kde.plasmawave.theme.LocalPlasmaColors
 import uniffi.plasmawave_core.FfiRepeatMode
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Controls the in-window full player overlay transition and drag-to-dismiss state
+ * without spawning a separate Material3 Dialog window or backdrop scrim.
+ */
+@Stable
+class FullPlayerSheetController(private val scope: CoroutineScope) {
+    var isOpen by mutableStateOf(false)
+        private set
+
+    var expandFraction by mutableFloatStateOf(0f)
+        private set
+
+    val isActive: Boolean by derivedStateOf { isOpen || expandFraction > 0.001f }
+    val isFullyExpanded: Boolean by derivedStateOf { isOpen && expandFraction >= 0.999f }
+
+    private var animationJob: Job? = null
+
+    fun open() {
+        isOpen = true
+        animationJob?.cancel()
+        animationJob = scope.launch {
+            val start = expandFraction
+            if (start >= 0.999f) {
+                expandFraction = 1f
+                return@launch
+            }
+            val duration = ((1f - start) * 280f).toInt().coerceIn(120, 280)
+            animate(
+                initialValue = start,
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = duration, easing = FastOutSlowInEasing)
+            ) { value, _ ->
+                expandFraction = value
+            }
+            expandFraction = 1f
+        }
+    }
+
+    fun close() {
+        isOpen = false
+        animationJob?.cancel()
+        if (expandFraction <= 0.001f) {
+            expandFraction = 0f
+            return
+        }
+        animationJob = scope.launch {
+            val start = expandFraction
+            val duration = (start * 230f).toInt().coerceIn(90, 230)
+            animate(
+                initialValue = start,
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = duration, easing = FastOutSlowInEasing)
+            ) { value, _ ->
+                expandFraction = value
+            }
+            expandFraction = 0f
+        }
+    }
+
+    fun dragBy(deltaPx: Float, containerHeightPx: Float): Float {
+        if (!isOpen || containerHeightPx <= 0f) return 0f
+        animationJob?.cancel()
+        val previous = expandFraction
+        val updated = (previous - deltaPx / containerHeightPx).coerceIn(0f, 1f)
+        expandFraction = updated
+        return (previous - updated) * containerHeightPx
+    }
+
+    fun settleDrag(velocityPxPerSec: Float, dismissVelocityPxPerSec: Float) {
+        if (!isOpen) return
+        if (velocityPxPerSec > dismissVelocityPxPerSec ||
+            (velocityPxPerSec >= -dismissVelocityPxPerSec * 0.5f && expandFraction < 0.74f)
+        ) {
+            close()
+        } else {
+            animationJob?.cancel()
+            animationJob = scope.launch {
+                val start = expandFraction
+                if (start >= 0.999f) {
+                    expandFraction = 1f
+                    return@launch
+                }
+                val duration = ((1f - start) * 220f).toInt().coerceIn(80, 220)
+                animate(
+                    initialValue = start,
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = duration, easing = FastOutSlowInEasing)
+                ) { value, _ ->
+                    expandFraction = value
+                }
+                expandFraction = 1f
+            }
+        }
+    }
+}
+
+@Composable
+fun rememberFullPlayerSheetController(): FullPlayerSheetController {
+    val scope = rememberCoroutineScope()
+    return remember(scope) { FullPlayerSheetController(scope) }
+}
+
 @Composable
 fun FullPlayerSheet(
     playerState: PlayerUiState,
     progressFlow: StateFlow<PlaybackProgress>,
-    sheetState: SheetState,
+    sheetController: FullPlayerSheetController,
     dynamicColorEnabled: Boolean,
     seekbarStyle: SeekbarStyle,
     albumFrame: AlbumCoverFrame,
@@ -144,15 +262,23 @@ fun FullPlayerSheet(
         }
     }
 
-    var extractedColors by remember(resolvedArtworkUrl) { mutableStateOf<ExtractedArtworkColors?>(null) }
+    var extractedColors by remember(resolvedArtworkUrl, dynamicColorEnabled, colors.legacyUiMode) {
+        mutableStateOf(
+            if (dynamicColorEnabled) {
+                DynamicThemeHelper.getCachedColors(resolvedArtworkUrl, calmMode = !colors.legacyUiMode)
+            } else null
+        )
+    }
     LaunchedEffect(resolvedArtworkUrl, dynamicColorEnabled, colors.legacyUiMode) {
         val artUrl = resolvedArtworkUrl
         if (dynamicColorEnabled && !artUrl.isNullOrBlank()) {
-            extractedColors = DynamicThemeHelper.extractColors(
-                context = context,
-                url = artUrl,
-                calmMode = !colors.legacyUiMode
-            )
+            if (extractedColors == null) {
+                extractedColors = DynamicThemeHelper.extractColors(
+                    context = context,
+                    url = artUrl,
+                    calmMode = !colors.legacyUiMode
+                )
+            }
         } else {
             extractedColors = null
         }
@@ -231,23 +357,80 @@ fun FullPlayerSheet(
         dragOffset.snapTo(0f)
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = bg,
-        shape = RoundedCornerShape(topStart = 0.dp, topEnd = 0.dp),
-        dragHandle = null,
-        sheetMaxWidth = androidx.compose.ui.unit.Dp.Unspecified,
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) }
+    BackHandler(enabled = sheetController.isOpen) {
+        if (showSoundBoost) {
+            showSoundBoost = false
+        } else {
+            onDismiss()
+        }
+    }
+
+    var containerHeightPx by remember { mutableFloatStateOf(0f) }
+    val dismissVelocityPxPerSec = with(LocalDensity.current) { 850.dp.toPx() }
+    val nestedScrollConnection = remember(sheetController, dismissVelocityPxPerSec) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput &&
+                    available.y < 0f &&
+                    sheetController.expandFraction < 1f &&
+                    containerHeightPx > 0f
+                ) {
+                    return Offset(0f, sheetController.dragBy(available.y, containerHeightPx))
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput &&
+                    available.y > 0f &&
+                    containerHeightPx > 0f
+                ) {
+                    return Offset(0f, sheetController.dragBy(available.y, containerHeightPx))
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                return if (sheetController.expandFraction < 0.999f) {
+                    sheetController.settleDrag(available.y, dismissVelocityPxPerSec)
+                    available
+                } else {
+                    Velocity.Zero
+                }
+            }
+        }
+    }
+    val draggableState = rememberDraggableState { deltaY ->
+        sheetController.dragBy(deltaY, containerHeightPx)
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged { containerHeightPx = it.height.toFloat() }
+            .graphicsLayer {
+                translationY = (1f - sheetController.expandFraction) * size.height
+            }
+            .semantics { isTraversalGroup = true }
+            .then(if (sheetController.isOpen) Modifier.pointerInput(Unit) {} else Modifier)
+            .nestedScroll(nestedScrollConnection)
+            .draggable(
+                state = draggableState,
+                orientation = Orientation.Vertical,
+                enabled = sheetController.isOpen,
+                onDragStopped = { velocityY ->
+                    sheetController.settleDrag(velocityY, dismissVelocityPxPerSec)
+                }
+            )
+            .background(bg)
+            .background(screenBrush)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(bg)
-                .background(screenBrush)
-                .statusBarsPadding()
-                .navigationBarsPadding()
-        ) {
             val isLandscape = maxWidth > maxHeight
 
             if (isLandscape) {
@@ -500,7 +683,6 @@ fun FullPlayerSheet(
             }
         }
     }
-}
 
 @Composable
 private fun SoundBoostOverlayCard(

@@ -22,6 +22,12 @@ data class ExtractedArtworkColors(
 object DynamicThemeHelper {
     private val cache = LruCache<String, ExtractedArtworkColors>(64)
 
+    fun getCachedColors(url: String?, calmMode: Boolean = true): ExtractedArtworkColors? {
+        if (url.isNullOrBlank()) return null
+        val cacheKey = "${url}|${if (calmMode) "calm" else "legacy"}"
+        return cache.get(cacheKey)
+    }
+
     suspend fun extractColors(context: Context, url: String?, calmMode: Boolean = true): ExtractedArtworkColors? {
         if (url.isNullOrBlank()) return null
         val cacheKey = "${url}|${if (calmMode) "calm" else "legacy"}"

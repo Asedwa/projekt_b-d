@@ -1,18 +1,15 @@
 package org.kde.plasmawave.ui.components
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.isActive
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -565,34 +562,35 @@ fun AmbientBackdropLayer(
     phaseOverride: Float? = null,
     modifier: Modifier = Modifier
 ) {
-    if (paused) return
-
     val primaryArgb = MaterialTheme.colorScheme.primary.toArgb()
     val secondaryArgb = MaterialTheme.colorScheme.secondary.toArgb()
     val backgroundArgb = MaterialTheme.colorScheme.background.toArgb()
 
-    val effectivePhase = if (phaseOverride != null) {
-        phaseOverride
-    } else {
-        val transition = rememberInfiniteTransition(label = "ambientBackdrop")
-        val animatedPhase by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 22_000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "ambientPhase"
-        )
-        animatedPhase
+    val phaseState = remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(paused, phaseOverride != null) {
+        if (!paused && phaseOverride == null) {
+            var lastFrameNanos = -1L
+            while (isActive) {
+                withInfiniteAnimationFrameNanos { frameTimeNanos ->
+                    if (lastFrameNanos >= 0L) {
+                        val deltaNanos = (frameTimeNanos - lastFrameNanos).coerceIn(0L, 100_000_000L)
+                        phaseState.floatValue = (phaseState.floatValue + deltaNanos / 22_000_000_000f) % 1f
+                    }
+                    lastFrameNanos = frameTimeNanos
+                }
+            }
+        }
     }
 
     val scratch = remember { AmbientFrameScratch() }
 
     Canvas(modifier = modifier.fillMaxSize()) {
+        if (paused) return@Canvas
+        val currentPhase = phaseOverride ?: phaseState.floatValue
         drawAmbientBackdrop(
             style = style,
-            phase = effectivePhase,
+            phase = currentPhase,
             primaryArgb = primaryArgb,
             secondaryArgb = secondaryArgb,
             backgroundArgb = backgroundArgb,

@@ -44,6 +44,7 @@ import org.kde.plasmawave.ui.SearchCategory
 import org.kde.plasmawave.jam.JamMode
 import org.kde.plasmawave.ui.components.AmbientBackdropLayer
 import org.kde.plasmawave.ui.components.FullPlayerSheet
+import org.kde.plasmawave.ui.components.FullPlayerSheetController
 import org.kde.plasmawave.ui.components.JamSheet
 import org.kde.plasmawave.ui.components.LocalAmbientBackdropEnabled
 import org.kde.plasmawave.ui.components.LocalDeezerConnected
@@ -52,6 +53,7 @@ import org.kde.plasmawave.ui.components.MiniPlayer
 import org.kde.plasmawave.ui.components.PlaylistPicker
 import org.kde.plasmawave.ui.components.SleepTimerDialog
 import org.kde.plasmawave.ui.components.SongLongPressBottomSheet
+import org.kde.plasmawave.ui.components.rememberFullPlayerSheetController
 import org.kde.plasmawave.ui.screens.*
 import uniffi.plasmawave_core.FfiPlaylist
 import uniffi.plasmawave_core.FfiTrack
@@ -140,27 +142,25 @@ class MainActivity : ComponentActivity() {
             var currentSubScreen by remember { mutableStateOf<SubScreen>(SubScreen.None) }
             val externalSearchTrigger by viewModel.externalSearchTrigger.collectAsState()
             val tabStateHolder = rememberSaveableStateHolder()
-            var isFullPlayerVisible by remember { mutableStateOf(false) }
-            val fullPlayerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            val fullPlayerController = rememberFullPlayerSheetController()
             val menuSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            val scope = rememberCoroutineScope()
             val playerOpenSignal by openPlayerTrigger.collectAsState()
             LaunchedEffect(playerOpenSignal, hasCurrentEntry) {
                 if (playerOpenSignal > 0L && hasCurrentEntry) {
-                    isFullPlayerVisible = true
+                    fullPlayerController.open()
                     openPlayerTrigger.value = 0L
                 }
             }
 
             LaunchedEffect(externalSearchTrigger) {
                 if (externalSearchTrigger != null) {
-                    isFullPlayerVisible = false
+                    fullPlayerController.close()
                     currentSubScreen = SubScreen.None
                     currentScreen = Screen.Search
                 }
             }
             LaunchedEffect(highRefresh) { applyRefreshRate(highRefresh) }
-            BackHandler(enabled = currentSubScreen != SubScreen.None && !isFullPlayerVisible) {
+            BackHandler(enabled = currentSubScreen != SubScreen.None && !fullPlayerController.isOpen) {
                 currentSubScreen = SubScreen.None
             }
             LaunchedEffect(statusMessage) {
@@ -223,7 +223,7 @@ class MainActivity : ComponentActivity() {
                         if (ambientBackgroundEnabled) {
                             AmbientBackdropLayer(
                                 style = ambientBackdropStyle,
-                                paused = isFullPlayerVisible,
+                                paused = fullPlayerController.isFullyExpanded,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -263,7 +263,7 @@ class MainActivity : ComponentActivity() {
                                     enter = slideInVertically(initialOffsetY = { it }),
                                     exit = slideOutVertically(targetOffsetY = { it })
                                 ) {
-                                    LiveMiniPlayer(viewModel, onClick = { isFullPlayerVisible = true })
+                                    LiveMiniPlayer(viewModel, onClick = { fullPlayerController.open() })
                                 }
                             }
                         }
@@ -279,7 +279,7 @@ class MainActivity : ComponentActivity() {
                                         enter = slideInVertically(initialOffsetY = { it }),
                                         exit = slideOutVertically(targetOffsetY = { it })
                                     ) {
-                                        LiveMiniPlayer(viewModel, onClick = { isFullPlayerVisible = true })
+                                        LiveMiniPlayer(viewModel, onClick = { fullPlayerController.open() })
                                     }
                                     NavigationBar(
                                         containerColor = if (colors.legacyUiMode) colors.card else MaterialTheme.colorScheme.surface,
@@ -313,43 +313,32 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    }
 
-                    if (isFullPlayerVisible) {
-                        FullPlayerHost(
-                            viewModel = viewModel,
-                            sheetState = fullPlayerSheetState,
-                            onDismiss = {
-                                scope.launch {
-                                    fullPlayerSheetState.hide()
-                                    isFullPlayerVisible = false
-                                }
-                            },
-                            onAddToPlaylist = { trackForPlaylist = it },
-                            onOpenMenu = { track ->
-                                isFullPlayerVisible = false
-                                viewModel.openTrackMenu(track)
-                            },
-                            onShowSleepTimer = { showSleepTimerDialog = true },
-                            onArtistClick = { artistName ->
-                                scope.launch {
-                                    fullPlayerSheetState.hide()
-                                    isFullPlayerVisible = false
+                        if (fullPlayerController.isActive) {
+                            FullPlayerHost(
+                                viewModel = viewModel,
+                                sheetController = fullPlayerController,
+                                onDismiss = { fullPlayerController.close() },
+                                onAddToPlaylist = { trackForPlaylist = it },
+                                onOpenMenu = { track ->
+                                    fullPlayerController.close()
+                                    viewModel.openTrackMenu(track)
+                                },
+                                onShowSleepTimer = { showSleepTimerDialog = true },
+                                onArtistClick = { artistName ->
+                                    fullPlayerController.close()
                                     currentScreen = Screen.Search
                                     currentSubScreen = SubScreen.None
                                     viewModel.navigateToSearch(artistName, SearchCategory.ARTISTS)
-                                }
-                            },
-                            onAlbumClick = { albumName, _ ->
-                                scope.launch {
-                                    fullPlayerSheetState.hide()
-                                    isFullPlayerVisible = false
+                                },
+                                onAlbumClick = { albumName, _ ->
+                                    fullPlayerController.close()
                                     currentScreen = Screen.Search
                                     currentSubScreen = SubScreen.None
                                     viewModel.navigateToSearch(albumName, SearchCategory.ALBUMS)
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
 
                     SongMenuHost(
@@ -462,11 +451,10 @@ private fun LiveMiniPlayer(viewModel: MainViewModel, onClick: () -> Unit) {
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FullPlayerHost(
     viewModel: MainViewModel,
-    sheetState: SheetState,
+    sheetController: FullPlayerSheetController,
     onDismiss: () -> Unit,
     onAddToPlaylist: (FfiTrack) -> Unit,
     onOpenMenu: (FfiTrack) -> Unit,
@@ -514,7 +502,7 @@ private fun FullPlayerHost(
     FullPlayerSheet(
         playerState = state,
         progressFlow = viewModel.playbackManager.progress,
-        sheetState = sheetState,
+        sheetController = sheetController,
         dynamicColorEnabled = dynamicColorEnabled,
         seekbarStyle = seekbarStyle,
         albumFrame = albumFrame,
