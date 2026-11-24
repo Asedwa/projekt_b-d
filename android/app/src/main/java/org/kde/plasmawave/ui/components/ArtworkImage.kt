@@ -22,10 +22,20 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import coil.size.Precision
 import org.kde.plasmawave.theme.LocalPlasmaColors
+
+private fun bucketArtworkPx(rawPx: Int): Int = when {
+    rawPx <= 160 -> 160
+    rawPx <= 320 -> 320
+    rawPx <= 512 -> 512
+    else -> 1000
+}
 
 /** Displays a cached cover or a neutral placeholder when artwork is unavailable. */
 @Composable
@@ -38,9 +48,14 @@ fun ArtworkImage(
     tint: Color = MaterialTheme.colorScheme.primary,
     contentScale: ContentScale = ContentScale.Crop,
     fallbackTitle: String? = null,
-    fallbackArtist: String? = null
+    fallbackArtist: String? = null,
+    sizeHint: Dp? = null
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val targetPx = if (sizeHint != null) {
+        bucketArtworkPx(with(density) { sizeHint.roundToPx() })
+    } else 0
     val initialUrl = url?.takeUnless(ArtworkResolver::isPlaceholderOrBlank)
     var resolvedFallback by remember(initialUrl, fallbackTitle, fallbackArtist) {
         mutableStateOf(
@@ -68,10 +83,19 @@ fun ArtworkImage(
         if (displayUrl.isNullOrBlank()) {
             Icon(fallback, contentDescription = null, tint = tint, modifier = Modifier.fillMaxSize(0.5f))
         } else {
-            val request = remember(displayUrl, context) {
+            val request = remember(displayUrl, targetPx, context) {
                 ImageRequest.Builder(context)
                     .data(displayUrl)
                     .diskCacheKey(displayUrl)
+                    .apply {
+                        if (targetPx > 0) {
+                            size(targetPx)
+                            precision(Precision.INEXACT)
+                            memoryCacheKey("$displayUrl@$targetPx")
+                        } else {
+                            memoryCacheKey(displayUrl)
+                        }
+                    }
                     .build()
             }
             AsyncImage(

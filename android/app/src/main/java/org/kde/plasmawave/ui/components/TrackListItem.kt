@@ -100,7 +100,8 @@ fun TrackListItem(
             modifier = Modifier.size(48.dp),
             tint = if (isPlaying && customColors.legacyUiMode) MaterialTheme.colorScheme.primary else customColors.textSecondary,
             fallbackTitle = track.title,
-            fallbackArtist = track.artist
+            fallbackArtist = track.artist,
+            sizeHint = 48.dp
         )
 
         Spacer(modifier = Modifier.width(12.dp))

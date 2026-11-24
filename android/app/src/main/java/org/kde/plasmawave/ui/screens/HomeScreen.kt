@@ -46,6 +46,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.compositeOver
@@ -97,6 +98,8 @@ import org.kde.plasmawave.ui.components.HomeEditableItemShell
 import org.kde.plasmawave.ui.components.HomeFeedType
 import org.kde.plasmawave.ui.components.HomeWidgetType
 import org.kde.plasmawave.ui.components.ListeningStatsDialog
+import org.kde.plasmawave.ui.components.LocalAmbientBackdropEnabled
+import org.kde.plasmawave.ui.components.LocalAmbientScrollPause
 import org.kde.plasmawave.ui.components.TrackListItem
 import org.kde.plasmawave.ui.components.defaultTitleForHomeKind
 import org.kde.plasmawave.ui.components.homeEditHoldTrigger
@@ -370,7 +373,7 @@ fun HomeScreen(
 
     val primary = MaterialTheme.colorScheme.primary
     val bg = MaterialTheme.colorScheme.background
-    val ambientBackdrop = org.kde.plasmawave.ui.components.LocalAmbientBackdropEnabled.current
+    val ambientBackdrop = LocalAmbientBackdropEnabled.current
     val bgBrush = remember(primary, bg, colors.legacyUiMode, ambientBackdrop) {
         if (ambientBackdrop) {
             Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
@@ -401,6 +404,20 @@ fun HomeScreen(
         }
     }
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    // Freeze the 30 FPS ambient backdrop while the list is flinging so RenderThread/GPU budget
+    // goes entirely to LazyColumn scrolling; the backdrop resumes seamlessly when scroll stops.
+    val ambientScrollPause = LocalAmbientScrollPause.current
+    if (ambientScrollPause != null && ambientBackdrop) {
+        LaunchedEffect(listState, ambientScrollPause) {
+            snapshotFlow { listState.isScrollInProgress }
+                .distinctUntilChanged()
+                .collect { ambientScrollPause.isScrolling = it }
+        }
+        DisposableEffect(ambientScrollPause) {
+            onDispose { ambientScrollPause.isScrolling = false }
+        }
+    }
 
     val quickCardStyle by viewModel.quickCardStyle.collectAsState()
     val quickCardScale by viewModel.quickCardScale.collectAsState()
@@ -1644,7 +1661,7 @@ private fun HeaderLogoView(
                 contentDescription = "projekt_b-d",
                 modifier = Modifier.size(size * 0.85f),
                 contentScale = ContentScale.Fit,
-                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(headerTint)
+                colorFilter = ColorFilter.tint(headerTint)
             )
         }
     }

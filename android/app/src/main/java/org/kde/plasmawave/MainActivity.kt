@@ -44,10 +44,12 @@ import org.kde.plasmawave.ui.SearchCategory
 import org.kde.plasmawave.jam.JamMode
 import org.kde.plasmawave.jam.isValidJamCode
 import org.kde.plasmawave.ui.components.AmbientBackdropLayer
+import org.kde.plasmawave.ui.components.AmbientScrollPauseHolder
 import org.kde.plasmawave.ui.components.FullPlayerSheet
 import org.kde.plasmawave.ui.components.FullPlayerSheetController
 import org.kde.plasmawave.ui.components.JamSheet
 import org.kde.plasmawave.ui.components.LocalAmbientBackdropEnabled
+import org.kde.plasmawave.ui.components.LocalAmbientScrollPause
 import org.kde.plasmawave.ui.components.LocalDeezerConnected
 import org.kde.plasmawave.ui.components.LocalDownloadStatus
 import org.kde.plasmawave.ui.components.MiniPlayer
@@ -171,6 +173,8 @@ class MainActivity : ComponentActivity() {
                 statusMessage?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show(); viewModel.clearStatusMessage() }
             }
 
+            val ambientScrollPause = remember { AmbientScrollPauseHolder() }
+
             PlasmaTheme(
                 activeTheme = activeTheme,
                 legacyUiMode = legacyUiMode,
@@ -179,7 +183,8 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(
                     LocalDeezerConnected provides (deezerUser != null),
                     LocalDownloadStatus provides downloadStatus,
-                    LocalAmbientBackdropEnabled provides ambientBackgroundEnabled
+                    LocalAmbientBackdropEnabled provides ambientBackgroundEnabled,
+                    LocalAmbientScrollPause provides ambientScrollPause
                 ) {
                     val colors = LocalPlasmaColors.current
                     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -228,6 +233,7 @@ class MainActivity : ComponentActivity() {
                             AmbientBackdropLayer(
                                 style = ambientBackdropStyle,
                                 paused = fullPlayerController.isFullyExpanded,
+                                pauseDuringScroll = true,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

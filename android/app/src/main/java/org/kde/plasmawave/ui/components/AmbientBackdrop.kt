@@ -1,24 +1,33 @@
 package org.kde.plasmawave.ui.components
 
+import android.graphics.LinearGradient as AndroidLinearGradient
+import android.graphics.Matrix as AndroidMatrix
+import android.graphics.Paint as AndroidPaint
+import android.graphics.Path as AndroidPath
+import android.graphics.RadialGradient as AndroidRadialGradient
+import android.graphics.Shader as AndroidShader
 import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import kotlinx.coroutines.isActive
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -98,6 +107,65 @@ enum class AmbientBackdropStyle(
 
 val LocalAmbientBackdropEnabled = compositionLocalOf { false }
 
+/**
+ * Lightweight scroll-activity bridge so scrolling lists (e.g. HomeScreen LazyColumn) can freeze
+ * background ambient shader invalidations during active flings without recomposing parent scopes.
+ */
+@Stable
+class AmbientScrollPauseHolder {
+    var isScrolling by mutableStateOf(false)
+}
+
+val LocalAmbientScrollPause = compositionLocalOf<AmbientScrollPauseHolder?> { null }
+
+private fun withAlphaArgb(rgb: Int, alpha255: Int): Int =
+    (alpha255.coerceIn(0, 255) shl 24) or (rgb and 0x00FFFFFF)
+
+internal class CachedColorShaders(val rgb: Int) {
+    val orbRadial = AndroidRadialGradient(
+        0f, 0f, 1f,
+        intArrayOf(
+            withAlphaArgb(rgb, 255),
+            withAlphaArgb(rgb, 107),
+            withAlphaArgb(rgb, 0)
+        ),
+        floatArrayOf(0f, 0.45f, 1f),
+        AndroidShader.TileMode.CLAMP
+    )
+    val particleRadial = AndroidRadialGradient(
+        0f, 0f, 1f,
+        intArrayOf(
+            0xFFFFFFFF.toInt(),
+            withAlphaArgb(rgb, 213),
+            withAlphaArgb(rgb, 0)
+        ),
+        floatArrayOf(0f, 0.35f, 1f),
+        AndroidShader.TileMode.CLAMP
+    )
+    val ribbonFill = AndroidLinearGradient(
+        0f, 0f, 1f, 0f,
+        intArrayOf(
+            withAlphaArgb(rgb, 0),
+            withAlphaArgb(rgb, 140),
+            withAlphaArgb(rgb, 255),
+            withAlphaArgb(rgb, 0)
+        ),
+        floatArrayOf(0f, 0.28f, 0.65f, 1f),
+        AndroidShader.TileMode.CLAMP
+    )
+    val ribbonCrest = AndroidLinearGradient(
+        0f, 0f, 1f, 0f,
+        intArrayOf(
+            withAlphaArgb(rgb, 0),
+            withAlphaArgb(rgb, 255),
+            withAlphaArgb(rgb, 208),
+            withAlphaArgb(rgb, 0)
+        ),
+        floatArrayOf(0f, 0.35f, 0.75f, 1f),
+        AndroidShader.TileMode.CLAMP
+    )
+}
+
 internal class MutableOrb(
     var cx: Float = 0f,
     var cy: Float = 0f,
@@ -170,7 +238,43 @@ internal class AmbientFrameScratch {
     var orbCount = 0
     var ribbonCount = 0
     var ringCount = 0
-    val ribbonPath = Path()
+    val ribbonPath = AndroidPath()
+    val shaderMatrix = AndroidMatrix()
+    val matrixValues = floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
+    val fillPaint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+        style = AndroidPaint.Style.FILL
+        color = -0x1
+    }
+    val crestPaint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+        style = AndroidPaint.Style.STROKE
+        strokeCap = AndroidPaint.Cap.ROUND
+        color = -0x1
+    }
+    val ringStrokePaint = AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+        style = AndroidPaint.Style.STROKE
+    }
+
+    private val shaderCache = arrayOfNulls<CachedColorShaders>(8)
+    private var nextEvictSlot = 0
+
+    fun shadersFor(colorArgb: Int): CachedColorShaders {
+        val rgb = colorArgb and 0x00FFFFFF
+        for (i in shaderCache.indices) {
+            val entry = shaderCache[i] ?: break
+            if (entry.rgb == rgb) return entry
+        }
+        val created = CachedColorShaders(rgb)
+        for (i in shaderCache.indices) {
+            if (shaderCache[i] == null) {
+                shaderCache[i] = created
+                return created
+            }
+        }
+        val slot = nextEvictSlot
+        nextEvictSlot = (nextEvictSlot + 1) % shaderCache.size
+        shaderCache[slot] = created
+        return created
+    }
 }
 
 private const val TAU_F = (2.0 * PI).toFloat()
@@ -562,13 +666,35 @@ private fun fillAmbientFrame(
  * per draw frame, rendered directly with GPU vector gradients inside Canvas,
  * and pauses automatically when covered by full-screen sheets.
  */
-private fun currentMonotonicAmbientPhase(timeNanos: Long = System.nanoTime()): Float =
-    Math.floorMod(timeNanos / 1_000_000L, 22_000L).toFloat() / 22_000f
+private object AmbientPhaseClock {
+    private const val CYCLE_NANOS = 22_000_000_000L
+    private const val MAX_STEP_NANOS = 50_000_000L
+    private var accumulatedNanos: Long = Math.floorMod(System.nanoTime(), CYCLE_NANOS)
+    private var lastFrameNanos: Long = 0L
+
+    fun currentPhase(): Float = accumulatedNanos.toFloat() / CYCLE_NANOS.toFloat()
+
+    fun advance(frameTimeNanos: Long): Float {
+        if (frameTimeNanos == lastFrameNanos) {
+            return currentPhase()
+        }
+        val prev = lastFrameNanos
+        if (prev != 0L) {
+            val delta = (frameTimeNanos - prev).coerceIn(0L, MAX_STEP_NANOS)
+            accumulatedNanos = (accumulatedNanos + delta) % CYCLE_NANOS
+        }
+        lastFrameNanos = frameTimeNanos
+        return currentPhase()
+    }
+}
+
+private const val AMBIENT_FRAME_INTERVAL_NANOS = 33_333_333L // ~30 FPS for 22s slow ambient drift
 
 @Composable
 fun AmbientBackdropLayer(
     style: AmbientBackdropStyle = AmbientBackdropStyle.SILK_AURORA,
     paused: Boolean = false,
+    pauseDuringScroll: Boolean = false,
     phaseOverride: Float? = null,
     primaryOverride: Color? = null,
     secondaryOverride: Color? = null,
@@ -580,22 +706,37 @@ fun AmbientBackdropLayer(
     val secondaryArgb = (secondaryOverride ?: MaterialTheme.colorScheme.secondary).toArgb()
     val backgroundArgb = (backgroundOverride ?: MaterialTheme.colorScheme.background).toArgb()
 
-    val phaseState = remember { mutableFloatStateOf(currentMonotonicAmbientPhase()) }
+    val scrollPauseHolder = if (pauseDuringScroll) LocalAmbientScrollPause.current else null
+    val animationFrozen = paused || phaseOverride != null || (scrollPauseHolder?.isScrolling == true)
+    val phaseState = remember { mutableFloatStateOf(AmbientPhaseClock.currentPhase()) }
 
-    LaunchedEffect(paused, phaseOverride != null) {
-        if (!paused && phaseOverride == null) {
-            phaseState.floatValue = currentMonotonicAmbientPhase()
+    LaunchedEffect(animationFrozen) {
+        if (!animationFrozen) {
+            var lastEmitNanos = 0L
             while (isActive) {
                 withInfiniteAnimationFrameNanos { frameTimeNanos ->
-                    phaseState.floatValue = currentMonotonicAmbientPhase(frameTimeNanos)
+                    if (lastEmitNanos == 0L || frameTimeNanos - lastEmitNanos >= AMBIENT_FRAME_INTERVAL_NANOS) {
+                        lastEmitNanos = frameTimeNanos
+                        phaseState.floatValue = AmbientPhaseClock.advance(frameTimeNanos)
+                    }
                 }
             }
         }
     }
 
     val scratch = remember { AmbientFrameScratch() }
+    val canvasModifier = if (phaseOverride == null) {
+        modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                alpha = if (paused || intensityMultiplier <= 0f) 0f else 1f
+                compositingStrategy = CompositingStrategy.Offscreen
+            }
+    } else {
+        modifier.fillMaxSize()
+    }
 
-    Canvas(modifier = modifier.fillMaxSize()) {
+    Canvas(modifier = canvasModifier) {
         if (paused || intensityMultiplier <= 0f) return@Canvas
         val currentPhase = phaseOverride ?: phaseState.floatValue
         drawAmbientBackdrop(
@@ -635,115 +776,138 @@ internal fun DrawScope.drawAmbientBackdrop(
     val gain = intensityMultiplier.coerceIn(0f, 2.2f)
     val minDim = minOf(w, h)
     val ribbonPath = scratch.ribbonPath
+    val matrix = scratch.shaderMatrix
+    val matVals = scratch.matrixValues
+    val fillPaint = scratch.fillPaint
+    val crestPaint = scratch.crestPaint
+    val ringStrokePaint = scratch.ringStrokePaint
 
-    // 1. Soft drifting ambient radial glow orbs
-    for (i in 0 until scratch.orbCount) {
-        val orb = scratch.orbs[i]
-        val center = Offset(orb.cx * w, orb.cy * h)
-        val radius = (orb.radius * minDim).coerceAtLeast(1f)
-        val tint = Color(orb.colorArgb)
-        val alpha = (orb.alpha * gain).coerceIn(0f, 0.58f)
-        drawCircle(
-            brush = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0.0f to tint.copy(alpha = alpha),
-                    0.45f to tint.copy(alpha = alpha * 0.42f),
-                    1.0f to Color.Transparent
-                ),
-                center = center,
-                radius = radius
-            ),
-            radius = radius,
-            center = center
-        )
-    }
+    drawIntoCanvas { canvas ->
+        val native = canvas.nativeCanvas
 
-    // 2. Flowing translucent silk-ribbon / wave / prism bands
-    for (i in 0 until scratch.ribbonCount) {
-        val ribbon = scratch.ribbons[i]
-        val tint = Color(ribbon.colorArgb)
-        val alpha = (ribbon.alpha * gain).coerceIn(0f, 0.48f)
-        val bandPx = ribbon.thickness * minDim
+        // 1. Soft drifting ambient radial glow orbs (zero-alloc unit RadialGradient + Matrix)
+        for (i in 0 until scratch.orbCount) {
+            val orb = scratch.orbs[i]
+            val alpha = (orb.alpha * gain).coerceIn(0f, 0.58f)
+            val paintAlpha = (alpha * 255f).roundToInt().coerceIn(0, 255)
+            if (paintAlpha <= 0) continue
 
-        val start = Offset(ribbon.x0 * w, ribbon.y0 * h)
-        val c1 = Offset(ribbon.cx1 * w, ribbon.cy1 * h)
-        val c2 = Offset(ribbon.cx2 * w, ribbon.cy2 * h)
-        val end = Offset(ribbon.x1 * w, ribbon.y1 * h)
+            val cx = orb.cx * w
+            val cy = orb.cy * h
+            val radius = (orb.radius * minDim).coerceAtLeast(1f)
+            val shader = scratch.shadersFor(orb.colorArgb).orbRadial
 
-        ribbonPath.reset()
-        ribbonPath.moveTo(start.x, start.y)
-        ribbonPath.cubicTo(c1.x, c1.y, c2.x, c2.y, end.x, end.y)
-        ribbonPath.lineTo(end.x, end.y + bandPx)
-        ribbonPath.cubicTo(
-            c2.x, c2.y + bandPx * 0.85f,
-            c1.x, c1.y + bandPx * 0.55f,
-            start.x, start.y + bandPx * 0.25f
-        )
-        ribbonPath.close()
+            matrix.setScale(radius, radius)
+            matrix.postTranslate(cx, cy)
+            shader.setLocalMatrix(matrix)
 
-        drawPath(
-            path = ribbonPath,
-            brush = Brush.linearGradient(
-                colorStops = arrayOf(
-                    0.0f to Color.Transparent,
-                    0.28f to tint.copy(alpha = alpha * 0.55f),
-                    0.65f to tint.copy(alpha = alpha),
-                    1.0f to Color.Transparent
-                ),
-                start = start,
-                end = Offset(end.x, end.y + bandPx)
-            )
-        )
+            fillPaint.shader = shader
+            fillPaint.alpha = paintAlpha
+            native.drawCircle(cx, cy, radius, fillPaint)
+        }
 
-        // Luminous crest along top edge
-        ribbonPath.reset()
-        ribbonPath.moveTo(start.x, start.y)
-        ribbonPath.cubicTo(c1.x, c1.y, c2.x, c2.y, end.x, end.y)
-        drawPath(
-            path = ribbonPath,
-            brush = Brush.linearGradient(
-                colorStops = arrayOf(
-                    0.0f to Color.Transparent,
-                    0.35f to tint.copy(alpha = (alpha * 1.35f).coerceAtMost(0.55f)),
-                    0.75f to tint.copy(alpha = (alpha * 1.1f).coerceAtMost(0.48f)),
-                    1.0f to Color.Transparent
-                ),
-                start = start,
-                end = end
-            ),
-            style = Stroke(width = (bandPx * 0.06f).coerceIn(1.5f, 4f), cap = StrokeCap.Round)
-        )
-    }
+        // 2. Flowing translucent silk-ribbon / wave / prism bands (zero-alloc unit LinearGradient + Matrix)
+        for (i in 0 until scratch.ribbonCount) {
+            val ribbon = scratch.ribbons[i]
+            val alpha = (ribbon.alpha * gain).coerceIn(0f, 0.48f)
+            val fillAlpha = (alpha * 255f).roundToInt().coerceIn(0, 255)
+            if (fillAlpha <= 0) continue
 
-    // 3. Concentric neon rings OR glowing starlight bokeh particles
-    for (i in 0 until scratch.ringCount) {
-        val ring = scratch.rings[i]
-        val center = Offset(ring.cx * w, ring.cy * h)
-        val radius = (ring.radius * minDim).coerceAtLeast(1.5f)
-        val tint = Color(ring.colorArgb)
-        val alpha = (ring.alpha * gain).coerceIn(0f, 0.58f)
-        if (ring.strokeWidth > 0f) {
-            val strokePx = (ring.strokeWidth * minDim).coerceIn(1.2f, 5f)
-            drawCircle(
-                color = tint.copy(alpha = alpha),
-                radius = radius,
-                center = center,
-                style = Stroke(width = strokePx)
-            )
-        } else {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colorStops = arrayOf(
-                        0.0f to Color.White.copy(alpha = (alpha * 1.2f).coerceAtMost(0.65f)),
-                        0.35f to tint.copy(alpha = alpha),
-                        1.0f to Color.Transparent
-                    ),
-                    center = center,
-                    radius = radius * 2.2f
-                ),
-                radius = radius * 2.2f,
-                center = center
-            )
+            val bandPx = ribbon.thickness * minDim
+            val x0 = ribbon.x0 * w
+            val y0 = ribbon.y0 * h
+            val cx1 = ribbon.cx1 * w
+            val cy1 = ribbon.cy1 * h
+            val cx2 = ribbon.cx2 * w
+            val cy2 = ribbon.cy2 * h
+            val x1 = ribbon.x1 * w
+            val y1 = ribbon.y1 * h
+
+            val shaders = scratch.shadersFor(ribbon.colorArgb)
+
+            val fillDx = x1 - x0
+            val fillDy = (y1 + bandPx) - y0
+            if (fillDx * fillDx + fillDy * fillDy > 1e-3f) {
+                ribbonPath.reset()
+                ribbonPath.moveTo(x0, y0)
+                ribbonPath.cubicTo(cx1, cy1, cx2, cy2, x1, y1)
+                ribbonPath.lineTo(x1, y1 + bandPx)
+                ribbonPath.cubicTo(
+                    cx2, cy2 + bandPx * 0.85f,
+                    cx1, cy1 + bandPx * 0.55f,
+                    x0, y0 + bandPx * 0.25f
+                )
+                ribbonPath.close()
+
+                matVals[0] = fillDx
+                matVals[1] = -fillDy
+                matVals[2] = x0
+                matVals[3] = fillDy
+                matVals[4] = fillDx
+                matVals[5] = y0
+                shaderSetAffine(shaders.ribbonFill, matrix, matVals)
+
+                fillPaint.shader = shaders.ribbonFill
+                fillPaint.alpha = fillAlpha
+                native.drawPath(ribbonPath, fillPaint)
+            }
+
+            // Luminous crest along top edge
+            val crestDx = x1 - x0
+            val crestDy = y1 - y0
+            val crestAlpha = ((alpha * 1.35f).coerceAtMost(0.55f) * 255f).roundToInt().coerceIn(0, 255)
+            if (crestAlpha > 0 && crestDx * crestDx + crestDy * crestDy > 1e-3f) {
+                ribbonPath.reset()
+                ribbonPath.moveTo(x0, y0)
+                ribbonPath.cubicTo(cx1, cy1, cx2, cy2, x1, y1)
+
+                matVals[0] = crestDx
+                matVals[1] = -crestDy
+                matVals[2] = x0
+                matVals[3] = crestDy
+                matVals[4] = crestDx
+                matVals[5] = y0
+                shaderSetAffine(shaders.ribbonCrest, matrix, matVals)
+
+                crestPaint.strokeWidth = (bandPx * 0.06f).coerceIn(1.5f, 4f)
+                crestPaint.shader = shaders.ribbonCrest
+                crestPaint.alpha = crestAlpha
+                native.drawPath(ribbonPath, crestPaint)
+            }
+        }
+
+        // 3. Concentric neon rings OR glowing starlight bokeh particles
+        for (i in 0 until scratch.ringCount) {
+            val ring = scratch.rings[i]
+            val cx = ring.cx * w
+            val cy = ring.cy * h
+            val radius = (ring.radius * minDim).coerceAtLeast(1.5f)
+            val alpha = (ring.alpha * gain).coerceIn(0f, 0.58f)
+            if (ring.strokeWidth > 0f) {
+                val strokeAlpha = (alpha * 255f).roundToInt().coerceIn(0, 255)
+                if (strokeAlpha <= 0) continue
+                ringStrokePaint.strokeWidth = (ring.strokeWidth * minDim).coerceIn(1.2f, 5f)
+                ringStrokePaint.color = withAlphaArgb(ring.colorArgb, strokeAlpha)
+                native.drawCircle(cx, cy, radius, ringStrokePaint)
+            } else {
+                val particleAlpha = ((alpha * 1.2f).coerceAtMost(0.65f) * 255f).roundToInt().coerceIn(0, 255)
+                if (particleAlpha <= 0) continue
+                val outerRadius = radius * 2.2f
+                val shader = scratch.shadersFor(ring.colorArgb).particleRadial
+
+                matrix.setScale(outerRadius, outerRadius)
+                matrix.postTranslate(cx, cy)
+                shader.setLocalMatrix(matrix)
+
+                fillPaint.shader = shader
+                fillPaint.alpha = particleAlpha
+                native.drawCircle(cx, cy, outerRadius, fillPaint)
+            }
         }
     }
+}
+
+private fun shaderSetAffine(shader: AndroidShader, matrix: AndroidMatrix, values: FloatArray) {
+    matrix.setValues(values)
+    shader.setLocalMatrix(matrix)
 }

@@ -112,7 +112,8 @@ fun MiniPlayer(
                 modifier = Modifier.size(44.dp),
                 background = customColors.border,
                 fallbackTitle = entry.track.title,
-                fallbackArtist = entry.track.artist
+                fallbackArtist = entry.track.artist,
+                sizeHint = 44.dp
             )
 
             Spacer(modifier = Modifier.width(12.dp))
