@@ -3750,6 +3750,211 @@ pub fn compute_adaptive_text_palette(
     }
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiNowPlayingGlassPalette {
+    pub base_backdrop_argb: u32,
+    pub beam_primary_argb: u32,
+    pub beam_secondary_argb: u32,
+    pub beam_intensity: f32,
+    pub veil_top_argb: u32,
+    pub veil_mid_argb: u32,
+    pub veil_bottom_argb: u32,
+    pub glass_surface_argb: u32,
+    pub glass_surface_active_argb: u32,
+    pub glass_border_argb: u32,
+    pub text_primary_argb: u32,
+    pub text_secondary_argb: u32,
+}
+
+fn argb_to_hsl(argb: u32) -> (f32, f32, f32) {
+    let r = ((argb >> 16) & 0xFF) as f32 / 255.0;
+    let g = ((argb >> 8) & 0xFF) as f32 / 255.0;
+    let b = (argb & 0xFF) as f32 / 255.0;
+
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) * 0.5;
+    let d = max - min;
+
+    if d <= 1e-5 {
+        return (0.0, 0.0, l);
+    }
+
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
+
+    let mut h = if (max - r).abs() <= 1e-5 {
+        (g - b) / d + if g < b { 6.0 } else { 0.0 }
+    } else if (max - g).abs() <= 1e-5 {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    };
+    h *= 60.0;
+    (h.rem_euclid(360.0), s.clamp(0.0, 1.0), l.clamp(0.0, 1.0))
+}
+
+fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
+    t = t.rem_euclid(1.0);
+    if t < 1.0 / 6.0 {
+        p + (q - p) * 6.0 * t
+    } else if t < 0.5 {
+        q
+    } else if t < 2.0 / 3.0 {
+        p + (q - p) * (2.0 / 3.0 - t) * 6.0
+    } else {
+        p
+    }
+}
+
+fn hsl_to_argb(h: f32, s: f32, l: f32) -> u32 {
+    let h_norm = h.rem_euclid(360.0) / 360.0;
+    let s = s.clamp(0.0, 1.0);
+    let l = l.clamp(0.0, 1.0);
+
+    let (r, g, b) = if s <= 1e-5 {
+        (l, l, l)
+    } else {
+        let q = if l < 0.5 {
+            l * (1.0 + s)
+        } else {
+            l + s - l * s
+        };
+        let p = 2.0 * l - q;
+        (
+            hue_to_rgb(p, q, h_norm + 1.0 / 3.0),
+            hue_to_rgb(p, q, h_norm),
+            hue_to_rgb(p, q, h_norm - 1.0 / 3.0),
+        )
+    };
+
+    let ru = (r * 255.0).round().clamp(0.0, 255.0) as u32;
+    let gu = (g * 255.0).round().clamp(0.0, 255.0) as u32;
+    let bu = (b * 255.0).round().clamp(0.0, 255.0) as u32;
+    0xFF00_0000 | (ru << 16) | (gu << 8) | bu
+}
+
+fn with_alpha(rgb: u32, alpha: f32) -> u32 {
+    let a = (alpha.clamp(0.0, 1.0) * 255.0).round().clamp(0.0, 255.0) as u32;
+    (a << 24) | (rgb & 0x00FF_FFFF)
+}
+
+fn hue_distance(h1: f32, h2: f32) -> f32 {
+    let diff = (h1 - h2).abs().rem_euclid(360.0);
+    diff.min(360.0 - diff)
+}
+
+/// Pure-Rust translucent Now Playing glass & ambient light-beam palette engine.
+/// Called once per track/theme change (zero per-frame FFI overhead).
+#[uniffi::export]
+pub fn compute_now_playing_glass_palette(
+    top_argb: u32,
+    bottom_argb: u32,
+    accent_argb: u32,
+    secondary_argb: u32,
+    theme_bg_argb: u32,
+    ambient_enabled: bool,
+) -> FfiNowPlayingGlassPalette {
+    let (top_h, top_s, top_l) = argb_to_hsl(top_argb);
+    let (acc_h, acc_s, acc_l) = argb_to_hsl(accent_argb);
+    let (sec_h, sec_s, sec_l) = argb_to_hsl(secondary_argb);
+
+    let base_hue = if top_s >= 0.08 { top_h } else { acc_h };
+    let base_sat = if top_s >= 0.08 || acc_s >= 0.08 {
+        (top_s.max(acc_s * 0.65)).clamp(0.22, 0.46)
+    } else {
+        0.04
+    };
+    let base_light = if ambient_enabled {
+        top_l.clamp(0.055, 0.09)
+    } else {
+        top_l.clamp(0.08, 0.14)
+    };
+    let tuned_base = hsl_to_argb(base_hue, base_sat, base_light);
+    let base_backdrop_argb = blend_argb(tuned_base, theme_bg_argb, 0.22);
+
+    let is_monochrome = acc_s < 0.09 && top_s < 0.09 && sec_s < 0.09;
+    let (beam_primary_argb, beam_secondary_argb) = if is_monochrome {
+        (0xFFD8_E4F0, 0xFF8E_A4BE)
+    } else {
+        let p_hue = if acc_s >= 0.09 { acc_h } else { top_h };
+        let p_sat = acc_s.max(top_s).clamp(0.64, 0.88);
+        let p_light = acc_l.clamp(0.56, 0.68);
+        let primary_beam = hsl_to_argb(p_hue, p_sat, p_light);
+
+        let (s_hue, s_sat, s_light) = if sec_s >= 0.14 && hue_distance(p_hue, sec_h) >= 20.0 {
+            (sec_h, sec_s.clamp(0.58, 0.84), sec_l.clamp(0.52, 0.66))
+        } else if top_s >= 0.14 && hue_distance(p_hue, top_h) >= 18.0 {
+            (top_h, top_s.clamp(0.58, 0.84), 0.58)
+        } else {
+            (
+                (p_hue + 38.0).rem_euclid(360.0),
+                (p_sat * 0.94).clamp(0.56, 0.84),
+                0.58,
+            )
+        };
+        let secondary_beam = hsl_to_argb(s_hue, s_sat, s_light);
+        (primary_beam, secondary_beam)
+    };
+
+    let beam_intensity = if ambient_enabled { 1.55 } else { 0.0 };
+
+    let mid_tint = blend_argb(top_argb, bottom_argb, 0.45);
+    let bottom_tint = blend_argb(bottom_argb, base_backdrop_argb, 0.35);
+    let (veil_top_argb, veil_mid_argb, veil_bottom_argb) = if ambient_enabled {
+        (
+            with_alpha(top_argb, 0.26),
+            with_alpha(mid_tint, 0.14),
+            with_alpha(bottom_tint, 0.40),
+        )
+    } else {
+        (
+            with_alpha(top_argb, 0.92),
+            with_alpha(mid_tint, 0.88),
+            with_alpha(bottom_tint, 0.96),
+        )
+    };
+
+    let glass_tint = blend_argb(0xFF0E_1318, top_argb, 0.24);
+    let glass_surface_argb = with_alpha(glass_tint, 0.38);
+    let active_tint = blend_argb(accent_argb, 0xFFFF_FFFF, 0.14);
+    let glass_surface_active_argb = with_alpha(active_tint, 0.30);
+    let rim_tint = blend_argb(0xFFFF_FFFF, beam_primary_argb, 0.32);
+    let glass_border_argb = with_alpha(rim_tint, 0.20);
+
+    let worst_case_bg = if ambient_enabled {
+        blend_argb(base_backdrop_argb, beam_primary_argb, 0.28)
+    } else {
+        blend_argb(base_backdrop_argb, top_argb, 0.75)
+    };
+    let (mut text_primary_argb, mut text_secondary_argb, _) =
+        pick_foreground_pair(worst_case_bg, beam_primary_argb);
+    if contrast_ratio(text_primary_argb, worst_case_bg) < 7.0 {
+        text_primary_argb = 0xFFFF_FFFF;
+    }
+    if contrast_ratio(text_secondary_argb, worst_case_bg) < 4.5 {
+        text_secondary_argb = 0xFFE2_E8F0;
+    }
+
+    FfiNowPlayingGlassPalette {
+        base_backdrop_argb,
+        beam_primary_argb,
+        beam_secondary_argb,
+        beam_intensity,
+        veil_top_argb,
+        veil_mid_argb,
+        veil_bottom_argb,
+        glass_surface_argb,
+        glass_surface_active_argb,
+        glass_border_argb,
+        text_primary_argb,
+        text_secondary_argb,
+    }
+}
+
 fn extract_numeric_id(input: &str) -> Option<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -3905,5 +4110,37 @@ mod tests {
         assert_eq!(reloaded[0].instance_id, added_id);
         let reset = core.reset_home_layout().unwrap();
         assert!(reset.iter().all(|i| i.instance_id != added_id));
+    }
+
+    #[test]
+    fn test_now_playing_glass_palette_translucency_and_contrast() {
+        let palette = compute_now_playing_glass_palette(
+            0xFF16_2B26,
+            0xFF0B_1614,
+            0xFF7A_B3A8,
+            0xFFD8_B48A,
+            0xFF10_171D,
+            true,
+        );
+        assert_eq!(palette.base_backdrop_argb >> 24, 0xFF);
+        assert!((palette.veil_top_argb >> 24) < 0x60);
+        assert!((palette.veil_mid_argb >> 24) < (palette.veil_top_argb >> 24));
+        assert!((palette.veil_bottom_argb >> 24) < 0x80);
+        assert!(palette.beam_intensity > 1.2);
+
+        let effective_bg = blend_argb(palette.base_backdrop_argb, palette.beam_primary_argb, 0.28);
+        assert!(contrast_ratio(palette.text_primary_argb, effective_bg) >= 7.0);
+        assert!(contrast_ratio(palette.text_secondary_argb, effective_bg) >= 4.5);
+
+        let disabled = compute_now_playing_glass_palette(
+            0xFF18_1818,
+            0xFF10_1010,
+            0xFFE0_E0E0,
+            0xFF80_8080,
+            0xFF12_1212,
+            false,
+        );
+        assert_eq!(disabled.beam_intensity, 0.0);
+        assert!((disabled.veil_top_argb >> 24) > 0xDF);
     }
 }

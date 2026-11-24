@@ -14,6 +14,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -77,6 +78,7 @@ import org.kde.plasmawave.theme.DynamicThemeHelper
 import org.kde.plasmawave.theme.ExtractedArtworkColors
 import org.kde.plasmawave.theme.LocalPlasmaColors
 import uniffi.plasmawave_core.FfiRepeatMode
+import uniffi.plasmawave_core.computeNowPlayingGlassPalette
 import kotlin.math.roundToInt
 
 /**
@@ -187,6 +189,8 @@ fun FullPlayerSheet(
     progressFlow: StateFlow<PlaybackProgress>,
     sheetController: FullPlayerSheetController,
     dynamicColorEnabled: Boolean,
+    ambientBackgroundEnabled: Boolean = true,
+    ambientBackdropStyle: AmbientBackdropStyle = AmbientBackdropStyle.SILK_AURORA,
     seekbarStyle: SeekbarStyle,
     albumFrame: AlbumCoverFrame,
     swipeToSkipEnabled: Boolean,
@@ -220,6 +224,7 @@ fun FullPlayerSheet(
     }
     val colors = LocalPlasmaColors.current
     val primary = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
     val bg = MaterialTheme.colorScheme.background
     val context = LocalContext.current
     val progress by progressFlow.collectAsState()
@@ -298,28 +303,79 @@ fun FullPlayerSheet(
         bg
     }
 
-    val animTopColor by animateColorAsState(
-        targetValue = targetTopColor,
-        animationSpec = tween(500),
-        label = "animTopColor"
-    )
-    val animBottomColor by animateColorAsState(
-        targetValue = targetBottomColor,
-        animationSpec = tween(500),
-        label = "animBottomColor"
-    )
-
     val effectiveAccent = if (dynamicColorEnabled && extractedColors != null) {
         extractedColors!!.accent
     } else {
         primary
     }
 
-    val screenBrush = remember(animTopColor, animBottomColor) {
+    val targetSecondaryColor = if (dynamicColorEnabled && extractedColors != null) {
+        extractedColors!!.dominant
+    } else {
+        secondary
+    }
+
+    // Pure-Rust palette computation (invoked once per track/theme/setting change, zero per-frame FFI)
+    val glassPalette = remember(
+        targetTopColor,
+        targetBottomColor,
+        effectiveAccent,
+        targetSecondaryColor,
+        bg,
+        ambientBackgroundEnabled
+    ) {
+        computeNowPlayingGlassPalette(
+            topArgb = targetTopColor.toArgb().toUInt(),
+            bottomArgb = targetBottomColor.toArgb().toUInt(),
+            accentArgb = effectiveAccent.toArgb().toUInt(),
+            secondaryArgb = targetSecondaryColor.toArgb().toUInt(),
+            themeBgArgb = bg.toArgb().toUInt(),
+            ambientEnabled = ambientBackgroundEnabled
+        )
+    }
+
+    val animBaseBackdrop by animateColorAsState(
+        targetValue = Color(glassPalette.baseBackdropArgb.toInt()),
+        animationSpec = tween(500),
+        label = "animBaseBackdrop"
+    )
+    val animBeamPrimary by animateColorAsState(
+        targetValue = Color(glassPalette.beamPrimaryArgb.toInt()),
+        animationSpec = tween(500),
+        label = "animBeamPrimary"
+    )
+    val animBeamSecondary by animateColorAsState(
+        targetValue = Color(glassPalette.beamSecondaryArgb.toInt()),
+        animationSpec = tween(500),
+        label = "animBeamSecondary"
+    )
+    val animVeilTop by animateColorAsState(
+        targetValue = Color(glassPalette.veilTopArgb.toInt()),
+        animationSpec = tween(500),
+        label = "animVeilTop"
+    )
+    val animVeilMid by animateColorAsState(
+        targetValue = Color(glassPalette.veilMidArgb.toInt()),
+        animationSpec = tween(500),
+        label = "animVeilMid"
+    )
+    val animVeilBottom by animateColorAsState(
+        targetValue = Color(glassPalette.veilBottomArgb.toInt()),
+        animationSpec = tween(500),
+        label = "animVeilBottom"
+    )
+
+    val glassSurfaceColor = Color(glassPalette.glassSurfaceArgb.toInt())
+    val glassSurfaceActiveColor = Color(glassPalette.glassSurfaceActiveArgb.toInt())
+    val glassBorderColor = Color(glassPalette.glassBorderArgb.toInt())
+    val textPrimaryColor = Color(glassPalette.textPrimaryArgb.toInt())
+    val textSecondaryColor = Color(glassPalette.textSecondaryArgb.toInt())
+
+    val screenBrush = remember(animVeilTop, animVeilMid, animVeilBottom) {
         Brush.verticalGradient(
-            0.0f to animTopColor.copy(alpha = 1f),
-            0.50f to animTopColor.copy(alpha = 0.88f),
-            1.0f to animBottomColor.copy(alpha = 1f)
+            0.0f to animVeilTop,
+            0.52f to animVeilMid,
+            1.0f to animVeilBottom
         )
     }
 
@@ -408,12 +464,13 @@ fun FullPlayerSheet(
         sheetController.dragBy(deltaY, containerHeightPx)
     }
 
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { containerHeightPx = it.height.toFloat() }
             .graphicsLayer {
                 translationY = (1f - sheetController.expandFraction) * size.height
+                clip = true
             }
             .semantics { isTraversalGroup = true }
             .then(if (sheetController.isOpen) Modifier.pointerInput(Unit) {} else Modifier)
@@ -426,11 +483,31 @@ fun FullPlayerSheet(
                     sheetController.settleDrag(velocityY, dismissVelocityPxPerSec)
                 }
             )
-            .background(bg)
-            .background(screenBrush)
-            .statusBarsPadding()
-            .navigationBarsPadding()
+            .background(animBaseBackdrop)
     ) {
+        if (ambientBackgroundEnabled && glassPalette.beamIntensity > 0f) {
+            AmbientBackdropLayer(
+                style = ambientBackdropStyle,
+                paused = !sheetController.isActive,
+                primaryOverride = animBeamPrimary,
+                secondaryOverride = animBeamSecondary,
+                backgroundOverride = animBaseBackdrop,
+                intensityMultiplier = glassPalette.beamIntensity,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationY = -(1f - sheetController.expandFraction) * size.height
+                    }
+            )
+        }
+
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(screenBrush)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+        ) {
             val isLandscape = maxWidth > maxHeight
 
             if (isLandscape) {
@@ -454,6 +531,8 @@ fun FullPlayerSheet(
                                     lyricsState = lyricsState,
                                     positionMs = progress.positionMs,
                                     effectiveAccent = effectiveAccent,
+                                    glassSurfaceColor = glassSurfaceColor,
+                                    glassBorderColor = glassBorderColor,
                                     onSeekTo = onSeekTo,
                                     onRetry = { lyricsRetryTick++ },
                                     modifier = Modifier
@@ -496,6 +575,9 @@ fun FullPlayerSheet(
                             soundBoostPercent = soundBoostPercent,
                             isJamActive = isJamActive,
                             effectiveAccent = effectiveAccent,
+                            glassSurfaceColor = glassSurfaceColor,
+                            glassSurfaceActiveColor = glassSurfaceActiveColor,
+                            glassBorderColor = glassBorderColor,
                             onToggleSoundBoost = { showSoundBoost = !showSoundBoost },
                             onToggleLyrics = { showLyrics = !showLyrics },
                             onOpenJam = onOpenJam,
@@ -508,6 +590,8 @@ fun FullPlayerSheet(
                             title = entry.track.title,
                             artist = entry.track.artist,
                             album = entry.track.album,
+                            textPrimaryColor = textPrimaryColor,
+                            textSecondaryColor = textSecondaryColor,
                             onArtistClick = onArtistClick,
                             onAlbumClick = onAlbumClick
                         )
@@ -538,6 +622,8 @@ fun FullPlayerSheet(
                             canStartMix = canStartMix,
                             isFavorite = isFavorite,
                             effectiveAccent = effectiveAccent,
+                            glassSurfaceColor = glassSurfaceColor,
+                            glassBorderColor = glassBorderColor,
                             pinnedActions = pinnedPlayerActions,
                             onToggleRepeat = onToggleRepeat,
                             onToggleShuffle = onToggleShuffle,
@@ -580,6 +666,9 @@ fun FullPlayerSheet(
                         soundBoostPercent = soundBoostPercent,
                         isJamActive = isJamActive,
                         effectiveAccent = effectiveAccent,
+                        glassSurfaceColor = glassSurfaceColor,
+                        glassSurfaceActiveColor = glassSurfaceActiveColor,
+                        glassBorderColor = glassBorderColor,
                         onToggleSoundBoost = { showSoundBoost = !showSoundBoost },
                         onToggleLyrics = { showLyrics = !showLyrics },
                         onOpenJam = onOpenJam,
@@ -594,6 +683,8 @@ fun FullPlayerSheet(
                                 lyricsState = lyricsState,
                                 positionMs = progress.positionMs,
                                 effectiveAccent = effectiveAccent,
+                                glassSurfaceColor = glassSurfaceColor,
+                                glassBorderColor = glassBorderColor,
                                 onSeekTo = onSeekTo,
                                 onRetry = { lyricsRetryTick++ },
                                 modifier = Modifier
@@ -629,6 +720,8 @@ fun FullPlayerSheet(
                         title = entry.track.title,
                         artist = entry.track.artist,
                         album = entry.track.album,
+                        textPrimaryColor = textPrimaryColor,
+                        textSecondaryColor = textSecondaryColor,
                         onArtistClick = onArtistClick,
                         onAlbumClick = onAlbumClick
                     )
@@ -650,6 +743,8 @@ fun FullPlayerSheet(
                         canStartMix = canStartMix,
                         isFavorite = isFavorite,
                         effectiveAccent = effectiveAccent,
+                        glassSurfaceColor = glassSurfaceColor,
+                        glassBorderColor = glassBorderColor,
                         pinnedActions = pinnedPlayerActions,
                         onToggleRepeat = onToggleRepeat,
                         onToggleShuffle = onToggleShuffle,
@@ -683,6 +778,7 @@ fun FullPlayerSheet(
             }
         }
     }
+}
 
 @Composable
 private fun SoundBoostOverlayCard(
@@ -788,6 +884,9 @@ private fun PlayerHeader(
     soundBoostPercent: Int,
     isJamActive: Boolean,
     effectiveAccent: Color,
+    glassSurfaceColor: Color,
+    glassSurfaceActiveColor: Color,
+    glassBorderColor: Color,
     onToggleSoundBoost: () -> Unit,
     onToggleLyrics: () -> Unit,
     onOpenJam: () -> Unit,
@@ -803,7 +902,8 @@ private fun PlayerHeader(
         Surface(
             onClick = onDismiss,
             shape = RoundedCornerShape(12.dp),
-            color = Color.Black.copy(alpha = 0.35f)
+            color = glassSurfaceColor,
+            border = BorderStroke(1.dp, glassBorderColor)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -836,21 +936,24 @@ private fun PlayerHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (soundBoostEnabled) {
+                val boostActive = showSoundBoost || soundBoostPercent > 0
                 IconButton(
                     onClick = onToggleSoundBoost,
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(
-                            if (showSoundBoost || soundBoostPercent > 0) effectiveAccent.copy(alpha = 0.32f)
-                            else Color.Black.copy(alpha = 0.28f)
+                        .background(if (boostActive) glassSurfaceActiveColor else glassSurfaceColor)
+                        .border(
+                            1.dp,
+                            if (boostActive) effectiveAccent.copy(alpha = 0.45f) else glassBorderColor,
+                            CircleShape
                         )
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.VolumeUp,
                         contentDescription = "Ses Yükseltici",
                         modifier = Modifier.size(19.dp),
-                        tint = if (showSoundBoost || soundBoostPercent > 0) effectiveAccent else Color.White
+                        tint = if (boostActive) effectiveAccent else Color.White
                     )
                 }
             }
@@ -859,9 +962,11 @@ private fun PlayerHeader(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (showLyrics) effectiveAccent.copy(alpha = 0.32f)
-                        else Color.Black.copy(alpha = 0.28f)
+                    .background(if (showLyrics) glassSurfaceActiveColor else glassSurfaceColor)
+                    .border(
+                        1.dp,
+                        if (showLyrics) effectiveAccent.copy(alpha = 0.45f) else glassBorderColor,
+                        CircleShape
                     )
             ) {
                 Icon(
@@ -876,9 +981,11 @@ private fun PlayerHeader(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (isJamActive) effectiveAccent.copy(alpha = 0.32f)
-                        else Color.Black.copy(alpha = 0.28f)
+                    .background(if (isJamActive) glassSurfaceActiveColor else glassSurfaceColor)
+                    .border(
+                        1.dp,
+                        if (isJamActive) effectiveAccent.copy(alpha = 0.45f) else glassBorderColor,
+                        CircleShape
                     )
             ) {
                 Icon(
@@ -893,7 +1000,8 @@ private fun PlayerHeader(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.28f))
+                    .background(glassSurfaceColor)
+                    .border(1.dp, glassBorderColor, CircleShape)
             ) {
                 Icon(
                     Icons.Default.MoreVert,
@@ -911,6 +1019,8 @@ private fun PlayerLyricsView(
     lyricsState: LyricsState,
     positionMs: Long,
     effectiveAccent: Color,
+    glassSurfaceColor: Color,
+    glassBorderColor: Color,
     onSeekTo: (Long) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
@@ -918,7 +1028,8 @@ private fun PlayerLyricsView(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        color = Color.Black.copy(alpha = 0.35f)
+        color = glassSurfaceColor,
+        border = BorderStroke(1.dp, glassBorderColor)
     ) {
         when (lyricsState) {
             LyricsState.Idle, LyricsState.Loading -> {
@@ -1165,6 +1276,8 @@ private fun PlayerInfo(
     title: String,
     artist: String,
     album: String,
+    textPrimaryColor: Color,
+    textSecondaryColor: Color,
     onArtistClick: (String) -> Unit,
     onAlbumClick: (String, String) -> Unit
 ) {
@@ -1180,7 +1293,7 @@ private fun PlayerInfo(
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.4.sp
             ),
-            color = Color.White,
+            color = textPrimaryColor,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -1189,7 +1302,7 @@ private fun PlayerInfo(
         Text(
             artist,
             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-            color = Color.White.copy(alpha = 0.85f),
+            color = textPrimaryColor.copy(alpha = 0.88f),
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1203,7 +1316,7 @@ private fun PlayerInfo(
             Text(
                 album,
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Normal),
-                color = Color.White.copy(alpha = 0.50f),
+                color = textSecondaryColor.copy(alpha = 0.72f),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1298,6 +1411,8 @@ private fun PlayerActionBar(
     canStartMix: Boolean,
     isFavorite: Boolean,
     effectiveAccent: Color,
+    glassSurfaceColor: Color,
+    glassBorderColor: Color,
     pinnedActions: List<PlayerActionButton> = PlayerActionButton.DEFAULT_PINNED,
     onToggleRepeat: () -> Unit,
     onToggleShuffle: () -> Unit,
@@ -1404,8 +1519,8 @@ private fun PlayerActionBar(
             .fillMaxWidth()
             .padding(horizontal = 4.dp)
             .clip(pocketShape)
-            .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.14f), pocketShape)
+            .background(glassSurfaceColor)
+            .border(1.dp, glassBorderColor, pocketShape)
             .pointerInput(isPocketOpen) {
                 detectVerticalDragGestures(
                     onDragStart = { dragAccumulator = 0f },

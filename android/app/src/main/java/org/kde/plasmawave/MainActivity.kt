@@ -467,6 +467,8 @@ private fun FullPlayerHost(
     val deezerFavorites by viewModel.deezerFavorites.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsState()
+    val ambientBackgroundEnabled by viewModel.ambientBackgroundEnabled.collectAsState()
+    val ambientBackdropStyle by viewModel.ambientBackdropStyle.collectAsState()
     val seekbarStyle by viewModel.seekbarStyle.collectAsState()
     val albumFrame by viewModel.albumFrame.collectAsState()
     val swipeToSkipEnabled by viewModel.swipeToSkipEnabled.collectAsState()
@@ -504,6 +506,8 @@ private fun FullPlayerHost(
         progressFlow = viewModel.playbackManager.progress,
         sheetController = sheetController,
         dynamicColorEnabled = dynamicColorEnabled,
+        ambientBackgroundEnabled = ambientBackgroundEnabled,
+        ambientBackdropStyle = ambientBackdropStyle,
         seekbarStyle = seekbarStyle,
         albumFrame = albumFrame,
         swipeToSkipEnabled = swipeToSkipEnabled,

@@ -966,6 +966,8 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1239,6 +1241,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_styled(`style`: RustBuffer.ByValue,`phase`: Float,`primaryArgb`: Int,`secondaryArgb`: Int,`backgroundArgb`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_func_compute_now_playing_glass_palette(`topArgb`: Int,`bottomArgb`: Int,`accentArgb`: Int,`secondaryArgb`: Int,`themeBgArgb`: Int,`ambientEnabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_func_generate_random_custom_theme(`preferDark`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_plasmawave_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1358,6 +1362,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_frame(
     ): Short
     fun uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_styled(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_func_compute_now_playing_glass_palette(
     ): Short
     fun uniffi_plasmawave_core_checksum_func_generate_random_custom_theme(
     ): Short
@@ -1629,6 +1635,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_func_compute_ambient_backdrop_styled() != 3939.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_func_compute_now_playing_glass_palette() != 20312.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_func_generate_random_custom_theme() != 50979.toShort()) {
@@ -5579,6 +5588,78 @@ public object FfiConverterTypeFfiModInfo: FfiConverterRustBuffer<FfiModInfo> {
 
 
 
+data class FfiNowPlayingGlassPalette (
+    var `baseBackdropArgb`: kotlin.UInt, 
+    var `beamPrimaryArgb`: kotlin.UInt, 
+    var `beamSecondaryArgb`: kotlin.UInt, 
+    var `beamIntensity`: kotlin.Float, 
+    var `veilTopArgb`: kotlin.UInt, 
+    var `veilMidArgb`: kotlin.UInt, 
+    var `veilBottomArgb`: kotlin.UInt, 
+    var `glassSurfaceArgb`: kotlin.UInt, 
+    var `glassSurfaceActiveArgb`: kotlin.UInt, 
+    var `glassBorderArgb`: kotlin.UInt, 
+    var `textPrimaryArgb`: kotlin.UInt, 
+    var `textSecondaryArgb`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiNowPlayingGlassPalette: FfiConverterRustBuffer<FfiNowPlayingGlassPalette> {
+    override fun read(buf: ByteBuffer): FfiNowPlayingGlassPalette {
+        return FfiNowPlayingGlassPalette(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterFloat.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiNowPlayingGlassPalette) = (
+            FfiConverterUInt.allocationSize(value.`baseBackdropArgb`) +
+            FfiConverterUInt.allocationSize(value.`beamPrimaryArgb`) +
+            FfiConverterUInt.allocationSize(value.`beamSecondaryArgb`) +
+            FfiConverterFloat.allocationSize(value.`beamIntensity`) +
+            FfiConverterUInt.allocationSize(value.`veilTopArgb`) +
+            FfiConverterUInt.allocationSize(value.`veilMidArgb`) +
+            FfiConverterUInt.allocationSize(value.`veilBottomArgb`) +
+            FfiConverterUInt.allocationSize(value.`glassSurfaceArgb`) +
+            FfiConverterUInt.allocationSize(value.`glassSurfaceActiveArgb`) +
+            FfiConverterUInt.allocationSize(value.`glassBorderArgb`) +
+            FfiConverterUInt.allocationSize(value.`textPrimaryArgb`) +
+            FfiConverterUInt.allocationSize(value.`textSecondaryArgb`)
+    )
+
+    override fun write(value: FfiNowPlayingGlassPalette, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`baseBackdropArgb`, buf)
+            FfiConverterUInt.write(value.`beamPrimaryArgb`, buf)
+            FfiConverterUInt.write(value.`beamSecondaryArgb`, buf)
+            FfiConverterFloat.write(value.`beamIntensity`, buf)
+            FfiConverterUInt.write(value.`veilTopArgb`, buf)
+            FfiConverterUInt.write(value.`veilMidArgb`, buf)
+            FfiConverterUInt.write(value.`veilBottomArgb`, buf)
+            FfiConverterUInt.write(value.`glassSurfaceArgb`, buf)
+            FfiConverterUInt.write(value.`glassSurfaceActiveArgb`, buf)
+            FfiConverterUInt.write(value.`glassBorderArgb`, buf)
+            FfiConverterUInt.write(value.`textPrimaryArgb`, buf)
+            FfiConverterUInt.write(value.`textSecondaryArgb`, buf)
+    }
+}
+
+
+
 data class FfiPinnedItem (
     var `pinId`: kotlin.String, 
     var `pinType`: kotlin.String, 
@@ -7868,6 +7949,19 @@ public object FfiConverterMapStringSequenceTypeFfiPlaylistTrackEntry: FfiConvert
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_func_compute_ambient_backdrop_styled(
         FfiConverterString.lower(`style`),FfiConverterFloat.lower(`phase`),FfiConverterUInt.lower(`primaryArgb`),FfiConverterUInt.lower(`secondaryArgb`),FfiConverterUInt.lower(`backgroundArgb`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Pure-Rust translucent Now Playing glass & ambient light-beam palette engine.
+         * Called once per track/theme change (zero per-frame FFI overhead).
+         */ fun `computeNowPlayingGlassPalette`(`topArgb`: kotlin.UInt, `bottomArgb`: kotlin.UInt, `accentArgb`: kotlin.UInt, `secondaryArgb`: kotlin.UInt, `themeBgArgb`: kotlin.UInt, `ambientEnabled`: kotlin.Boolean): FfiNowPlayingGlassPalette {
+            return FfiConverterTypeFfiNowPlayingGlassPalette.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_func_compute_now_playing_glass_palette(
+        FfiConverterUInt.lower(`topArgb`),FfiConverterUInt.lower(`bottomArgb`),FfiConverterUInt.lower(`accentArgb`),FfiConverterUInt.lower(`secondaryArgb`),FfiConverterUInt.lower(`themeBgArgb`),FfiConverterBoolean.lower(`ambientEnabled`),_status)
 }
     )
     }

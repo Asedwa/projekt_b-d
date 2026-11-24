@@ -348,7 +348,7 @@ private fun fillAmbientFrame(
         }
         AmbientBackdropStyle.SILK_AURORA -> {
             scratch.orbCount = 3
-            scratch.ribbonCount = 2
+            scratch.ribbonCount = 3
             scratch.ringCount = 0
             scratch.orbs[0].set(0.72f + 0.08f * c1, 0.06f + 0.04f * s1, 0.78f + 0.05f * s2, softPrimary, 0.22f + 0.03f * s1)
             scratch.orbs[1].set(0.76f - 0.10f * s1, 0.94f + 0.04f * c1, 0.74f + 0.06f * c2, midAccent, 0.19f + 0.03f * c1)
@@ -366,6 +366,13 @@ private fun fillAmbientFrame(
                 0.78f + 0.04f * s2, 0.06f + 0.03f * c2,
                 1.12f, 0.20f - 0.02f * s1,
                 0.075f + 0.012f * c2, midAccent, 0.12f + 0.025f * s1
+            )
+            scratch.ribbons[2].set(
+                -0.10f, 0.72f + 0.03f * s2,
+                0.28f + 0.05f * c1, 0.63f - 0.03f * s1,
+                0.70f - 0.05f * s1, 0.80f + 0.03f * c2,
+                1.10f, 0.69f - 0.025f * c1,
+                0.10f + 0.012f * s1, brightAccent, 0.14f + 0.025f * c2
             )
         }
         AmbientBackdropStyle.AURORA_CURTAINS -> {
@@ -555,29 +562,32 @@ private fun fillAmbientFrame(
  * per draw frame, rendered directly with GPU vector gradients inside Canvas,
  * and pauses automatically when covered by full-screen sheets.
  */
+private fun currentMonotonicAmbientPhase(timeNanos: Long = System.nanoTime()): Float =
+    Math.floorMod(timeNanos / 1_000_000L, 22_000L).toFloat() / 22_000f
+
 @Composable
 fun AmbientBackdropLayer(
     style: AmbientBackdropStyle = AmbientBackdropStyle.SILK_AURORA,
     paused: Boolean = false,
     phaseOverride: Float? = null,
+    primaryOverride: Color? = null,
+    secondaryOverride: Color? = null,
+    backgroundOverride: Color? = null,
+    intensityMultiplier: Float = 1f,
     modifier: Modifier = Modifier
 ) {
-    val primaryArgb = MaterialTheme.colorScheme.primary.toArgb()
-    val secondaryArgb = MaterialTheme.colorScheme.secondary.toArgb()
-    val backgroundArgb = MaterialTheme.colorScheme.background.toArgb()
+    val primaryArgb = (primaryOverride ?: MaterialTheme.colorScheme.primary).toArgb()
+    val secondaryArgb = (secondaryOverride ?: MaterialTheme.colorScheme.secondary).toArgb()
+    val backgroundArgb = (backgroundOverride ?: MaterialTheme.colorScheme.background).toArgb()
 
-    val phaseState = remember { mutableFloatStateOf(0f) }
+    val phaseState = remember { mutableFloatStateOf(currentMonotonicAmbientPhase()) }
 
     LaunchedEffect(paused, phaseOverride != null) {
         if (!paused && phaseOverride == null) {
-            var lastFrameNanos = -1L
+            phaseState.floatValue = currentMonotonicAmbientPhase()
             while (isActive) {
                 withInfiniteAnimationFrameNanos { frameTimeNanos ->
-                    if (lastFrameNanos >= 0L) {
-                        val deltaNanos = (frameTimeNanos - lastFrameNanos).coerceIn(0L, 100_000_000L)
-                        phaseState.floatValue = (phaseState.floatValue + deltaNanos / 22_000_000_000f) % 1f
-                    }
-                    lastFrameNanos = frameTimeNanos
+                    phaseState.floatValue = currentMonotonicAmbientPhase(frameTimeNanos)
                 }
             }
         }
@@ -586,7 +596,7 @@ fun AmbientBackdropLayer(
     val scratch = remember { AmbientFrameScratch() }
 
     Canvas(modifier = modifier.fillMaxSize()) {
-        if (paused) return@Canvas
+        if (paused || intensityMultiplier <= 0f) return@Canvas
         val currentPhase = phaseOverride ?: phaseState.floatValue
         drawAmbientBackdrop(
             style = style,
@@ -594,6 +604,7 @@ fun AmbientBackdropLayer(
             primaryArgb = primaryArgb,
             secondaryArgb = secondaryArgb,
             backgroundArgb = backgroundArgb,
+            intensityMultiplier = intensityMultiplier,
             scratch = scratch
         )
     }
@@ -605,6 +616,7 @@ internal fun DrawScope.drawAmbientBackdrop(
     primaryArgb: Int,
     secondaryArgb: Int,
     backgroundArgb: Int,
+    intensityMultiplier: Float = 1f,
     scratch: AmbientFrameScratch
 ) {
     val w = size.width
@@ -620,6 +632,7 @@ internal fun DrawScope.drawAmbientBackdrop(
         backgroundArgb = backgroundArgb
     )
 
+    val gain = intensityMultiplier.coerceIn(0f, 2.2f)
     val minDim = minOf(w, h)
     val ribbonPath = scratch.ribbonPath
 
@@ -629,7 +642,7 @@ internal fun DrawScope.drawAmbientBackdrop(
         val center = Offset(orb.cx * w, orb.cy * h)
         val radius = (orb.radius * minDim).coerceAtLeast(1f)
         val tint = Color(orb.colorArgb)
-        val alpha = orb.alpha.coerceIn(0f, 0.45f)
+        val alpha = (orb.alpha * gain).coerceIn(0f, 0.58f)
         drawCircle(
             brush = Brush.radialGradient(
                 colorStops = arrayOf(
@@ -649,7 +662,7 @@ internal fun DrawScope.drawAmbientBackdrop(
     for (i in 0 until scratch.ribbonCount) {
         val ribbon = scratch.ribbons[i]
         val tint = Color(ribbon.colorArgb)
-        val alpha = ribbon.alpha.coerceIn(0f, 0.35f)
+        val alpha = (ribbon.alpha * gain).coerceIn(0f, 0.48f)
         val bandPx = ribbon.thickness * minDim
 
         val start = Offset(ribbon.x0 * w, ribbon.y0 * h)
@@ -691,8 +704,8 @@ internal fun DrawScope.drawAmbientBackdrop(
             brush = Brush.linearGradient(
                 colorStops = arrayOf(
                     0.0f to Color.Transparent,
-                    0.35f to tint.copy(alpha = (alpha * 1.35f).coerceAtMost(0.40f)),
-                    0.75f to tint.copy(alpha = (alpha * 1.1f).coerceAtMost(0.35f)),
+                    0.35f to tint.copy(alpha = (alpha * 1.35f).coerceAtMost(0.55f)),
+                    0.75f to tint.copy(alpha = (alpha * 1.1f).coerceAtMost(0.48f)),
                     1.0f to Color.Transparent
                 ),
                 start = start,
@@ -708,7 +721,7 @@ internal fun DrawScope.drawAmbientBackdrop(
         val center = Offset(ring.cx * w, ring.cy * h)
         val radius = (ring.radius * minDim).coerceAtLeast(1.5f)
         val tint = Color(ring.colorArgb)
-        val alpha = ring.alpha.coerceIn(0f, 0.45f)
+        val alpha = (ring.alpha * gain).coerceIn(0f, 0.58f)
         if (ring.strokeWidth > 0f) {
             val strokePx = (ring.strokeWidth * minDim).coerceIn(1.2f, 5f)
             drawCircle(
