@@ -82,13 +82,43 @@ internal fun parseValidatedLanHostPort(raw: String): String? {
 internal fun sanitizeParticipantName(raw: String): String =
     raw.replace(Regex("\\p{Cntrl}"), "").trim().take(48)
 
+internal fun canonicalJamTrackId(rawId: String?): String {
+    if (rawId.isNullOrBlank()) return ""
+    val trimmed = rawId.trim()
+    val downloadDigits = trimmed.removePrefix("local:download-")
+    if (downloadDigits != trimmed && downloadDigits.isNotEmpty() && downloadDigits.all(Char::isDigit)) {
+        return "deezer:$downloadDigits"
+    }
+    return trimmed
+}
+
+internal fun normalizeTrackForJam(track: FfiTrack): FfiTrack {
+    val rawId = track.id.trim()
+    val downloadDigits = rawId.removePrefix("local:download-")
+    if (downloadDigits != rawId && downloadDigits.isNotEmpty() && downloadDigits.all(Char::isDigit)) {
+        return track.copy(
+            id = "deezer:$downloadDigits",
+            provider = "deezer",
+            playbackUri = null,
+            artworkUrl = track.artworkUrl?.takeIf { it.startsWith("https://", ignoreCase = true) }
+        )
+    }
+    if (track.provider == "deezer") {
+        val safeArt = track.artworkUrl?.takeIf { it.startsWith("https://", ignoreCase = true) }
+        val safeUri = track.playbackUri?.takeIf { it.startsWith("https://", ignoreCase = true) }
+        return track.copy(artworkUrl = safeArt, playbackUri = safeUri)
+    }
+    return track
+}
+
 internal fun sanitizeRemoteJamTrack(track: FfiTrack): FfiTrack? {
-    val cleanId = track.id.replace(Regex("\\p{Cntrl}"), "").trim().take(128)
+    val normalized = normalizeTrackForJam(track)
+    val cleanId = normalized.id.replace(Regex("\\p{Cntrl}"), "").trim().take(128)
     if (cleanId.isEmpty()) return null
-    val safeArtwork = track.artworkUrl?.trim()?.takeIf { uri ->
+    val safeArtwork = normalized.artworkUrl?.trim()?.takeIf { uri ->
         uri.length <= 1024 && uri.startsWith("https://", ignoreCase = true)
     }
-    val safePlaybackUri = track.playbackUri?.trim()?.takeIf { uri ->
+    val safePlaybackUri = normalized.playbackUri?.trim()?.takeIf { uri ->
         if (uri.length > 2048) false
         else runCatching {
             val parsed = URL(uri)
@@ -96,14 +126,14 @@ internal fun sanitizeRemoteJamTrack(track: FfiTrack): FfiTrack? {
             parsed.protocol == "https" && (h == "dzcdn.net" || h.endsWith(".dzcdn.net") || h == "deezer.com" || h.endsWith(".deezer.com"))
         }.getOrDefault(false)
     }
-    val safeProvider = if (track.provider == "deezer") "deezer" else "local"
+    val safeProvider = if (normalized.provider == "deezer") "deezer" else "local"
     if (safeProvider != "deezer" && safePlaybackUri == null) return null
-    return track.copy(
+    return normalized.copy(
         id = cleanId,
         provider = safeProvider,
-        title = track.title.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
-        artist = track.artist.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
-        album = track.album.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
+        title = normalized.title.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
+        artist = normalized.artist.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
+        album = normalized.album.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
         artworkUrl = safeArtwork,
         playbackUri = safePlaybackUri
     )
@@ -178,8 +208,14 @@ class JamManager(
     private var discoveryListener: NsdManager.DiscoveryListener? = null
 
     private val guestLastSeen = ConcurrentHashMap<String, Long>()
-    @Volatile private var lastSyncedTrackId: String? = null
-    @Volatile private var lastSyncApplyMs: Long = 0L
+    @Volatile private var pendingLoadTrackKey: String? = null
+    @Volatile private var pendingLoadStartMs: Long = 0L
+    @Volatile private var lastSeekApplyMs: Long = 0L
+    @Volatile private var lastAppliedSeekSeq: Long = -1L
+    @Volatile private var hostSeekSeq: Long = 0L
+    @Volatile private var lastAckedCmdId: String = ""
+    @Volatile private var lastSentGuestCmdId: String = ""
+    @Volatile private var pendingGuestActionUntilMs: Long = 0L
 
     private fun stateTopic(code: String) = "plasmawave/jam/v1/${code.uppercase()}/state"
     private fun cmdTopic(code: String) = "plasmawave/jam/v1/${code.uppercase()}/cmd"
@@ -265,16 +301,31 @@ class JamManager(
                 relayPublishJob = scope.launch {
                     var lastSignature = ""
                     var lastPublishMs = 0L
+                    var lastPublishedPosMs = 0L
+                    var lastPublishedPlaying = false
                     while (isActive && _state.value.mode == JamMode.HOST && client.isConnected) {
                         val pState = playbackManager.overview.value
-                        val sig = "${pState.currentEntry?.track?.id}|${pState.isPlaying}|${pState.queueSnapshot?.entries?.size}|${_state.value.allowGuestControls}"
+                        val playing = playbackManager.isPlayingOrBuffering()
+                        val currentPos = playbackManager.progress.value.positionMs
                         val now = System.currentTimeMillis()
-                        if (sig != lastSignature || (pState.isPlaying && now - lastPublishMs >= 4000L) || now - lastPublishMs >= 10_000L) {
+                        val expectedPos = if (lastPublishedPlaying) {
+                            lastPublishedPosMs + (now - lastPublishMs).coerceAtLeast(0L)
+                        } else {
+                            lastPublishedPosMs
+                        }
+                        val posJumped = lastPublishMs > 0L && abs(currentPos - expectedPos) > 1500L
+                        if (posJumped) {
+                            hostSeekSeq++
+                        }
+                        val sig = "${canonicalJamTrackId(pState.currentEntry?.track?.id)}|$playing|${pState.queueSnapshot?.entries?.size}|${_state.value.allowGuestControls}|$hostSeekSeq"
+                        if (sig != lastSignature || posJumped || (playing && now - lastPublishMs >= 3500L) || now - lastPublishMs >= 9000L) {
                             lastSignature = sig
                             lastPublishMs = now
+                            lastPublishedPosMs = currentPos
+                            lastPublishedPlaying = playing
                             client.publish(stateTopic(code), buildHostStateJson().toString(), retain = true)
                         }
-                        delay(700L)
+                        delay(400L)
                     }
                 }
             },
@@ -294,6 +345,36 @@ class JamManager(
         }
     }
 
+    private suspend fun executeHostControlCommand(action: String, positionMs: Long, cmdId: String) {
+        val beforeTrackId = playbackManager.overview.value.currentEntry?.track?.id
+        withContext(Dispatchers.Main) {
+            when (action) {
+                "toggle" -> playbackManager.togglePlayPause()
+                "next" -> playbackManager.skipNext()
+                "prev" -> playbackManager.skipPrevious()
+                "seek" -> {
+                    playbackManager.seekTo(positionMs.coerceAtLeast(0L))
+                    hostSeekSeq++
+                }
+            }
+        }
+        if (action == "next" || action == "prev") {
+            // Wait briefly for the asynchronous queue snapshot advance (fast SQLite/in-memory step)
+            // without blocking on full CDN stream buffering.
+            var waited = 0L
+            while (waited < 600L && playbackManager.overview.value.currentEntry?.track?.id == beforeTrackId) {
+                delay(40L)
+                waited += 40L
+            }
+            hostSeekSeq++
+        } else {
+            delay(50L)
+        }
+        if (cmdId.isNotBlank()) {
+            lastAckedCmdId = cmdId.take(48)
+        }
+    }
+
     private suspend fun handleRelayCommand(payload: String) {
         if (payload.length > MAX_HTTP_BODY_BYTES) return
         val req = runCatching { JSONObject(payload) }.getOrNull() ?: return
@@ -308,20 +389,15 @@ class JamManager(
                 withContext(Dispatchers.Main) {
                     playbackManager.addToQueue(listOf(track))
                 }
+                delay(80L)
                 mqttClient?.publish(stateTopic(_state.value.jamCode), buildHostStateJson().toString(), retain = true)
             }
             "control" -> {
                 if (!_state.value.allowGuestControls) return
                 val action = req.optString("action", "")
-                withContext(Dispatchers.Main) {
-                    when (action) {
-                        "toggle" -> playbackManager.togglePlayPause()
-                        "next" -> playbackManager.skipNext()
-                        "prev" -> playbackManager.skipPrevious()
-                        "seek" -> playbackManager.seekTo(req.optLong("positionMs", 0L).coerceAtLeast(0L))
-                    }
-                }
-                delay(200)
+                val pos = req.optLong("positionMs", 0L).coerceAtLeast(0L)
+                val cmdId = req.optString("cmdId", "")
+                executeHostControlCommand(action, pos, cmdId)
                 mqttClient?.publish(stateTopic(_state.value.jamCode), buildHostStateJson().toString(), retain = true)
             }
         }
@@ -336,7 +412,6 @@ class JamManager(
         val cleanGuest = sanitizeParticipantName(guestName).ifEmpty { Build.MODEL.ifBlank { "Misafir" }.take(48) }
 
         stopJam()
-        lastSyncedTrackId = null
         isRelayGuest = true
 
         _state.value = _state.value.copy(
@@ -426,7 +501,6 @@ class JamManager(
         val cleanGuest = sanitizeParticipantName(guestName).ifEmpty { Build.MODEL.ifBlank { "Misafir" }.take(48) }
 
         stopJam()
-        lastSyncedTrackId = null
 
         _state.value = _state.value.copy(
             mode = JamMode.GUEST,
@@ -490,7 +564,14 @@ class JamManager(
         serverSocket = null
         unregisterNsdService()
         guestLastSeen.clear()
-        lastSyncedTrackId = null
+        pendingLoadTrackKey = null
+        pendingLoadStartMs = 0L
+        lastSeekApplyMs = 0L
+        lastAppliedSeekSeq = -1L
+        hostSeekSeq = 0L
+        lastAckedCmdId = ""
+        lastSentGuestCmdId = ""
+        pendingGuestActionUntilMs = 0L
         _state.value = _state.value.copy(
             mode = JamMode.NONE,
             jamCode = "",
@@ -504,6 +585,7 @@ class JamManager(
 
     fun addTrackToJam(track: FfiTrack) {
         val current = _state.value
+        val normalized = normalizeTrackForJam(track)
         when (current.mode) {
             JamMode.HOST -> {
                 playbackManager.addToQueue(listOf(track))
@@ -514,7 +596,7 @@ class JamManager(
                     val body = JSONObject()
                         .put("type", "add_track")
                         .put("guestName", current.guestName)
-                        .put("track", trackJson(track))
+                        .put("track", trackJson(normalized))
                         .toString()
                     mqttClient?.publish(cmdTopic(current.jamCode), body)
                     _state.value = _state.value.copy(statusMessage = "'${track.title}' Jam sırasına eklendi")
@@ -523,7 +605,7 @@ class JamManager(
                         try {
                             val body = JSONObject()
                                 .put("code", current.jamCode)
-                                .put("track", trackJson(track))
+                                .put("track", trackJson(normalized))
                                 .toString()
                             httpRequest("POST", "http://${current.hostAddress}/jam/queue/add", body)
                             _state.value = _state.value.copy(statusMessage = "'${track.title}' Jam sırasına eklendi")
@@ -539,13 +621,32 @@ class JamManager(
 
     fun sendGuestControl(action: String, positionMs: Long = 0L) {
         val current = _state.value
-        if (current.mode != JamMode.GUEST) return
+        if (current.mode != JamMode.GUEST || !current.allowGuestControls) return
+        val safePos = positionMs.coerceAtLeast(0L)
+        val cmdId = "${System.currentTimeMillis()}-${secureRandom.nextInt(10_000)}"
+        lastSentGuestCmdId = cmdId
+        pendingGuestActionUntilMs = System.currentTimeMillis() + 2400L
+
+        // Optimistic immediate local execution on Guest so seek/skip/toggle responds in 0ms
+        scope.launch(Dispatchers.Main) {
+            when (action) {
+                "toggle" -> playbackManager.togglePlayPause()
+                "seek" -> {
+                    playbackManager.seekTo(safePos)
+                    lastSeekApplyMs = System.currentTimeMillis()
+                }
+                "next" -> playbackManager.skipNext()
+                "prev" -> playbackManager.skipPrevious()
+            }
+        }
+
         if (isRelayGuest) {
             val body = JSONObject()
                 .put("type", "control")
                 .put("guestName", current.guestName)
                 .put("action", action)
-                .put("positionMs", positionMs)
+                .put("positionMs", safePos)
+                .put("cmdId", cmdId)
                 .toString()
             mqttClient?.publish(cmdTopic(current.jamCode), body)
         } else {
@@ -554,9 +655,13 @@ class JamManager(
                     val body = JSONObject()
                         .put("code", current.jamCode)
                         .put("action", action)
-                        .put("positionMs", positionMs)
+                        .put("positionMs", safePos)
+                        .put("cmdId", cmdId)
                         .toString()
-                    httpRequest("POST", "http://${current.hostAddress}/jam/control", body)
+                    val resp = httpRequest("POST", "http://${current.hostAddress}/jam/control", body)
+                    runCatching { JSONObject(resp).optJSONObject("state") }
+                        .getOrNull()
+                        ?.let { hostState -> applyRemoteState(hostState) }
                 } catch (e: Exception) {
                     _state.value = _state.value.copy(errorMessage = "Komut gönderilemedi: ${e.message}")
                 }
@@ -666,43 +771,66 @@ class JamManager(
 
         if (remoteTrack == null) return
 
-        val localState = playbackManager.overview.value
-        val localTrackId = localState.currentEntry?.track?.id
+        val remoteSeekSeq = json.optLong("seekSeq", -1L)
+        val ackedCmdId = json.optString("lastCmdId", "")
         val now = System.currentTimeMillis()
+
+        if (lastSentGuestCmdId.isNotEmpty() && ackedCmdId == lastSentGuestCmdId) {
+            pendingGuestActionUntilMs = 0L
+        } else if (now < pendingGuestActionUntilMs) {
+            // Ignore stale in-flight Host state packets sent before Host processed our latest Guest command
+            return
+        }
+
         val elapsed = if (remotePlaying) (now - updatedAtMs).coerceIn(0L, 4000L) else 0L
         val targetPos = (remotePos + elapsed).coerceAtLeast(0L)
 
         withContext(Dispatchers.Main) {
-            if (localTrackId != remoteTrack.id && lastSyncedTrackId != remoteTrack.id) {
-                lastSyncedTrackId = remoteTrack.id
-                lastSyncApplyMs = now
-                val tracksToLoad = if (remoteQueue.any { it.id == remoteTrack.id }) {
+            val localTrackId = playbackManager.overview.value.currentEntry?.track?.id
+            val localKey = canonicalJamTrackId(localTrackId)
+            val remoteKey = canonicalJamTrackId(remoteTrack.id)
+
+            if (localKey != remoteKey) {
+                if (pendingLoadTrackKey == remoteKey && now - pendingLoadStartMs < 2500L) {
+                    return@withContext
+                }
+                pendingLoadTrackKey = remoteKey
+                pendingLoadStartMs = now
+                lastAppliedSeekSeq = remoteSeekSeq
+                lastSeekApplyMs = now
+
+                val tracksToLoad = if (remoteQueue.any { canonicalJamTrackId(it.id) == remoteKey }) {
                     remoteQueue
                 } else {
                     listOf(remoteTrack) + remoteQueue
                 }
-                val startIndex = tracksToLoad.indexOfFirst { it.id == remoteTrack.id }.coerceAtLeast(0)
+                val startIndex = tracksToLoad.indexOfFirst { canonicalJamTrackId(it.id) == remoteKey }.coerceAtLeast(0)
                 playbackManager.playTrackList(tracksToLoad, startIndex, targetPos)
                 if (!remotePlaying) {
                     delay(250)
-                    if (playbackManager.overview.value.isPlaying) {
-                        playbackManager.togglePlayPause()
-                    }
+                    playbackManager.setPlaying(false)
                 }
                 return@withContext
             }
 
-            if (now - lastSyncApplyMs < 1200L) return@withContext
+            pendingLoadTrackKey = null
 
-            if (localState.isPlaying != remotePlaying) {
-                playbackManager.togglePlayPause()
-                lastSyncApplyMs = now
+            // Sync play/pause using playWhenReady+buffering awareness so buffering never triggers a false pause!
+            if (playbackManager.isPlayingOrBuffering() != remotePlaying) {
+                playbackManager.setPlaying(remotePlaying)
             }
 
+            val explicitSeekChanged = remoteSeekSeq >= 0L && remoteSeekSeq != lastAppliedSeekSeq
+            val driftThreshold = if (explicitSeekChanged) 900L else SYNC_DRIFT_THRESHOLD_MS
             val localPos = playbackManager.progress.value.positionMs
-            if (abs(localPos - targetPos) > SYNC_DRIFT_THRESHOLD_MS) {
+            val settleElapsed = now - lastSeekApplyMs
+
+            if (abs(localPos - targetPos) > driftThreshold && (explicitSeekChanged || settleElapsed >= 1000L)) {
+                lastAppliedSeekSeq = remoteSeekSeq
+                lastSeekApplyMs = now
                 playbackManager.seekTo(targetPos)
-                lastSyncApplyMs = now
+            } else if (explicitSeekChanged) {
+                lastAppliedSeekSeq = remoteSeekSeq
             }
         }
     }
@@ -797,20 +925,17 @@ class JamManager(
                     val req = runCatching { JSONObject(body) }.getOrNull()
                     val code = req?.optString("code", "")?.trim()?.uppercase().orEmpty()
                     val action = req?.optString("action", "").orEmpty()
+                    val pos = (req?.optLong("positionMs", 0L) ?: 0L).coerceAtLeast(0L)
+                    val cmdId = req?.optString("cmdId", "").orEmpty()
                     if (!verifyJamCodeConstantTime(_state.value.jamCode, code)) {
                         Triple(403, "application/json", JSONObject().put("error", "Jam kodu hatalı").toString())
                     } else if (!_state.value.allowGuestControls) {
                         Triple(403, "application/json", JSONObject().put("error", "Ev sahibi misafir kontrolünü kapattı").toString())
                     } else {
-                        withContext(Dispatchers.Main) {
-                            when (action) {
-                                "toggle" -> playbackManager.togglePlayPause()
-                                "next" -> playbackManager.skipNext()
-                                "prev" -> playbackManager.skipPrevious()
-                                "seek" -> playbackManager.seekTo((req?.optLong("positionMs", 0L) ?: 0L).coerceAtLeast(0L))
-                            }
-                        }
-                        Triple(200, "application/json", JSONObject().put("ok", true).toString())
+                        executeHostControlCommand(action, pos, cmdId)
+                        val hostState = buildHostStateJson()
+                        mqttClient?.publish(stateTopic(_state.value.jamCode), hostState.toString(), retain = true)
+                        Triple(200, "application/json", JSONObject().put("ok", true).put("state", hostState).toString())
                     }
                 }
                 else -> Triple(404, "application/json", JSONObject().put("error", "Not found").toString())
@@ -866,11 +991,12 @@ class JamManager(
         refreshParticipantsList()
         val current = _state.value
         val pState = playbackManager.overview.value
+        val playing = playbackManager.isPlayingOrBuffering()
         val progress = playbackManager.progress.value
-        val currentTrack = pState.currentEntry?.track
+        val currentTrack = pState.currentEntry?.track?.let(::normalizeTrackForJam)
         val queueArr = JSONArray().apply {
             pState.queueSnapshot?.entries?.forEach { entry ->
-                put(trackJson(entry.track))
+                put(trackJson(normalizeTrackForJam(entry.track)))
             }
         }
         val partArr = JSONArray().apply {
@@ -880,8 +1006,10 @@ class JamManager(
             put("jamCode", current.jamCode)
             put("hostName", current.hostName)
             put("allowGuestControls", current.allowGuestControls)
-            put("isPlaying", pState.isPlaying)
+            put("isPlaying", playing)
             put("positionMs", progress.positionMs)
+            put("seekSeq", hostSeekSeq)
+            put("lastCmdId", lastAckedCmdId)
             put("updatedAtMs", System.currentTimeMillis())
             put("currentTrack", currentTrack?.let { trackJson(it) } ?: JSONObject.NULL)
             put("queue", queueArr)

@@ -12,6 +12,8 @@ import org.kde.plasmawave.deezer.DeezerHttp
 import org.kde.plasmawave.deezer.isAllowedAuthHost
 import org.kde.plasmawave.download.DownloadWorker
 import org.kde.plasmawave.jam.MqttRelayClient
+import org.kde.plasmawave.jam.canonicalJamTrackId
+import org.kde.plasmawave.jam.normalizeTrackForJam
 import org.kde.plasmawave.jam.parseValidatedLanHostPort
 import org.kde.plasmawave.jam.sanitizeRemoteJamTrack
 import org.kde.plasmawave.jam.verifyJamCodeConstantTime
@@ -74,6 +76,20 @@ class SecurityHardeningTest {
         // Pure local track without a trusted HTTPS Deezer CDN URI must be rejected over remote Jam
         val unplayableLocal = maliciousLocal.copy(id = "local:1", provider = "local")
         assertNull(sanitizeRemoteJamTrack(unplayableLocal))
+
+        // Offline-downloaded Deezer track ("local:download-<digits>") normalizes to streamable "deezer:<digits>"
+        val downloadedDeezer = maliciousLocal.copy(
+            id = "local:download-987654",
+            provider = "local",
+            playbackUri = "content://media/external/audio/media/42"
+        )
+        val normalizedDownload = sanitizeRemoteJamTrack(downloadedDeezer)
+        assertNotNull(normalizedDownload)
+        assertEquals("deezer:987654", normalizedDownload!!.id)
+        assertEquals("deezer", normalizedDownload.provider)
+        assertNull(normalizedDownload.playbackUri)
+        assertEquals(canonicalJamTrackId("local:download-987654"), canonicalJamTrackId("deezer:987654"))
+        assertEquals("deezer:987654", normalizeTrackForJam(downloadedDeezer).id)
 
         // Valid Deezer HTTPS CDN track passes cleanly
         val validDeezer = maliciousLocal.copy(

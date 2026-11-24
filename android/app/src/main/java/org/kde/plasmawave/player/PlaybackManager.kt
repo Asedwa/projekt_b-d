@@ -564,12 +564,19 @@ class PlaybackManager private constructor(private val context: Context) {
         val cur = snapshot.currentIndex?.let { idx ->
             snapshot.entries.getOrNull(idx.toInt())
         }
+        val trackChanged = cur?.track?.id != _uiState.value.currentEntry?.track?.id
         _uiState.value = _uiState.value.copy(
             queueSnapshot = snapshot,
             currentEntry = cur,
             isShuffle = snapshot.isShuffled,
             repeatMode = snapshot.repeatMode
         )
+        if (trackChanged) {
+            _progress.value = PlaybackProgress(
+                positionMs = 0L,
+                durationMs = cur?.track?.durationMs?.toLong() ?: 0L
+            )
+        }
         onQueueChanged?.invoke(snapshot)
     }
 
@@ -733,6 +740,18 @@ class PlaybackManager private constructor(private val context: Context) {
         playbackGeneration++
         pendingPlayback = null
         playbackPlayer?.stop()
+    }
+
+    fun isPlayingOrBuffering(): Boolean {
+        val player = playbackPlayer ?: return _uiState.value.isPlaying
+        return player.playWhenReady &&
+            (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+    }
+
+    fun setPlaying(shouldPlay: Boolean) {
+        if (isPlayingOrBuffering() != shouldPlay) {
+            togglePlayPause()
+        }
     }
 
     fun togglePlayPause() {
