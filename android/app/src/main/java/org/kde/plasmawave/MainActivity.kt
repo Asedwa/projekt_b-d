@@ -42,6 +42,7 @@ import org.kde.plasmawave.theme.PlasmaTheme
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.SearchCategory
 import org.kde.plasmawave.jam.JamMode
+import org.kde.plasmawave.jam.isValidJamCode
 import org.kde.plasmawave.ui.components.AmbientBackdropLayer
 import org.kde.plasmawave.ui.components.FullPlayerSheet
 import org.kde.plasmawave.ui.components.FullPlayerSheetController
@@ -80,6 +81,7 @@ sealed class SubScreen {
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
     private val openPlayerTrigger = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    private val pendingJamInviteCode = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
     private fun handleIncomingIntent(intent: android.content.Intent?) {
         if (intent?.getBooleanExtra("open_full_player", false) == true) {
@@ -88,10 +90,12 @@ class MainActivity : ComponentActivity() {
         }
         val uri = intent?.data ?: return
         if (uri.scheme == "plasmawave" && uri.host == "jam") {
-            val code = uri.lastPathSegment?.trim()?.uppercase().orEmpty()
-            if (code.length >= 4) {
-                viewModel.jamManager.joinJamByCode(code)
-                Toast.makeText(this, "Jam #$code oturumuna bağlanılıyor...", Toast.LENGTH_SHORT).show()
+            intent.data = null
+            val code = uri.lastPathSegment?.trim()?.uppercase()?.removePrefix("PW-").orEmpty()
+            if (isValidJamCode(code)) {
+                pendingJamInviteCode.value = code
+            } else {
+                Toast.makeText(this, "Geçersiz Jam bağlantısı", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -361,6 +365,33 @@ class MainActivity : ComponentActivity() {
                             viewModel = viewModel,
                             track = track,
                             onDismiss = { trackForPlaylist = null }
+                        )
+                    }
+
+                    val jamInviteCode by pendingJamInviteCode.collectAsState()
+                    jamInviteCode?.let { inviteCode ->
+                        AlertDialog(
+                            onDismissRequest = { pendingJamInviteCode.value = null },
+                            title = { Text("Jam Oturumuna Katıl") },
+                            text = {
+                                Text("#$inviteCode kodlu Jam oturumuna katılmak istiyor musun? Mevcut çalma sırası ev sahibiyle eşitlenecek.")
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        pendingJamInviteCode.value = null
+                                        viewModel.jamManager.joinJamByCode(inviteCode)
+                                        Toast.makeText(this@MainActivity, "Jam #$inviteCode oturumuna bağlanılıyor...", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Text("Katıl")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { pendingJamInviteCode.value = null }) {
+                                    Text("İptal")
+                                }
+                            }
                         )
                     }
                 }

@@ -8,6 +8,7 @@ import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
@@ -41,17 +42,31 @@ import org.kde.plasmawave.theme.LocalPlasmaColors
 private const val CHROME_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
 
-private fun isAllowedAuthHost(host: String): Boolean {
-    val h = host.lowercase()
+private val EXACT_OAUTH_HOSTS = setOf(
+    "accounts.google.com",
+    "accounts.youtube.com",
+    "myaccount.google.com",
+    "apis.google.com",
+    "www.google.com",
+    "ssl.gstatic.com",
+    "www.gstatic.com",
+    "gstatic.com",
+    "facebook.com",
+    "www.facebook.com",
+    "m.facebook.com",
+    "web.facebook.com",
+    "appleid.apple.com",
+    "idmsa.apple.com",
+    "login.live.com",
+    "login.microsoftonline.com"
+)
+
+internal fun isAllowedAuthHost(host: String): Boolean {
+    val h = host.trim().lowercase()
+    if (h.isEmpty()) return false
     return h == "deezer.com" || h.endsWith(".deezer.com") ||
-           h == "dzcdn.net" || h.endsWith(".dzcdn.net") ||
-           h == "google.com" || h.endsWith(".google.com") ||
-           h == "googleusercontent.com" || h.endsWith(".googleusercontent.com") ||
-           h == "gstatic.com" || h.endsWith(".gstatic.com") ||
-           h == "facebook.com" || h.endsWith(".facebook.com") ||
-           h == "apple.com" || h.endsWith(".apple.com") ||
-           h == "live.com" || h.endsWith(".live.com") ||
-           h == "microsoft.com" || h.endsWith(".microsoft.com")
+        h == "dzcdn.net" || h.endsWith(".dzcdn.net") ||
+        h in EXACT_OAUTH_HOSTS
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,6 +113,7 @@ fun DeezerLoginDialog(
             settings.javaScriptCanOpenWindowsAutomatically = true
             settings.allowFileAccess = false
             settings.allowContentAccess = false
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
 
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
@@ -116,9 +132,13 @@ fun DeezerLoginDialog(
                     if (resultMsg == null || view == null) return false
                     val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
                     // Intercept popup (e.g. Deezer's "Google ile devam et" window.open call)
-                    // and route target URL into the main WebView so the entire session is shared
+                    // and route verified HTTPS OAuth URL into the main WebView
                     val popupWebView = WebView(context).apply {
                         this.settings.javaScriptEnabled = true
+                        this.settings.domStorageEnabled = true
+                        this.settings.allowFileAccess = false
+                        this.settings.allowContentAccess = false
+                        this.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         this.settings.userAgentString = CHROME_USER_AGENT
                         CookieManager.getInstance().setAcceptCookie(true)
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
@@ -126,11 +146,12 @@ fun DeezerLoginDialog(
                             override fun shouldOverrideUrlLoading(view2: WebView, request: WebResourceRequest): Boolean {
                                 val targetUri = request.url
                                 val targetHost = targetUri.host?.lowercase().orEmpty()
-                                if (isAllowedAuthHost(targetHost)) {
+                                if (targetUri.scheme == "https" && isAllowedAuthHost(targetHost)) {
                                     view.loadUrl(targetUri.toString())
-                                    return true
                                 }
-                                return false
+                                view2.stopLoading()
+                                view2.destroy()
+                                return true
                             }
                         }
                     }
@@ -141,6 +162,8 @@ fun DeezerLoginDialog(
 
                 override fun onCloseWindow(window: WebView?) {
                     super.onCloseWindow(window)
+                    window?.stopLoading()
+                    window?.destroy()
                     checkCookie()
                 }
             }
@@ -196,6 +219,8 @@ fun DeezerLoginDialog(
     DisposableEffect(webView) {
         onDispose {
             webView.stopLoading()
+            webView.clearHistory()
+            webView.clearFormData()
             webView.destroy()
         }
     }

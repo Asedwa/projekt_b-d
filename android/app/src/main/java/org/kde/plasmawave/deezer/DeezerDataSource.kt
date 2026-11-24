@@ -30,6 +30,11 @@ class DeezerDataSource(private val session: DeezerSession) : BaseDataSource(/* i
         requestedUri = dataSpec.uri
         transferInitializing(dataSpec)
         if (dataSpec.uri.scheme != "deezer") {
+            val scheme = dataSpec.uri.scheme?.lowercase()
+            val host = dataSpec.uri.host.orEmpty()
+            if (scheme != "https" || !DeezerHttp.isTrustedMediaHost(host)) {
+                throw DeezerException("Geçersiz Deezer ses kaynağı")
+            }
             val length = openUpstream(dataSpec)
             opened = true
             transferStarted(dataSpec)

@@ -43,7 +43,32 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     private val notificationId get() = id.hashCode() and Int.MAX_VALUE
     private val notifications = context.getSystemService(NotificationManager::class.java)
 
-    companion object { private val queueMutex = Mutex() }
+    companion object {
+        private val queueMutex = Mutex()
+
+        internal fun sanitizeDownloadSegment(raw: String, maxLen: Int, fallback: String): String {
+            val cleaned = raw
+                .replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")
+                .trim { it <= ' ' || it == '.' }
+                .take(maxLen)
+                .trim { it <= ' ' || it == '.' }
+            return if (cleaned.isEmpty() || cleaned == "." || cleaned == "..") fallback else cleaned
+        }
+
+        internal fun resolveSafeDownloadDirectory(rootDir: File, playlistName: String?): File {
+            val rootCanonical = rootDir.canonicalPath
+            val safeSubdir = playlistName
+                ?.let { sanitizeDownloadSegment(it, maxLen = 80, fallback = "") }
+                ?.takeIf { it.isNotBlank() }
+                ?: return rootDir
+            val candidate = File(rootDir, safeSubdir)
+            val candidateCanonical = candidate.canonicalPath
+            if (candidateCanonical != rootCanonical && !candidateCanonical.startsWith(rootCanonical + File.separator)) {
+                throw SecurityException("Geçersiz indirme dizini")
+            }
+            return candidate
+        }
+    }
     private class UserCancelled : IOException()
     private class NetworkBlocked : IOException()
 
@@ -270,13 +295,11 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
             .setOngoing(true).setOnlyAlertOnce(true).setProgress(100, progress, progress == 0).build()
 
     private fun createDestination(task: SavedDownload): Uri {
-        val base = "${task.track.artist} - ${task.track.title} [${task.track.id.substringAfter(':')}]"
-            .replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").trim().take(150).ifBlank { "PlasmaWave" }
+        val rawBase = "${task.track.artist} - ${task.track.title} [${task.track.id.substringAfter(':')}]"
+        val base = sanitizeDownloadSegment(rawBase, maxLen = 150, fallback = "PlasmaWave")
         val name = "$base.${task.quality.extension}"
         val playlistSubdir = task.playlistName
-            ?.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")
-            ?.trim()
-            ?.take(80)
+            ?.let { sanitizeDownloadSegment(it, maxLen = 80, fallback = "") }
             ?.takeIf { it.isNotBlank() }
         val relPath = if (playlistSubdir != null) {
             "${Environment.DIRECTORY_MUSIC}/PlasmaWave/$playlistSubdir/"
@@ -295,11 +318,16 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
         }
         @Suppress("DEPRECATION")
         val rootDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "PlasmaWave")
-        val directory = if (playlistSubdir != null) File(rootDir, playlistSubdir) else rootDir
+        val directory = resolveSafeDownloadDirectory(rootDir, playlistSubdir)
         if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Müzik klasörü oluşturulamadı")
+        val dirCanonical = directory.canonicalPath + File.separator
         var file = File(directory, name)
+        if (!file.canonicalPath.startsWith(dirCanonical)) throw SecurityException("Geçersiz dosya yolu")
         var suffix = 1
-        while (!file.createNewFile()) file = File(directory, "$base (${suffix++}).${task.quality.extension}")
+        while (!file.createNewFile()) {
+            file = File(directory, "$base (${suffix++}).${task.quality.extension}")
+            if (!file.canonicalPath.startsWith(dirCanonical)) throw SecurityException("Geçersiz dosya yolu")
+        }
         return Uri.fromFile(file)
     }
 

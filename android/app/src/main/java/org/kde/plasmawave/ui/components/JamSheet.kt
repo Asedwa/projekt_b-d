@@ -466,7 +466,7 @@ fun JamSheet(
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    "Aynı Wi-Fi tarayıcı: http://${jamState.hostAddress}",
+                                    "Aynı Wi-Fi tarayıcı: http://${jamState.hostAddress}/?code=${jamState.jamCode}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = colors.textSecondary
                                 )

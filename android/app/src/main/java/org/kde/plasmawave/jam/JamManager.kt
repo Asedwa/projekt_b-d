@@ -31,9 +31,83 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 import java.net.URLEncoder
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
-import kotlin.random.Random
+
+internal val JAM_CODE_REGEX = Regex("^[A-Z0-9]{4,12}$")
+private val IPV4_LITERAL_REGEX = Regex("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$")
+
+internal fun isValidJamCode(code: String): Boolean =
+    JAM_CODE_REGEX.matches(code)
+
+internal fun verifyJamCodeConstantTime(expectedCode: String, providedCode: String): Boolean {
+    val exp = expectedCode.trim().uppercase()
+    val prov = providedCode.trim().uppercase()
+    if (!isValidJamCode(exp) || !isValidJamCode(prov)) return false
+    return MessageDigest.isEqual(
+        exp.toByteArray(Charsets.UTF_8),
+        prov.toByteArray(Charsets.UTF_8)
+    )
+}
+
+internal fun parseValidatedLanHostPort(raw: String): String? {
+    val trimmed = raw.trim()
+        .removePrefix("http://")
+        .removePrefix("https://")
+        .trimEnd('/')
+    if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() || it.isISOControl() || it in charArrayOf('/', '?', '#', '@', '\\') }) {
+        return null
+    }
+    val colonIdx = trimmed.lastIndexOf(':')
+    if (colonIdx <= 0 || colonIdx == trimmed.lastIndex) return null
+    val host = trimmed.substring(0, colonIdx)
+    val port = trimmed.substring(colonIdx + 1).toIntOrNull() ?: return null
+    if (port !in 1..65535) return null
+
+    val match = IPV4_LITERAL_REGEX.matchEntire(host) ?: return null
+    val octets = (1..4).map { match.groupValues[it].toIntOrNull() ?: return null }
+    if (octets.any { it !in 0..255 }) return null
+    val a = octets[0]
+    val b = octets[1]
+    val isPrivateOrLoopback = a == 10 ||
+        a == 127 ||
+        (a == 192 && b == 168) ||
+        (a == 172 && b in 16..31) ||
+        (a == 169 && b == 254)
+    return if (isPrivateOrLoopback) "$a.$b.${octets[2]}.${octets[3]}:$port" else null
+}
+
+internal fun sanitizeParticipantName(raw: String): String =
+    raw.replace(Regex("\\p{Cntrl}"), "").trim().take(48)
+
+internal fun sanitizeRemoteJamTrack(track: FfiTrack): FfiTrack? {
+    val cleanId = track.id.replace(Regex("\\p{Cntrl}"), "").trim().take(128)
+    if (cleanId.isEmpty()) return null
+    val safeArtwork = track.artworkUrl?.trim()?.takeIf { uri ->
+        uri.length <= 1024 && uri.startsWith("https://", ignoreCase = true)
+    }
+    val safePlaybackUri = track.playbackUri?.trim()?.takeIf { uri ->
+        if (uri.length > 2048) false
+        else runCatching {
+            val parsed = URL(uri)
+            val h = parsed.host.lowercase()
+            parsed.protocol == "https" && (h == "dzcdn.net" || h.endsWith(".dzcdn.net") || h == "deezer.com" || h.endsWith(".deezer.com"))
+        }.getOrDefault(false)
+    }
+    val safeProvider = if (track.provider == "deezer") "deezer" else "local"
+    if (safeProvider != "deezer" && safePlaybackUri == null) return null
+    return track.copy(
+        id = cleanId,
+        provider = safeProvider,
+        title = track.title.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
+        artist = track.artist.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
+        album = track.album.replace(Regex("\\p{Cntrl}"), "").trim().take(256),
+        artworkUrl = safeArtwork,
+        playbackUri = safePlaybackUri
+    )
+}
 
 enum class JamMode { NONE, HOST, GUEST }
 
@@ -79,7 +153,12 @@ class JamManager(
         private const val POLL_INTERVAL_MS = 1500L
         private const val PARTICIPANT_TTL_MS = 15_000L
         private const val SYNC_DRIFT_THRESHOLD_MS = 2800L
+        private const val MAX_PARTICIPANTS = 64
+        private const val MAX_REMOTE_QUEUE_SIZE = 200
+        private const val MAX_HTTP_BODY_BYTES = 256 * 1024
     }
+
+    private val secureRandom = SecureRandom()
 
     private val appContext = context.applicationContext
     private val nsdManager = appContext.getSystemService(Context.NSD_SERVICE) as? NsdManager
@@ -174,7 +253,7 @@ class JamManager(
             }
         )
         mqttClient = client
-        val clientId = "pw-host-$code-${Random.nextInt(1000, 9999)}"
+        val clientId = "pw-host-$code-${1000 + secureRandom.nextInt(9000)}"
         client.connect(
             clientId = clientId,
             onConnected = {
@@ -206,20 +285,26 @@ class JamManager(
         )
     }
 
-    private suspend fun handleRelayCommand(payload: String) {
-        val req = runCatching { JSONObject(payload) }.getOrNull() ?: return
-        val guest = req.optString("guestName", "").trim()
-        if (guest.isNotBlank()) {
+    private fun recordGuestActivity(rawName: String) {
+        val guest = sanitizeParticipantName(rawName)
+        if (guest.isBlank()) return
+        if (guestLastSeen.containsKey(guest) || guestLastSeen.size < MAX_PARTICIPANTS) {
             guestLastSeen[guest] = System.currentTimeMillis()
             refreshParticipantsList()
         }
+    }
+
+    private suspend fun handleRelayCommand(payload: String) {
+        if (payload.length > MAX_HTTP_BODY_BYTES) return
+        val req = runCatching { JSONObject(payload) }.getOrNull() ?: return
+        recordGuestActivity(req.optString("guestName", ""))
         when (req.optString("type", "")) {
             "join" -> {
                 mqttClient?.publish(stateTopic(_state.value.jamCode), buildHostStateJson().toString(), retain = true)
             }
             "add_track" -> {
                 val trackObj = req.optJSONObject("track") ?: return
-                val track = runCatching { jsonTrack(trackObj) }.getOrNull() ?: return
+                val track = runCatching { jsonTrack(trackObj) }.getOrNull()?.let(::sanitizeRemoteJamTrack) ?: return
                 withContext(Dispatchers.Main) {
                     playbackManager.addToQueue(listOf(track))
                 }
@@ -233,7 +318,7 @@ class JamManager(
                         "toggle" -> playbackManager.togglePlayPause()
                         "next" -> playbackManager.skipNext()
                         "prev" -> playbackManager.skipPrevious()
-                        "seek" -> playbackManager.seekTo(req.optLong("positionMs", 0L))
+                        "seek" -> playbackManager.seekTo(req.optLong("positionMs", 0L).coerceAtLeast(0L))
                     }
                 }
                 delay(200)
@@ -244,11 +329,11 @@ class JamManager(
 
     fun joinJamByCode(jamCode: String, guestName: String = _state.value.guestName) {
         val cleanCode = jamCode.trim().uppercase().replace("PW-", "")
-        if (cleanCode.length < 4) {
+        if (!isValidJamCode(cleanCode)) {
             _state.value = _state.value.copy(errorMessage = "Geçerli bir Jam kodu girin (örn: A7K2M9)")
             return
         }
-        val cleanGuest = guestName.trim().ifEmpty { Build.MODEL.ifBlank { "Misafir" } }
+        val cleanGuest = sanitizeParticipantName(guestName).ifEmpty { Build.MODEL.ifBlank { "Misafir" }.take(48) }
 
         stopJam()
         lastSyncedTrackId = null
@@ -289,7 +374,7 @@ class JamManager(
             }
         )
         mqttClient = client
-        val clientId = "pw-guest-$cleanCode-${Random.nextInt(1000, 9999)}"
+        val clientId = "pw-guest-$cleanCode-${1000 + secureRandom.nextInt(9000)}"
         client.connect(
             clientId = clientId,
             onConnected = {
@@ -328,13 +413,17 @@ class JamManager(
     }
 
     fun joinJam(hostAddress: String, jamCode: String, guestName: String) {
-        val cleanAddr = hostAddress.trim().removePrefix("http://").removePrefix("https://").trimEnd('/')
-        if (cleanAddr.isBlank() || !cleanAddr.contains(':')) {
-            _state.value = _state.value.copy(errorMessage = "Geçerli bir IP:Port adresi girin (örn: 192.168.1.25:8765)")
+        val cleanAddr = parseValidatedLanHostPort(hostAddress)
+        if (cleanAddr == null) {
+            _state.value = _state.value.copy(errorMessage = "Geçerli bir yerel ağ IP:Port adresi girin (örn: 192.168.1.25:8765)")
             return
         }
-        val cleanCode = jamCode.trim().uppercase()
-        val cleanGuest = guestName.trim().ifEmpty { Build.MODEL.ifBlank { "Misafir" } }
+        val cleanCode = jamCode.trim().uppercase().replace("PW-", "")
+        if (!isValidJamCode(cleanCode)) {
+            _state.value = _state.value.copy(errorMessage = "Geçerli bir Jam kodu girin (örn: A7K2M9)")
+            return
+        }
+        val cleanGuest = sanitizeParticipantName(guestName).ifEmpty { Build.MODEL.ifBlank { "Misafir" }.take(48) }
 
         stopJam()
         lastSyncedTrackId = null
@@ -540,27 +629,27 @@ class JamManager(
     }
 
     private suspend fun applyRemoteState(json: JSONObject) {
-        val hostName = json.optString("hostName", "Ev Sahibi")
+        val hostName = sanitizeParticipantName(json.optString("hostName", "Ev Sahibi")).ifEmpty { "Ev Sahibi" }
         val allowControls = json.optBoolean("allowGuestControls", true)
         val remotePlaying = json.optBoolean("isPlaying", false)
-        val remotePos = json.optLong("positionMs", 0L)
+        val remotePos = json.optLong("positionMs", 0L).coerceAtLeast(0L)
         val updatedAtMs = json.optLong("updatedAtMs", System.currentTimeMillis())
 
         val participantsArr = json.optJSONArray("participants") ?: JSONArray()
         val participants = buildList {
-            for (i in 0 until participantsArr.length()) {
-                participantsArr.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+            for (i in 0 until minOf(participantsArr.length(), MAX_PARTICIPANTS)) {
+                sanitizeParticipantName(participantsArr.optString(i)).takeIf { it.isNotBlank() }?.let(::add)
             }
         }
 
         val remoteTrackJson = json.optJSONObject("currentTrack")
-        val remoteTrack = remoteTrackJson?.let { runCatching { jsonTrack(it) }.getOrNull() }
+        val remoteTrack = remoteTrackJson?.let { runCatching { jsonTrack(it) }.getOrNull()?.let(::sanitizeRemoteJamTrack) }
 
         val queueArr = json.optJSONArray("queue") ?: JSONArray()
         val remoteQueue = buildList {
-            for (i in 0 until queueArr.length()) {
+            for (i in 0 until minOf(queueArr.length(), MAX_REMOTE_QUEUE_SIZE)) {
                 queueArr.optJSONObject(i)?.let { obj ->
-                    runCatching { jsonTrack(obj) }.getOrNull()?.let(::add)
+                    runCatching { jsonTrack(obj) }.getOrNull()?.let(::sanitizeRemoteJamTrack)?.let(::add)
                 }
             }
         }
@@ -638,36 +727,49 @@ class JamManager(
             var contentLength = 0
             for (line in lines.drop(1)) {
                 if (line.startsWith("Content-Length:", ignoreCase = true)) {
-                    contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
+                    val parsedLen = line.substringAfter(":").trim().toIntOrNull()
+                    if (parsedLen == null || parsedLen < 0) {
+                        writeHttpResponse(output, 400, "application/json", JSONObject().put("error", "Invalid Content-Length").toString())
+                        return
+                    }
+                    if (parsedLen > MAX_HTTP_BODY_BYTES) {
+                        writeHttpResponse(output, 413, "application/json", JSONObject().put("error", "Payload too large").toString())
+                        return
+                    }
+                    contentLength = parsedLen
                 }
             }
             val body = if (contentLength > 0) {
-                val buf = ByteArray(contentLength.coerceAtMost(256 * 1024))
+                val buf = ByteArray(contentLength)
                 var read = 0
                 while (read < buf.size) {
                     val n = input.read(buf, read, buf.size - read)
                     if (n <= 0) break
                     read += n
                 }
+                if (read < contentLength) return
                 String(buf, 0, read, Charsets.UTF_8)
             } else ""
 
             val (status, contentType, responseBody) = when {
                 method == "GET" && path == "/" -> {
-                    Triple(200, "text/html; charset=utf-8", buildWebJamHtml())
+                    val params = parseQueryParams(query)
+                    val code = params["code"]?.trim()?.uppercase().orEmpty()
+                    if (verifyJamCodeConstantTime(_state.value.jamCode, code)) {
+                        Triple(200, "text/html; charset=utf-8", buildWebJamHtml(code))
+                    } else {
+                        Triple(403, "text/html; charset=utf-8", buildLockedWebJamHtml(hasAttempt = code.isNotEmpty()))
+                    }
                 }
                 method == "GET" && path == "/jam/state" -> {
                     val params = parseQueryParams(query)
                     val code = params["code"]?.trim()?.uppercase().orEmpty()
-                    val guest = params["name"]?.trim().orEmpty()
+                    val guest = params["name"].orEmpty()
                     val current = _state.value
-                    if (current.jamCode.isNotEmpty() && code.isNotEmpty() && code != current.jamCode) {
+                    if (!verifyJamCodeConstantTime(current.jamCode, code)) {
                         Triple(403, "application/json", JSONObject().put("error", "Jam kodu hatalı").toString())
                     } else {
-                        if (guest.isNotBlank()) {
-                            guestLastSeen[guest] = System.currentTimeMillis()
-                            refreshParticipantsList()
-                        }
+                        recordGuestActivity(guest)
                         Triple(200, "application/json", buildHostStateJson().toString())
                     }
                 }
@@ -675,12 +777,12 @@ class JamManager(
                     val req = runCatching { JSONObject(body) }.getOrNull()
                     val code = req?.optString("code", "")?.trim()?.uppercase().orEmpty()
                     val trackObj = req?.optJSONObject("track")
-                    if (code.isNotEmpty() && code != _state.value.jamCode) {
+                    if (!verifyJamCodeConstantTime(_state.value.jamCode, code)) {
                         Triple(403, "application/json", JSONObject().put("error", "Jam kodu hatalı").toString())
                     } else if (trackObj == null) {
                         Triple(400, "application/json", JSONObject().put("error", "Geçersiz şarkı").toString())
                     } else {
-                        val track = runCatching { jsonTrack(trackObj) }.getOrNull()
+                        val track = runCatching { jsonTrack(trackObj) }.getOrNull()?.let(::sanitizeRemoteJamTrack)
                         if (track != null) {
                             withContext(Dispatchers.Main) {
                                 playbackManager.addToQueue(listOf(track))
@@ -695,7 +797,7 @@ class JamManager(
                     val req = runCatching { JSONObject(body) }.getOrNull()
                     val code = req?.optString("code", "")?.trim()?.uppercase().orEmpty()
                     val action = req?.optString("action", "").orEmpty()
-                    if (code.isNotEmpty() && code != _state.value.jamCode) {
+                    if (!verifyJamCodeConstantTime(_state.value.jamCode, code)) {
                         Triple(403, "application/json", JSONObject().put("error", "Jam kodu hatalı").toString())
                     } else if (!_state.value.allowGuestControls) {
                         Triple(403, "application/json", JSONObject().put("error", "Ev sahibi misafir kontrolünü kapattı").toString())
@@ -705,7 +807,7 @@ class JamManager(
                                 "toggle" -> playbackManager.togglePlayPause()
                                 "next" -> playbackManager.skipNext()
                                 "prev" -> playbackManager.skipPrevious()
-                                "seek" -> playbackManager.seekTo(req?.optLong("positionMs", 0L) ?: 0L)
+                                "seek" -> playbackManager.seekTo((req?.optLong("positionMs", 0L) ?: 0L).coerceAtLeast(0L))
                             }
                         }
                         Triple(200, "application/json", JSONObject().put("ok", true).toString())
@@ -714,18 +816,40 @@ class JamManager(
                 else -> Triple(404, "application/json", JSONObject().put("error", "Not found").toString())
             }
 
-            val respBytes = responseBody.toByteArray(Charsets.UTF_8)
-            val headers = buildString {
-                append("HTTP/1.1 $status OK\r\n")
-                append("Content-Type: $contentType\r\n")
-                append("Content-Length: ${respBytes.size}\r\n")
-                append("Access-Control-Allow-Origin: *\r\n")
-                append("Connection: close\r\n\r\n")
-            }.toByteArray(Charsets.UTF_8)
-            output.write(headers)
-            output.write(respBytes)
-            output.flush()
+            writeHttpResponse(output, status, contentType, responseBody)
         }
+    }
+
+    private fun writeHttpResponse(
+        output: BufferedOutputStream,
+        status: Int,
+        contentType: String,
+        responseBody: String
+    ) {
+        val reason = when (status) {
+            200 -> "OK"
+            400 -> "Bad Request"
+            403 -> "Forbidden"
+            404 -> "Not Found"
+            413 -> "Payload Too Large"
+            else -> "Error"
+        }
+        val respBytes = responseBody.toByteArray(Charsets.UTF_8)
+        val isHtml = contentType.startsWith("text/html")
+        val headers = buildString {
+            append("HTTP/1.1 $status $reason\r\n")
+            append("Content-Type: $contentType\r\n")
+            append("Content-Length: ${respBytes.size}\r\n")
+            append("X-Content-Type-Options: nosniff\r\n")
+            append("Cache-Control: no-store\r\n")
+            if (isHtml) {
+                append("Content-Security-Policy: default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'\r\n")
+            }
+            append("Connection: close\r\n\r\n")
+        }.toByteArray(Charsets.UTF_8)
+        output.write(headers)
+        output.write(respBytes)
+        output.flush()
     }
 
     private fun refreshParticipantsList() {
@@ -765,15 +889,48 @@ class JamManager(
         }
     }
 
-    private fun buildWebJamHtml(): String {
-        val code = _state.value.jamCode
+    private fun buildLockedWebJamHtml(hasAttempt: Boolean): String {
+        val errHtml = if (hasAttempt) "<p style=\"color:#f87171\">Jam kodu geçersiz.</p>" else ""
         return """
             <!doctype html>
             <html lang="tr">
             <head>
               <meta charset="utf-8" />
               <meta name="viewport" content="width=device-width,initial-scale=1" />
-              <title>PlasmaWave Jam • $code</title>
+              <title>PlasmaWave Jam</title>
+              <style>
+                body{font-family:system-ui,-apple-system,sans-serif;background:#121318;color:#f5f5f7;margin:0;padding:20px;}
+                .card{background:#1d2028;border-radius:16px;padding:18px;max-width:420px;margin:40px auto;border:1px solid #2e323d;}
+                h1{font-size:20px;margin:0 0 8px;}
+                p{color:#a1a9b1;margin:4px 0 14px;font-size:14px;}
+                input{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #2e323d;background:#121318;color:#fff;font-size:16px;text-transform:uppercase;margin-bottom:12px;}
+                button{width:100%;padding:12px;border:none;border-radius:10px;background:#3daee9;color:#fff;font-weight:700;cursor:pointer;}
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>PlasmaWave Jam</h1>
+                <p>Oturuma katılmak için ev sahibinin paylaştığı Jam kodunu girin.</p>
+                $errHtml
+                <form method="get" action="/">
+                  <input name="code" maxlength="12" pattern="[A-Za-z0-9]{4,12}" placeholder="JAM KODU" required />
+                  <button type="submit">Katıl</button>
+                </form>
+              </div>
+            </body>
+            </html>
+        """.trimIndent()
+    }
+
+    internal fun buildWebJamHtml(verifiedCode: String): String {
+        val safeCode = verifiedCode.trim().uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(12)
+        return """
+            <!doctype html>
+            <html lang="tr">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width,initial-scale=1" />
+              <title>PlasmaWave Jam • $safeCode</title>
               <style>
                 body{font-family:system-ui,-apple-system,sans-serif;background:#121318;color:#f5f5f7;margin:0;padding:20px;}
                 .card{background:#1d2028;border-radius:16px;padding:18px;max-width:480px;margin:0 auto 16px;border:1px solid #2e323d;}
@@ -788,7 +945,7 @@ class JamManager(
             </head>
             <body>
               <div class="card">
-                <span class="badge">JAM KODU: $code</span>
+                <span class="badge">JAM KODU: $safeCode</span>
                 <h1 id="title">Yükleniyor...</h1>
                 <p id="artist">-</p>
                 <p id="parts"></p>
@@ -803,17 +960,25 @@ class JamManager(
                 <div id="queue"></div>
               </div>
               <script>
+                const JAM_CODE = '$safeCode';
                 async function refresh(){
-                  const r = await fetch('/jam/state?code=$code&name=Web+Misafir');
+                  const r = await fetch('/jam/state?code=' + encodeURIComponent(JAM_CODE) + '&name=Web+Misafir');
+                  if (!r.ok) return;
                   const d = await r.json();
-                  document.getElementById('title').textContent = d.currentTrack ? d.currentTrack.title : 'Çalan şarkı yok';
-                  document.getElementById('artist').textContent = d.currentTrack ? d.currentTrack.artist : '';
+                  document.getElementById('title').textContent = d.currentTrack ? (d.currentTrack.title || '') : 'Çalan şarkı yok';
+                  document.getElementById('artist').textContent = d.currentTrack ? (d.currentTrack.artist || '') : '';
                   document.getElementById('parts').textContent = 'Katılımcılar: ' + (d.participants || []).join(', ');
                   const q = document.getElementById('queue');
-                  q.innerHTML = (d.queue || []).map((t,i)=>'<div class="q-item">'+(i+1)+'. '+t.title+' — '+t.artist+'</div>').join('');
+                  q.replaceChildren();
+                  (d.queue || []).forEach((t, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'q-item';
+                    div.textContent = (i + 1) + '. ' + (t.title || '') + ' — ' + (t.artist || '');
+                    q.appendChild(div);
+                  });
                 }
                 async function ctrl(action){
-                  await fetch('/jam/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:'$code',action})});
+                  await fetch('/jam/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:JAM_CODE,action})});
                   setTimeout(refresh, 300);
                 }
                 refresh(); setInterval(refresh, 2000);
@@ -834,11 +999,11 @@ class JamManager(
                 0 -> if (b == '\r'.code) 1 else 0
                 1 -> if (b == '\n'.code) 2 else 0
                 2 -> if (b == '\r'.code) 3 else 0
-                3 -> if (b == '\n'.code) break else 0
+                3 -> if (b == '\n'.code) return buffer.toByteArray() else 0
                 else -> 0
             }
         }
-        return buffer.toByteArray()
+        return null
     }
 
     private fun parseQueryParams(query: String): Map<String, String> {
@@ -918,6 +1083,6 @@ class JamManager(
 
     private fun generateJamCode(): String {
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        return (1..6).map { chars[Random.nextInt(chars.length)] }.joinToString("")
+        return (1..6).map { chars[secureRandom.nextInt(chars.length)] }.joinToString("")
     }
 }

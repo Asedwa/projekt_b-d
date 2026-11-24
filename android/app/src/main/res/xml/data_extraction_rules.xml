@@ -2,8 +2,20 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="deezer_session.xml" />
+        <exclude domain="sharedpref" path="listening_history.xml" />
+        <exclude domain="sharedpref" path="privacy_settings.xml" />
+        <exclude domain="sharedpref" path="resume_playback.xml" />
+        <exclude domain="sharedpref" path="fast_playlist_cache_v1.xml" />
+        <exclude domain="file" path="plasmawave_data" />
+        <exclude domain="database" path="downloads.db" />
+        <exclude domain="database" path="downloads.db-wal" />
+        <exclude domain="database" path="downloads.db-shm" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="deezer_session.xml" />
+        <exclude domain="file" path="plasmawave_data" />
+        <exclude domain="database" path="downloads.db" />
+        <exclude domain="database" path="downloads.db-wal" />
+        <exclude domain="database" path="downloads.db-shm" />
     </device-transfer>
 </data-extraction-rules>

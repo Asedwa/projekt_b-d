@@ -12,12 +12,17 @@ import kotlinx.coroutines.launch
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
+import java.io.IOException
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SNIHostName
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 
 /**
- * Lightweight, zero-dependency MQTT v3.1.1 TCP client for cross-network Jam relay.
+ * Lightweight, zero-dependency MQTT v3.1.1 over TLS (port 8883) client for cross-network Jam relay.
  */
 class MqttRelayClient(
     private val onMessage: (topic: String, payload: String) -> Unit,
@@ -25,10 +30,34 @@ class MqttRelayClient(
 ) {
     companion object {
         private const val TAG = "MqttRelayClient"
+        internal const val MAX_PACKET_BYTES = 512 * 1024
         private val BROKERS = listOf(
-            "broker.emqx.io" to 1883,
-            "broker.hivemq.com" to 1883
+            "broker.emqx.io" to 8883,
+            "broker.hivemq.com" to 8883
         )
+
+        internal fun readRemainingLengthBounded(
+            inp: DataInputStream,
+            maxBytes: Int = MAX_PACKET_BYTES
+        ): Int {
+            var multiplier = 1
+            var value = 0
+            var bytesRead = 0
+            var digit: Int
+            do {
+                if (bytesRead >= 4) {
+                    throw IOException("Malformed MQTT remaining length")
+                }
+                digit = inp.readUnsignedByte()
+                bytesRead++
+                value += (digit and 127) * multiplier
+                if (value < 0 || value > maxBytes) {
+                    throw IOException("MQTT packet exceeds maximum allowed size ($value bytes)")
+                }
+                multiplier *= 128
+            } while ((digit and 128) != 0)
+            return value
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -49,31 +78,55 @@ class MqttRelayClient(
             var connectedSocket: Socket? = null
             var lastErr: String? = null
             for ((host, port) in BROKERS) {
+                var rawSocket: Socket? = null
+                var tlsSocket: SSLSocket? = null
                 try {
-                    val s = Socket()
-                    s.connect(InetSocketAddress(host, port), 5000)
-                    s.soTimeout = 45_000
-                    val out = s.getOutputStream()
-                    val inp = DataInputStream(BufferedInputStream(s.getInputStream()))
+                    val tcp = Socket()
+                    rawSocket = tcp
+                    tcp.connect(InetSocketAddress(host, port), 5000)
+                    tcp.soTimeout = 45_000
+
+                    val sslFactory = SSLSocketFactory.getDefault() as SSLSocketFactory
+                    val ssl = (sslFactory.createSocket(tcp, host, port, true) as SSLSocket).apply {
+                        soTimeout = 45_000
+                        enabledProtocols = supportedProtocols
+                            .filter { it == "TLSv1.3" || it == "TLSv1.2" }
+                            .toTypedArray()
+                            .takeIf { it.isNotEmpty() } ?: enabledProtocols
+                        sslParameters = sslParameters.apply {
+                            endpointIdentificationAlgorithm = "HTTPS"
+                            serverNames = listOf(SNIHostName(host))
+                        }
+                    }
+                    tlsSocket = ssl
+                    ssl.startHandshake()
+                    if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(host, ssl.session)) {
+                        throw IOException("TLS sertifika alan adı doğrulaması başarısız: $host")
+                    }
+
+                    val out = ssl.getOutputStream()
+                    val inp = DataInputStream(BufferedInputStream(ssl.getInputStream()))
                     sendConnectPacket(out, clientId)
                     // Read CONNACK (4 bytes: 0x20, 0x02, flags, returnCode)
                     val b0 = inp.readUnsignedByte()
-                    val remLen = readRemainingLength(inp)
+                    val remLen = readRemainingLengthBounded(inp, 64)
                     val ackPayload = ByteArray(remLen)
                     inp.readFully(ackPayload)
                     if ((b0 and 0xF0) == 0x20 && remLen >= 2 && ackPayload[1].toInt() == 0) {
-                        connectedSocket = s
-                        socket = s
+                        connectedSocket = ssl
+                        socket = ssl
                         output = out
                         isConnected = true
                         startLoops(inp)
                         onConnected()
                         return@launch
                     } else {
-                        s.close()
+                        runCatching { ssl.close() }
                         lastErr = "Broker bağlantıyı reddetti"
                     }
                 } catch (e: Exception) {
+                    runCatching { tlsSocket?.close() }
+                    runCatching { rawSocket?.close() }
                     lastErr = e.message
                     Log.w(TAG, "Broker $host:$port failed: ${e.message}")
                 }
@@ -247,15 +300,6 @@ class MqttRelayClient(
         } while (x > 0)
     }
 
-    private fun readRemainingLength(inp: DataInputStream): Int {
-        var multiplier = 1
-        var value = 0
-        var digit: Int
-        do {
-            digit = inp.readUnsignedByte()
-            value += (digit and 127) * multiplier
-            multiplier *= 128
-        } while ((digit and 128) != 0)
-        return value
-    }
+    private fun readRemainingLength(inp: DataInputStream): Int =
+        readRemainingLengthBounded(inp, MAX_PACKET_BYTES)
 }

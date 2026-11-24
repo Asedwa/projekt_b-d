@@ -131,7 +131,12 @@ class PlasmaPlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
-        return mediaSession
+        val callerPkg = controllerInfo.packageName
+        val allowed = callerPkg == packageName ||
+            callerPkg == "android" ||
+            callerPkg == "com.android.systemui" ||
+            controllerInfo.isTrusted
+        return if (allowed) mediaSession else null
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
