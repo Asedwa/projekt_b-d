@@ -6,7 +6,7 @@
 [![Rust + UniFFI](https://img.shields.io/badge/Rust-UniFFI%20Core-DEA584?style=flat-square&logo=rust&logoColor=black)](#mimari)
 [![Lisans](https://img.shields.io/badge/Lisans-GPL--3.0--or--later-blue?style=flat-square)](#lisans)
 
-**projekt_b-d**, Deezer kitaplığını, çalma listelerini ve cihazındaki yerel müzikleri yüksek performanslı, kişiselleştirilebilir bir **Kotlin + Jetpack Compose + Rust** oynatıcısında bir araya getiren modern bir Android müzik uygulamasıdır.
+**projekt_b-d**, Deezer kullanan ve android uygulamasından memnun olmayan kişiler için tasarlanmış tamamen ücretsiz bir uygulamadır. Hedefim kişiselleştirilebilirlik ve performansı yüksek bir uygulama.
 
 ---
 
