@@ -28,7 +28,12 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.ConcurrentHashMap
+import org.kde.plasmawave.BuildConfig
 import org.kde.plasmawave.PlasmaWaveApp
+import org.kde.plasmawave.update.AppUpdateRelease
+import org.kde.plasmawave.update.AppUpdater
+import org.kde.plasmawave.update.InstallLaunchResult
+import org.kde.plasmawave.update.UpdateState
 import org.kde.plasmawave.jam.JamManager
 import org.kde.plasmawave.player.PlaybackManager
 import org.kde.plasmawave.deezer.DeezerSession
@@ -324,6 +329,150 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setAmbientBackgroundEnabled(enabled: Boolean) {
         _ambientBackgroundEnabled.value = enabled
         displayPrefs.edit().putBoolean("ambient_background_enabled", enabled).apply()
+    }
+
+    // ── In-App Automatic Update (GitHub Releases) ─────────────────────────────────
+    private val _autoUpdateCheckEnabled = MutableStateFlow(
+        displayPrefs.getBoolean("auto_update_check_enabled", true)
+    )
+    val autoUpdateCheckEnabled: StateFlow<Boolean> = _autoUpdateCheckEnabled.asStateFlow()
+    fun setAutoUpdateCheckEnabled(enabled: Boolean) {
+        _autoUpdateCheckEnabled.value = enabled
+        displayPrefs.edit().putBoolean("auto_update_check_enabled", enabled).apply()
+    }
+
+    private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
+
+    private val _updateDialogVisible = MutableStateFlow(false)
+    val updateDialogVisible: StateFlow<Boolean> = _updateDialogVisible.asStateFlow()
+
+    private var updateCheckJob: Job? = null
+    private var updateDownloadJob: Job? = null
+    @Volatile private var pendingInstallApkFile: File? = null
+
+    fun checkForUpdates(manual: Boolean = false) {
+        if (!manual && !_autoUpdateCheckEnabled.value) return
+        val current = _updateState.value
+        if (current is UpdateState.Checking || current is UpdateState.Downloading) {
+            if (manual) _updateDialogVisible.value = true
+            return
+        }
+        if (manual && current is UpdateState.Available) {
+            _updateDialogVisible.value = true
+            return
+        }
+        if (manual && current is UpdateState.ReadyToInstall) {
+            _updateDialogVisible.value = true
+            return
+        }
+        if (!manual) {
+            val lastCheckMs = displayPrefs.getLong("last_update_check_ms", 0L)
+            val elapsedMs = System.currentTimeMillis() - lastCheckMs
+            if (elapsedMs in 0L until (6L * 60L * 60L * 1000L)) {
+                return
+            }
+        }
+
+        updateCheckJob?.cancel()
+        updateCheckJob = viewModelScope.launch {
+            _updateState.value = UpdateState.Checking
+            AppUpdater.cleanupCachedApks(getApplication())
+            val result = AppUpdater.fetchLatestRelease(BuildConfig.VERSION_NAME)
+            result.onSuccess { release ->
+                displayPrefs.edit().putLong("last_update_check_ms", System.currentTimeMillis()).apply()
+                if (release == null) {
+                    _updateState.value = UpdateState.UpToDate(BuildConfig.VERSION_NAME)
+                    if (manual) {
+                        _statusMessage.value = "Uygulama güncel (v${BuildConfig.VERSION_NAME})"
+                    }
+                } else {
+                    val skipped = displayPrefs.getString("dismissed_update_version", null)
+                    _updateState.value = UpdateState.Available(release)
+                    if (manual || skipped != release.version) {
+                        _updateDialogVisible.value = true
+                    }
+                }
+            }.onFailure { err ->
+                if (manual) {
+                    _updateState.value = UpdateState.Error(err.message ?: "Güncelleme kontrol edilemedi")
+                    _updateDialogVisible.value = true
+                } else {
+                    _updateState.value = UpdateState.Idle
+                }
+            }
+        }
+    }
+
+    fun downloadAppUpdate(release: AppUpdateRelease) {
+        updateDownloadJob?.cancel()
+        _updateDialogVisible.value = true
+        updateDownloadJob = viewModelScope.launch {
+            _updateState.value = UpdateState.Downloading(
+                release = release,
+                progressPercent = 0,
+                downloadedBytes = 0L,
+                totalBytes = release.apkSizeBytes
+            )
+            val result = AppUpdater.downloadApk(
+                context = getApplication(),
+                release = release
+            ) { percent, downloaded, total ->
+                _updateState.value = UpdateState.Downloading(
+                    release = release,
+                    progressPercent = percent,
+                    downloadedBytes = downloaded,
+                    totalBytes = total
+                )
+            }
+            result.onSuccess { apkFile ->
+                _updateState.value = UpdateState.ReadyToInstall(release, apkFile)
+                val launchResult = installDownloadedUpdate(apkFile)
+                if (launchResult is InstallLaunchResult.Launched) {
+                    _updateDialogVisible.value = false
+                }
+            }.onFailure { err ->
+                _updateState.value = UpdateState.Error(err.message ?: "Güncelleme indirilemedi")
+                _updateDialogVisible.value = true
+            }
+        }
+    }
+
+    fun cancelAppUpdateDownload() {
+        updateDownloadJob?.cancel()
+        updateDownloadJob = null
+        val cur = _updateState.value
+        if (cur is UpdateState.Downloading) {
+            _updateState.value = UpdateState.Available(cur.release)
+        }
+        _updateDialogVisible.value = false
+    }
+
+    fun installDownloadedUpdate(apkFile: File): InstallLaunchResult {
+        val result = AppUpdater.launchInstaller(getApplication(), apkFile)
+        pendingInstallApkFile = if (result is InstallLaunchResult.NeedsPermission) apkFile else null
+        return result
+    }
+
+    fun resumePendingUpdateInstallIfPermitted() {
+        val file = pendingInstallApkFile ?: return
+        val app = getApplication<Application>()
+        if (app.packageManager.canRequestPackageInstalls() && file.exists()) {
+            pendingInstallApkFile = null
+            val result = AppUpdater.launchInstaller(app, file)
+            if (result is InstallLaunchResult.Launched) {
+                _updateDialogVisible.value = false
+            }
+        }
+    }
+
+    fun skipUpdateVersion(version: String) {
+        displayPrefs.edit().putString("dismissed_update_version", version).apply()
+        _updateDialogVisible.value = false
+    }
+
+    fun dismissUpdateDialog() {
+        _updateDialogVisible.value = false
     }
 
     private val _ambientBackdropStyle = MutableStateFlow(

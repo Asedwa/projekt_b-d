@@ -1,72 +1,102 @@
 # projekt_b-d 🎧
 
-Deezer kitaplığını ve çalma listelerini kişiselleştirilebilir bir oynatıcıda bir araya getiren Android müzik uygulaması.
+[![Son Sürüm](https://img.shields.io/github/v/release/Asedwa/projekt_b-d?label=S%C3%BCr%C3%BCm&style=flat-square&color=3daee9)](https://github.com/Asedwa/projekt_b-d/releases/latest)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://github.com/Asedwa/projekt_b-d/releases/latest)
+[![Kotlin + Compose](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](#mimari)
+[![Rust + UniFFI](https://img.shields.io/badge/Rust-UniFFI%20Core-DEA584?style=flat-square&logo=rust&logoColor=black)](#mimari)
+[![Lisans](https://img.shields.io/badge/Lisans-GPL--3.0--or--later-blue?style=flat-square)](#lisans)
 
-## APK indir
+**projekt_b-d**, Deezer kitaplığını, çalma listelerini ve cihazındaki yerel müzikleri yüksek performanslı, kişiselleştirilebilir bir **Kotlin + Jetpack Compose + Rust** oynatıcısında bir araya getiren modern bir Android müzik uygulamasıdır.
 
-[**Güncel Android APK’sını indir**](https://github.com/Asedwa/projekt_b-d/releases/latest)
+---
 
-Açılan sayfada **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını seç. Depo özel olduğu için GitHub hesabınla giriş yapman gerekir. APK, uygulamanın R8 optimizasyonlu release derlemesidir.
+## 📥 İndir ve Kur
 
-## 0.9.4 sürüm notu
+👉 [**Güncel Android APK'sını İndir (Releases)**](https://github.com/Asedwa/projekt_b-d/releases/latest)
 
-Uygulama genelindeki performans iyileştirmeleri tamamlandı: ana sayfa basılı tutma algılaması ve widget stil token hesaplamaları optimize edildi, açılış ve sekme geçişlerindeki ağır Main Thread I/O ile logo yüklemeleri arka plana (`Dispatchers.IO` / `Dispatchers.Default`) taşındı, `QuickCard` state abonelikleri ve `Brush`/`Shape` tahsisleri daraltıldı, yerel kapak çıkarma ve `ArtworkResolver` önbelleklemesi hızlandırıldı ve dağıtılan APK R8 optimizasyonlu release derlemesine geçirildi.
+1. Açılan sürüm sayfasında **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını indir.
+2. APK'yı açıp yükle (R8 optimizasyonlu release derlemesidir).
+3. İlk kurulumdan sonra uygulama, yeni sürümleri **uygulama içinden otomatik olarak** denetler, indirir ve tek dokunuşla kurmanı sağlar (**Ayarlar → Eklentiler ve Hakkında → Güncellemeler**).
 
-## 0.9.3 sürüm notu
+---
 
-Ana sayfa performansı iyileştirildi: müzik akışı (`block_feed`) öğeleri için `LazyColumn` sanallaştırması geri getirildi, oynatma sırasındaki periyodik state abonelikleri yalnızca ilgili widget'lara daraltıldı ve `getQuickArtists` çağrısı önbellekle birlikte arka plan iş parçacığına (`Dispatchers.IO`) taşınarak kaydırma takılmaları azaltıldı.
+## ✨ Öne Çıkan Özellikler
 
-## 0.9.2 sürüm notu
+### 🎨 Tasarım, Tema ve Tam Ekran Oynatıcı
+- **Saydam Cam Now Playing:** Çalan albüm kapağından Rust palet motoruyla üretilen derin ışık hüzmeleri, saydam cam yüzeyler ve kesintisiz geçiş animasyonu.
+- **12 Canlı Ortam Arka Planı:** İpek Aurora, Nebula Küreleri, Okyanus Dalgaları, Siber Halkalar, Yıldız Tozu, Prizma Hüzmeleri, Kuzey Perdesi, Güneş Patlaması, Dijital Yağmur, Kadife Dalgalar, Kozmik Girdap ve Ateş Böcekleri — tam ekran canlı önizleme ve basılı tutarak deseni inceleme desteğiyle.
+- **Kişiselleştirme:** Hazır ve özel temalar, dinamik albüm renkleri, özelleştirilebilir oynatıcı alt cep tuşları, ilerleme çubuğu stilleri, uygulama ikonu ve özel başlık logosu.
+- **120 Hz Akıcı Arayüz:** Sıfır tahsisli (zero-alloc) shader önbelleği ve kaydırma sırasında arka plan optimizasyonu ile akıcı liste deneyimi.
 
-Ana sayfaya basılı tutarak widget düzenleme, sıralama ve boyut/stil kişiselleştirme desteği eklendi; ekran kapalıyken şarkı geçişlerindeki duraksamaları gidermek için kesintisiz ExoPlayer kuyruğu ve WakeLock/WifiLock kurtarma iyileştirildi; ana sayfa üst logo animasyonu optimize edildi ve çalma listesi önbellek tutarsızlığı (Rust SQLite geçersiz kılma ve eşzamanlı yazma koruması) giderildi.
+### 🎵 Müzik, Kitaplık ve Çevrimdışı Dinleme
+- **Deezer Entegrasyonu:** Hesap girişi, beğenilen şarkılar, çalma listeleri, Deezer Flow ve şarkı miksleri.
+- **Çevrimdışı İndirme:** Şarkı veya çalma listelerini MP3 ve FLAC olarak cihazına indir (`Müzik/PlasmaWave`), indirme sırasını yönet; Wi-Fi ve mobil veri için ayrı kalite seçimi yap.
+- **Yerel Müzik Oynatıcı:** Rust tabanlı hızlı yerel ses tarayıcısı, gömülü kapak okuyucu ve 10 sn altı kısa sesleri filtreleme.
 
-## 0.9.1 sürüm notu
+### 👥 Jam (Birlikte Dinle)
+- **Gerçek Zamanlı Eşzamanlı Dinleme:** TLS şifreli MQTT üzerinden oda koduyla arkadaşlarınla aynı şarkıyı saniyesi saniyesine birlikte dinle; isteğe bağlı misafir oynatma/ilerletme kontrolü.
 
-Arka plan stabilitesi iyileştirildi (`WakeLock` ve MQTT bağlantı kesme çökmeleri giderildi); Deezer beğeni ve çalma listeleri için disk önbelleği ile ağ geri dönüşünde otomatik yenileme eklendi. Ayrıca ortak OkHttp bağlantı havuzu, sonraki şarkı için arka plan ön-tamponlama, hızlı geçiş birleştirme ve indirilmiş şarkıların doğrudan diskten oynatılmasıyla şarkı geçiş süreleri hızlandırıldı.
+### 🧩 Modüler Ana Sayfa ve İstatistikler
+- **Özelleştirilebilir Ana Sayfa:** Ana sayfaya basılı tutarak widget'ları sürükle-bırak ile sırala, boyut/stil değiştir veya yeni widget ekle.
+- **Dinleme İstatistikleri ve Devamlılık:** Toplam dinleme süresi, en çok çalınan parçalar/sanatçılar, kaldığın yerden devam et, uyku zamanlayıcısı ve gizli dinleme oturumu.
 
-## 0.9 sürüm notu
+### 🔄 Otomatik Güncelleme
+- Uygulama açılışında GitHub Releases üzerinden yeni sürümü otomatik denetler, sürüm notlarını gösterir, APK'yı uygulama içinde indirip doğrulayarak kurulumu başlatır.
 
-Eksik ve yerel parça kapakları için otomatik yedek kapak çözümü ile gömülü ses dosyası kapak okuyucusu eklendi; sade arayüz (`calm` mod) yüzey, kenarlık ve vurgu renkleri iyileştirildi.
+---
 
-## 0.8 sürüm notu
+## 📋 Sürüm Notları
 
-Breeze tarzı sade ve nötr koyu arayüz varsayılan hale getirildi: renkli zemin gradyanları, kart kenarlıkları, daire içi ikon kapları ve kart üstü pin rozetleri kaldırıldı; vurgu rengi yalnızca ana aksiyon, oynatma/ilerleme ve aktif sekmeye indirildi. Çalan şarkı kapağından Palette ile çekilen dinamik renkler artık MiniPlayer ve tam ekran oynatıcıya özel olarak uygulanıyor. Önceki görünüm için Ayarlar'a **Eski Mod** seçeneği eklendi.
+### `0.12.0` — İlk Açık Sürüm & Otomatik Güncelleme
+- **Uygulama içi otomatik güncelleme:** GitHub Releases üzerinden otomatik sürüm kontrolü, ilerleme çubuklu güvenli APK indirme, tek dokunuşla kurulum ve Ayarlar üzerinden manuel denetim.
+- **Açık kaynak çıkışı:** Yenilenen GitHub sayfası, sürüm akışı ve dokümantasyon.
 
-## 0.7 sürüm notu
+### `0.11.x` — Cam Now Playing, Güvenlik, Jam & Akıcılık
+- **0.11.2:** Ana sayfa kaydırma akıcılığı optimize edildi (ortam arka planı 30 FPS + sıfır tahsisli shader önbelleği + kaydırmada dondurma ve hedef boyutta kapak çözme).
+- **0.11.1:** Jam misafir ilerletme, şarkı atlama ve ara belleğe alma senkronizasyonu düzeltildi.
+- **0.11.0:** Rust palet motoru destekli saydam cam Now Playing ekranı, tam ekran ortam önizlemesinde basılı tutarak deseni görme ve kapsamlı güvenlik sertleştirmesi (MQTT TLS 8883, Jam davet onayı, WebView/yönlendirme/indirme yolu ve yedekleme güvenliği).
 
-Kilit ekranındaki ileri/geri şarkı kontrolleri düzeltildi. Ekran kapalıyken otomatik şarkı geçişi ve eşzamanlı kuyruk işlemleri daha güvenilir hale getirildi.
+<details>
+<summary>Daha önceki sürümler (0.6 – 0.10.5)</summary>
 
-## 0.6 sürüm notu
+- **0.10.x:** 6 yeni hareketli ortam arka planı ve tam ekran canlı önizleme, Rust tabanlı yerel müzik tarayıcı, 10 sn kısa ses filtresi, rastgele tema, oynatıcı alt cep tuşları ve yeni uygulama logosu.
+- **0.9.x:** R8 release derlemesi, LazyColumn sanallaştırma, modüler ana sayfa widget düzenleme, kesintisiz Media3 kuyruk geçişleri ve yedek albüm kapağı çözümü.
+- **0.8:** Breeze tarzı sade koyu arayüz ve dinamik albüm renkleri.
+- **0.6 – 0.7:** Rust + UniFFI çekirdeğine geçiş ve kilit ekranı / arka plan oynatma kararlılığı.
 
-Rust’a kısmi geçiş yapıldı: bazı ayarlar ve kullanıcı verileri Rust çekirdeğine taşındı. Geçiş devam ediyor.
+</details>
 
-## Özellikler
+---
 
-- Deezer hesabıyla giriş, beğenilen şarkılar ve çalma listeleri.
-- Şarkıları listelere ekleme ve listelerden çıkarma, sıralama ve kitaplıkta arama.
-- Deezer Flow, şarkı miksleri ve ana sayfaya sabitlenebilir hızlı erişim kartları.
-- Çalma sırası, karıştırma, tekrar ve uyku zamanlayıcısı.
-- Şarkıları veya çalma listelerini MP3 ve FLAC olarak indirme; indirme sırasını görüntüleme ve iptal etme.
-- Wi‑Fi ve mobil veri için ayrı dinleme kalitesi; isteğe bağlı mobil veriyle indirme.
-- Tema, albüm kapağı, oynatıcı ve uygulama simgesi için kişiselleştirme seçenekleri.
-- Yatay ekran ve desteklenen cihazlarda yüksek yenileme hızı.
+## 🏗️ Mimari
 
-Deezer’daki şarkıların ve ses kalitelerinin kullanılabilirliği hesabına, bölgeye ve parçaya bağlıdır. İndirilen dosyalar **Müzik/PlasmaWave** klasörüne kaydedilir.
+- **Arayüz:** Kotlin & Jetpack Compose (Material 3)
+- **Oynatma:** AndroidX Media3 / ExoPlayer
+- **Çekirdek:** Rust (`plasmawave-core`, SQLite depolama, palet & öneri motoru) + Mozilla UniFFI
+- **Eşzamanlı Dinleme:** TLS üzerinden MQTT (`MqttRelayClient` & `JamManager`)
 
-## Kaynak koddan derleme
+Daha fazla teknik ayrıntı için [ARCHITECTURE.md](ARCHITECTURE.md) dosyasına göz atabilirsin.
 
-Gerekenler: JDK 17, Android SDK ve NDK, Rust ve `cargo-ndk`.
+---
+
+## 🛠️ Kaynak Koddan Derleme
+
+**Gereksinimler:** JDK 17, Android SDK & NDK, Rust ve [`cargo-ndk`](https://github.com/bbqsrc/cargo-ndk).
 
 ```bash
 git clone https://github.com/Asedwa/projekt_b-d.git
 cd projekt_b-d/rust
 cargo ndk -t arm64-v8a -t x86_64 -o ../android/app/src/main/jniLibs build -p android-ffi --release --locked
 cd ../android
-./gradlew assembleDebug
+./gradlew :app:assembleRelease
 ```
 
-APK, `android/app/build/outputs/apk/debug/app-debug.apk` konumunda oluşturulur. Arayüz Kotlin ve Jetpack Compose, oynatma Media3, uygulama çekirdeği Rust ve UniFFI kullanır.
+Derlenen APK `android/app/build/outputs/apk/release/app-release.apk` konumunda oluşturulur.
 
-## Lisans
+> Deezer'daki şarkıların ve ses kalitelerinin kullanılabilirliği hesabına, bölgeye ve parçaya bağlıdır. İndirilen dosyalar cihazda **Müzik/PlasmaWave** klasörüne kaydedilir.
 
-GPL-3.0-or-later.
+---
+
+## 📄 Lisans
+
+Bu proje **GPL-3.0-or-later** lisansı ile lisanslanmıştır.

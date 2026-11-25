@@ -56,6 +56,7 @@ import org.kde.plasmawave.ui.components.MiniPlayer
 import org.kde.plasmawave.ui.components.PlaylistPicker
 import org.kde.plasmawave.ui.components.SleepTimerDialog
 import org.kde.plasmawave.ui.components.SongLongPressBottomSheet
+import org.kde.plasmawave.ui.components.UpdateDialog
 import org.kde.plasmawave.ui.components.rememberFullPlayerSheetController
 import org.kde.plasmawave.ui.screens.*
 import uniffi.plasmawave_core.FfiPlaylist
@@ -106,6 +107,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.resumePendingUpdateInstallIfPermitted()
     }
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -171,6 +177,10 @@ class MainActivity : ComponentActivity() {
             }
             LaunchedEffect(statusMessage) {
                 statusMessage?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_SHORT).show(); viewModel.clearStatusMessage() }
+            }
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(2_500L)
+                viewModel.checkForUpdates(manual = false)
             }
 
             val ambientScrollPause = remember { AmbientScrollPauseHolder() }
@@ -371,6 +381,19 @@ class MainActivity : ComponentActivity() {
                             viewModel = viewModel,
                             track = track,
                             onDismiss = { trackForPlaylist = null }
+                        )
+                    }
+
+                    val updateDialogVisible by viewModel.updateDialogVisible.collectAsState()
+                    val updateState by viewModel.updateState.collectAsState()
+                    if (updateDialogVisible) {
+                        UpdateDialog(
+                            state = updateState,
+                            onStartDownload = { viewModel.downloadAppUpdate(it) },
+                            onCancelDownload = { viewModel.cancelAppUpdateDownload() },
+                            onInstallApk = { viewModel.installDownloadedUpdate(it) },
+                            onSkipVersion = { viewModel.skipUpdateVersion(it) },
+                            onDismiss = { viewModel.dismissUpdateDialog() }
                         )
                     }
 

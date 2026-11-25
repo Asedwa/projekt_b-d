@@ -40,6 +40,7 @@ import org.kde.plasmawave.theme.LocalPlasmaColors
 import org.kde.plasmawave.ui.MainViewModel
 import org.kde.plasmawave.ui.components.HomeWidgetType
 import org.kde.plasmawave.ui.components.ListeningStatsDialog
+import org.kde.plasmawave.update.UpdateState
 
 private enum class DataDeleteAction(
     val title: String,
@@ -154,6 +155,8 @@ fun SettingsScreen(
     val downloads by viewModel.fullDownloads.collectAsState()
     val theme by viewModel.activeTheme.collectAsState()
     val settings by viewModel.settings.collectAsState()
+    val autoUpdateCheck by viewModel.autoUpdateCheckEnabled.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
     val colors = LocalPlasmaColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1288,6 +1291,33 @@ fun SettingsScreen(
                                 subtitle = "Yalnızca test içerikleri ve örnek veriler",
                                 checked = settings.showDevFixtures,
                                 onChange = { viewModel.updateSettings(settings.copy(showDevFixtures = it)) }
+                            )
+                        }
+
+                        PhoneSettingsGroupLabel("GÜNCELLEMELER")
+                        PhoneSettingsCard {
+                            SettingsToggle(
+                                icon = Icons.Default.SystemUpdate,
+                                title = "Otomatik güncelleme kontrolü",
+                                subtitle = "Uygulama açılışında GitHub üzerinden yeni sürüm kontrol et",
+                                checked = autoUpdateCheck,
+                                onChange = viewModel::setAutoUpdateCheckEnabled
+                            )
+                            PhoneSettingsDivider()
+                            val updateSubtitle = when (val st = updateState) {
+                                UpdateState.Checking -> "Kontrol ediliyor..."
+                                is UpdateState.Available -> "Yeni sürüm hazır: v${st.release.version} (indirmek için dokun)"
+                                is UpdateState.Downloading -> "İndiriliyor: v${st.release.version} (%${st.progressPercent})"
+                                is UpdateState.ReadyToInstall -> "Kuruluma hazır: v${st.release.version} (kurmak için dokun)"
+                                is UpdateState.UpToDate -> "Güncel (v${st.currentVersion})"
+                                is UpdateState.Error -> "Son kontrol başarısız • Tekrar dene"
+                                UpdateState.Idle -> "Mevcut sürüm: v${BuildConfig.VERSION_NAME}"
+                            }
+                            SettingsLink(
+                                icon = Icons.Default.Update,
+                                title = "Güncellemeleri denetle",
+                                subtitle = updateSubtitle,
+                                onClick = { viewModel.checkForUpdates(manual = true) }
                             )
                         }
 

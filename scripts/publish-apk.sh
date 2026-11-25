@@ -20,10 +20,6 @@ if [[ "$(git rev-parse origin/main)" != "$target" ]]; then
     exit 1
 fi
 repo_name="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
-if [[ "$(gh repo view "$repo_name" --json isPrivate --jq .isPrivate)" != "true" ]]; then
-    echo "The configured repository is not private; APK publication stopped." >&2
-    exit 1
-fi
 
 # The Rust libraries are ignored by Git, so rebuild them from this commit.
 (
@@ -49,9 +45,13 @@ trap 'rm -rf -- "$artifact_dir"' EXIT
 artifact_name="projekt_b-d-${version}.apk"
 cp android/app/build/outputs/apk/release/app-release.apk "$artifact_dir/$artifact_name"
 
-tag="build-$(date -u +%Y%m%d%H%M%S)-$(git rev-parse --short=12 HEAD)"
+tag="v${version}"
+if gh release view "$tag" --repo "$repo_name" >/dev/null 2>&1; then
+    tag="v${version}-$(date -u +%Y%m%d%H%M%S)"
+fi
+release_notes="${RELEASE_NOTES:-projekt_b-d v${version} Android release APK (kaynak commit: ${target}).}"
 # Publish only after the upload succeeds, so the latest link never points at an empty release.
 gh release create "$tag" "$artifact_dir/$artifact_name" --repo "$repo_name" --target "$target" \
-    --title "projekt_b-d $version" --notes "Android APK built from source commit $target." --draft
+    --title "projekt_b-d $version" --notes "$release_notes" --draft
 gh release edit "$tag" --repo "$repo_name" --draft=false --latest
 echo "Published $repo_name release $tag for $target."
