@@ -1,4 +1,4 @@
-# projekt_b-d 🎧
+# projekt_b-d 🧻
 
 [![Son Sürüm](https://img.shields.io/github/v/release/Asedwa/projekt_b-d?label=S%C3%BCr%C3%BCm&style=flat-square&color=3daee9)](https://github.com/Asedwa/projekt_b-d/releases/latest)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white)](https://github.com/Asedwa/projekt_b-d/releases/latest)
