@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "org.plasmawave.oxidized-copper",
+  "name": "Oksitli Bakır",
+  "author": "projekt_b-d",
+  "description": "Sıcak bakır vurgusu ve oksitlenmiş bakır (patina) alt tonlarıyla derin koyu tema.",
+  "dark": true,
+  "colors": {
+    "background": "#0F1B1A",
+    "surface": "#142422",
+    "surfaceVariant": "#1A2F2C",
+    "card": "#1B312E",
+    "cardPressed": "#24403C",
+    "accent": "#D97742",
+    "accentMuted": "#5C331D",
+    "onAccent": "#FCFCFC",
+    "text": "#F2F6F5",
+    "textSecondary": "#9AB5B0",
+    "textDisabled": "#5E7571",
+    "border": "#2C4B47",
+    "divider": "#203835",
+    "positive": "#27AE60",
+    "warning": "#F67400",
+    "negative": "#DA4453",
+    "scrim": "#B3000000"
+  },
+  "shapes": { "smallRadius": 6, "mediumRadius": 10, "largeRadius": 18 },
+  "spacing": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24 },
+  "typography": { "fontFamily": "system", "scale": 1.0 },
+  "elevation": { "low": 1, "medium": 4, "high": 12 },
+  "motion": { "shortMs": 120, "mediumMs": 220, "longMs": 360 }
+}

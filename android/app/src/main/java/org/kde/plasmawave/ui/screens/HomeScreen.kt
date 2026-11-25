@@ -2692,6 +2692,23 @@ private fun QuickThemeWidgetCard(
                         Text("Pinkie", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
                     }
                 }
+                item(key = "theme_oxidized_copper") {
+                    val selected = activeThemeId == "org.plasmawave.oxidized-copper"
+                    val dotCol = if (legacyUi) Color(0xFFD97742) else org.kde.plasmawave.theme.desaturateForCalmUi(Color(0xFFD97742))
+                    Button(
+                        onClick = { onSelectTheme("org.plasmawave.oxidized-copper") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (legacyUi) Color(0xFF1B312E) else colors.cardPressed,
+                            contentColor = if (legacyUi) Color(0xFFF2F6F5) else MaterialTheme.colorScheme.onSurface
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        border = if (selected && legacyUi) BorderStroke(2.dp, Color(0xFFD97742)) else null
+                    ) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(dotCol))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Oksitli Bakır", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium))
+                    }
+                }
                 items(customThemes, key = { it.id }) { spec ->
                     val selected = activeThemeId == spec.id
                     val cardCol = if (legacyUi) parseHexColorSafe(spec.cardHex, Color(0xFF232629)) else colors.cardPressed

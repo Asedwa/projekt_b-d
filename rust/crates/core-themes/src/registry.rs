@@ -13,6 +13,7 @@ const OXYGEN_NIGHT_JSON: &str = include_str!("../../../../themes/oxygen-night/th
 const NOTHING_JSON: &str = include_str!("../../../../themes/nothing/theme.json");
 const TWILIGHT_SPARKLE_JSON: &str = include_str!("../../../../themes/twilight-sparkle/theme.json");
 const PINKIE_PIE_JSON: &str = include_str!("../../../../themes/pinkie-pie/theme.json");
+const OXIDIZED_COPPER_JSON: &str = include_str!("../../../../themes/oxidized-copper/theme.json");
 
 #[derive(Debug)]
 pub struct ThemeRegistry {
@@ -43,6 +44,7 @@ impl ThemeRegistry {
             NOTHING_JSON,
             TWILIGHT_SPARKLE_JSON,
             PINKIE_PIE_JSON,
+            OXIDIZED_COPPER_JSON,
         ] {
             if let Ok(manifest) = ThemeManifest::parse_and_validate(json) {
                 map.insert(manifest.id.clone(), manifest);
@@ -89,6 +91,7 @@ impl ThemeRegistry {
             || id == "org.plasmawave.nothing"
             || id == "org.plasmawave.twilight-sparkle"
             || id == "org.plasmawave.pinkie-pie"
+            || id == "org.plasmawave.oxidized-copper"
         {
             return Err(DomainError::InvalidInput(
                 "cannot remove built-in themes".into(),
@@ -118,6 +121,9 @@ mod tests {
         let nothing = reg.get("org.plasmawave.nothing").expect("nothing present");
         assert_eq!(nothing.name, "Nothing OS");
         assert!(nothing.dark);
+        let copper = reg.get("org.plasmawave.oxidized-copper").expect("oxidized copper present");
+        assert_eq!(copper.name, "Oksitli Bakır");
+        assert!(copper.dark);
     }
 
     #[test]

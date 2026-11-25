@@ -440,6 +440,7 @@ fun ThemesScreen(
     if (showCustomThemeDialog) {
         CustomThemeEditorDialog(
             initialSpec = editingCustomTheme,
+            existingCustomCount = userCustomThemes.size,
             onDismiss = {
                 showCustomThemeDialog = false
                 editingCustomTheme = null
@@ -448,14 +449,14 @@ fun ThemesScreen(
                 viewModel.saveUserCustomTheme(spec)
                 showCustomThemeDialog = false
                 editingCustomTheme = null
-                Toast.makeText(context, "'${spec.name}' teması kaydedildi ve uygulandı!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Özel tema kaydedildi ve uygulandı!", Toast.LENGTH_SHORT).show()
             },
             onDelete = editingCustomTheme?.let { existing ->
                 {
                     viewModel.deleteUserCustomTheme(existing.id)
                     showCustomThemeDialog = false
                     editingCustomTheme = null
-                    Toast.makeText(context, "'${existing.name}' teması silindi.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Özel tema silindi.", Toast.LENGTH_SHORT).show()
                 }
             }
         )
@@ -680,6 +681,46 @@ private enum class ThemeColorRole(val label: String) {
     TEXT("Yazı")
 }
 
+private enum class ThemeAppearanceMode(val label: String) {
+    DARK("Koyu"),
+    AMOLED("AMOLED"),
+    LIGHT("Açık")
+}
+
+private enum class ThemeHarmonyMode(val label: String, val hueOffset: Float, val neutralBg: Boolean = false) {
+    MONOCHROME("Monokrom", 0f),
+    ANALOGOUS("Analog", 35f),
+    COMPLEMENTARY("Kontrast", 180f),
+    SPLIT("Bölünmüş", 150f),
+    NEUTRAL("Nötr", 0f, neutralBg = true)
+}
+
+private data class CustomThemePreset(
+    val label: String,
+    val bgHex: String,
+    val cardHex: String,
+    val accentHex: String,
+    val textHex: String
+)
+
+private val customThemePresets = listOf(
+    CustomThemePreset("Oksitli Bakır", "#0F1B1A", "#1B312E", "#D97742", "#F2F6F5"),
+    CustomThemePreset("AMOLED", "#000000", "#121215", "#3DAEE9", "#FFFFFF"),
+    CustomThemePreset("Gece Ormanı", "#0D1914", "#162B22", "#34D399", "#ECFDF5"),
+    CustomThemePreset("Cyberpunk", "#0B0914", "#17122B", "#FF2E93", "#F8FAFC"),
+    CustomThemePreset("Lavanta", "#161224", "#241E3B", "#A78BFA", "#F5F3FF"),
+    CustomThemePreset("Gün Batımı", "#1A1110", "#2B1B18", "#FB923C", "#FFF7ED"),
+    CustomThemePreset("Kuzey Buzulu", "#0E1726", "#18253B", "#38BDF8", "#F0F9FF"),
+    CustomThemePreset("Krem & Kahve", "#FAF6F0", "#EFE7DC", "#B45309", "#292524"),
+    CustomThemePreset("Sakura", "#FFF5F7", "#FCE7F3", "#EC4899", "#3B0764")
+)
+
+private fun contrastRatio(fg: Color, bg: Color): Float {
+    val l1 = fg.luminance() + 0.05f
+    val l2 = bg.luminance() + 0.05f
+    return maxOf(l1, l2) / minOf(l1, l2)
+}
+
 private fun colorToHexString(color: Color): String {
     val argb = color.toArgb()
     return String.format("#%06X", 0xFFFFFF and argb)
@@ -698,32 +739,43 @@ private fun hsvToComposeColor(h: Float, s: Float, v: Float): Color {
 @Composable
 private fun CustomThemeEditorDialog(
     initialSpec: CustomThemeSpec?,
+    existingCustomCount: Int,
     onDismiss: () -> Unit,
     onSave: (CustomThemeSpec) -> Unit,
     onDelete: (() -> Unit)? = null
 ) {
     val colors = LocalPlasmaColors.current
-    val defaultName = initialSpec?.name ?: "Benim Temam"
     val defaultBg = initialSpec?.backgroundHex ?: "#141022"
     val defaultCard = initialSpec?.cardHex ?: "#241D3D"
     val defaultAccent = initialSpec?.accentHex ?: "#A855F7"
     val defaultText = initialSpec?.textHex ?: "#F8FAFC"
 
-    var name by remember { mutableStateOf(defaultName) }
     var bgHex by remember { mutableStateOf(defaultBg) }
     var cardHex by remember { mutableStateOf(defaultCard) }
     var accentHex by remember { mutableStateOf(defaultAccent) }
     var textHex by remember { mutableStateOf(defaultText) }
-    var isDarkMode by remember {
-        mutableStateOf(parseHexColor(defaultBg, Color(0xFF141022)).luminance() < 0.5f)
+    var appearanceMode by remember {
+        val bgCol = parseHexColor(defaultBg, Color(0xFF141022))
+        mutableStateOf(
+            when {
+                bgCol.luminance() >= 0.5f -> ThemeAppearanceMode.LIGHT
+                defaultBg.equals("#000000", ignoreCase = true) -> ThemeAppearanceMode.AMOLED
+                else -> ThemeAppearanceMode.DARK
+            }
+        )
     }
+    var harmonyMode by remember { mutableStateOf(ThemeHarmonyMode.MONOCHROME) }
     var activeRole by remember { mutableStateOf(ThemeColorRole.ACCENT) }
     var colorIntensity by remember { mutableFloatStateOf(0.8f) }
+    var bgDepth by remember { mutableFloatStateOf(if (appearanceMode == ThemeAppearanceMode.AMOLED) 0f else 0.55f) }
+    var cardContrast by remember { mutableFloatStateOf(0.55f) }
 
+    val isDarkMode = appearanceMode != ThemeAppearanceMode.LIGHT
     val previewBg = parseHexColor(bgHex, Color(0xFF141022))
     val previewCard = parseHexColor(cardHex, Color(0xFF241D3D))
     val previewAccent = parseHexColor(accentHex, Color(0xFFA855F7))
     val previewText = parseHexColor(textHex, Color(0xFFF8FAFC))
+    val textCardContrast = contrastRatio(previewText, previewCard)
 
     val activeHex = when (activeRole) {
         ThemeColorRole.ACCENT -> accentHex
@@ -737,72 +789,110 @@ private fun CustomThemeEditorDialog(
     var sat by remember(activeRole) { mutableFloatStateOf(initialHsv[1]) }
     var value by remember(activeRole) { mutableFloatStateOf(initialHsv[2]) }
 
+    fun syncSlidersToActiveRole() {
+        val refreshed = colorToHsv(
+            parseHexColor(
+                when (activeRole) {
+                    ThemeColorRole.ACCENT -> accentHex
+                    ThemeColorRole.BACKGROUND -> bgHex
+                    ThemeColorRole.CARD -> cardHex
+                    ThemeColorRole.TEXT -> textHex
+                },
+                previewAccent
+            )
+        )
+        hue = refreshed[0]
+        sat = refreshed[1]
+        value = refreshed[2]
+    }
+
     fun applyActiveColor(newColor: Color) {
         val hex = colorToHexString(newColor)
         when (activeRole) {
             ThemeColorRole.ACCENT -> accentHex = hex
             ThemeColorRole.BACKGROUND -> {
                 bgHex = hex
-                isDarkMode = newColor.luminance() < 0.5f
+                appearanceMode = when {
+                    newColor.luminance() >= 0.5f -> ThemeAppearanceMode.LIGHT
+                    hex.equals("#000000", ignoreCase = true) -> ThemeAppearanceMode.AMOLED
+                    else -> ThemeAppearanceMode.DARK
+                }
             }
             ThemeColorRole.CARD -> cardHex = hex
             ThemeColorRole.TEXT -> textHex = hex
         }
     }
 
-    fun applyAppearanceMode(dark: Boolean) {
-        isDarkMode = dark
-        val accentHsv = colorToHsv(previewAccent)
-        val h = accentHsv[0]
-        if (dark) {
-            bgHex = colorToHexString(hsvToComposeColor(h, 0.35f * colorIntensity, 0.12f))
-            cardHex = colorToHexString(hsvToComposeColor(h, 0.30f * colorIntensity, 0.20f))
-            textHex = "#F8FAFC"
-        } else {
-            bgHex = colorToHexString(hsvToComposeColor(h, 0.10f * colorIntensity, 0.97f))
-            cardHex = colorToHexString(hsvToComposeColor(h, 0.14f * colorIntensity, 0.91f))
-            textHex = "#18181B"
+    fun deriveSurfacesFromAccent(
+        mode: ThemeAppearanceMode = appearanceMode,
+        harmony: ThemeHarmonyMode = harmonyMode,
+        intensity: Float = colorIntensity,
+        depth: Float = bgDepth,
+        contrast: Float = cardContrast
+    ) {
+        val accentHsv = colorToHsv(parseHexColor(accentHex, previewAccent))
+        val targetHue = (accentHsv[0] + harmony.hueOffset) % 360f
+        val satScale = if (harmony.neutralBg) 0.04f else intensity
+
+        when (mode) {
+            ThemeAppearanceMode.AMOLED -> {
+                bgHex = "#000000"
+                val cVal = (0.06f + 0.14f * contrast).coerceIn(0.05f, 0.24f)
+                val cSat = if (harmony.neutralBg) 0.03f else (0.28f * satScale).coerceIn(0f, 0.45f)
+                cardHex = colorToHexString(hsvToComposeColor(targetHue, cSat, cVal))
+                textHex = "#FFFFFF"
+            }
+            ThemeAppearanceMode.DARK -> {
+                val bVal = (0.05f + 0.11f * depth).coerceIn(0.04f, 0.18f)
+                val bSat = if (harmony.neutralBg) 0.04f else (0.38f * satScale).coerceIn(0f, 0.55f)
+                val cVal = (bVal + 0.04f + 0.12f * contrast).coerceIn(0.10f, 0.30f)
+                val cSat = if (harmony.neutralBg) 0.05f else (0.32f * satScale).coerceIn(0f, 0.50f)
+                bgHex = colorToHexString(hsvToComposeColor(targetHue, bSat, bVal))
+                cardHex = colorToHexString(hsvToComposeColor(targetHue, cSat, cVal))
+                textHex = "#F8FAFC"
+            }
+            ThemeAppearanceMode.LIGHT -> {
+                val bVal = (0.99f - 0.06f * depth).coerceIn(0.91f, 0.99f)
+                val bSat = if (harmony.neutralBg) 0.02f else (0.12f * satScale).coerceIn(0f, 0.22f)
+                val cVal = (bVal - 0.03f - 0.08f * contrast).coerceIn(0.82f, 0.95f)
+                val cSat = if (harmony.neutralBg) 0.03f else (0.16f * satScale).coerceIn(0f, 0.28f)
+                bgHex = colorToHexString(hsvToComposeColor(targetHue, bSat, bVal))
+                cardHex = colorToHexString(hsvToComposeColor(targetHue, cSat, cVal))
+                textHex = "#18181B"
+            }
         }
-        val refreshed = colorToHsv(
-            parseHexColor(
-                when (activeRole) {
-                    ThemeColorRole.ACCENT -> accentHex
-                    ThemeColorRole.BACKGROUND -> bgHex
-                    ThemeColorRole.CARD -> cardHex
-                    ThemeColorRole.TEXT -> textHex
-                },
-                previewAccent
-            )
-        )
-        hue = refreshed[0]
-        sat = refreshed[1]
-        value = refreshed[2]
+        syncSlidersToActiveRole()
+    }
+
+    fun applyPreset(preset: CustomThemePreset) {
+        bgHex = preset.bgHex
+        cardHex = preset.cardHex
+        accentHex = preset.accentHex
+        textHex = preset.textHex
+        val bgCol = parseHexColor(preset.bgHex, previewBg)
+        appearanceMode = when {
+            bgCol.luminance() >= 0.5f -> ThemeAppearanceMode.LIGHT
+            preset.bgHex.equals("#000000", ignoreCase = true) -> ThemeAppearanceMode.AMOLED
+            else -> ThemeAppearanceMode.DARK
+        }
+        bgDepth = if (appearanceMode == ThemeAppearanceMode.AMOLED) 0f else 0.55f
+        syncSlidersToActiveRole()
     }
 
     fun applyRandomTheme() {
         val generated = uniffi.plasmawave_core.generateRandomCustomTheme(isDarkMode)
-        if (initialSpec == null) {
-            name = generated.name
-        }
-        bgHex = generated.backgroundHex
+        bgHex = if (appearanceMode == ThemeAppearanceMode.AMOLED) "#000000" else generated.backgroundHex
         cardHex = generated.cardHex
         accentHex = generated.accentHex
         textHex = generated.textHex
-        isDarkMode = parseHexColor(bgHex, previewBg).luminance() < 0.5f
-        val refreshed = colorToHsv(
-            parseHexColor(
-                when (activeRole) {
-                    ThemeColorRole.ACCENT -> accentHex
-                    ThemeColorRole.BACKGROUND -> bgHex
-                    ThemeColorRole.CARD -> cardHex
-                    ThemeColorRole.TEXT -> textHex
-                },
-                previewAccent
-            )
-        )
-        hue = refreshed[0]
-        sat = refreshed[1]
-        value = refreshed[2]
+        if (appearanceMode != ThemeAppearanceMode.AMOLED) {
+            appearanceMode = if (parseHexColor(bgHex, previewBg).luminance() < 0.5f) {
+                ThemeAppearanceMode.DARK
+            } else {
+                ThemeAppearanceMode.LIGHT
+            }
+        }
+        syncSlidersToActiveRole()
     }
 
     Dialog(
@@ -812,7 +902,7 @@ private fun CustomThemeEditorDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
-                .heightIn(max = 760.dp),
+                .heightIn(max = 780.dp),
             shape = RoundedCornerShape(24.dp),
             color = colors.card,
             tonalElevation = 8.dp
@@ -884,14 +974,15 @@ private fun CustomThemeEditorDialog(
                         .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // Live Preview Box
-                    Box(
+                    // Rich Live Preview Box
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
                             .background(previewBg)
                             .border(1.dp, previewAccent.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                            .padding(10.dp)
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -918,7 +1009,7 @@ private fun CustomThemeEditorDialog(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = name.ifBlank { "Tema Önizleme" },
+                                    text = "Özel Tema Önizleme",
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     style = MaterialTheme.typography.titleSmall.copy(
@@ -927,7 +1018,7 @@ private fun CustomThemeEditorDialog(
                                     )
                                 )
                                 Text(
-                                    text = if (isDarkMode) "Koyu Tema" else "Açık Tema",
+                                    text = "${appearanceMode.label} • ${harmonyMode.label}",
                                     style = MaterialTheme.typography.bodySmall.copy(
                                         color = previewText.copy(alpha = 0.7f)
                                     )
@@ -948,21 +1039,121 @@ private fun CustomThemeEditorDialog(
                                 )
                             }
                         }
+
+                        // Mini Seekbar & Contrast Badge Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(5.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(previewCard)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.62f)
+                                        .height(5.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .background(previewAccent)
+                                )
+                            }
+                            val contrastGood = textCardContrast >= 4.5f
+                            Surface(
+                                onClick = {
+                                    if (!contrastGood) {
+                                        textHex = if (previewCard.luminance() < 0.45f) "#F8FAFC" else "#18181B"
+                                        syncSlidersToActiveRole()
+                                    }
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (contrastGood) previewCard else Color(0xFFEF4444).copy(alpha = 0.22f)
+                            ) {
+                                Text(
+                                    text = if (contrastGood) {
+                                        "Kontrast ${String.format("%.1f", textCardContrast)}:1"
+                                    } else {
+                                        "Düşük Kontrast • Düzelt"
+                                    },
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (contrastGood) previewText.copy(alpha = 0.85f) else Color(0xFFFCA5A5)
+                                    )
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Tema Adı") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                    // Hazır Başlangıç Paletleri
+                    Text(
+                        text = "Hazır Paletler",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textSecondary
+                        )
                     )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        customThemePresets.forEach { preset ->
+                            val pBg = parseHexColor(preset.bgHex, previewBg)
+                            val pCard = parseHexColor(preset.cardHex, previewCard)
+                            val pAccent = parseHexColor(preset.accentHex, previewAccent)
+                            val pText = parseHexColor(preset.textHex, previewText)
+                            val selected = bgHex.equals(preset.bgHex, ignoreCase = true) &&
+                                accentHex.equals(preset.accentHex, ignoreCase = true)
+                            Surface(
+                                onClick = { applyPreset(preset) },
+                                shape = RoundedCornerShape(10.dp),
+                                color = pCard,
+                                border = BorderStroke(
+                                    width = if (selected) 2.dp else 1.dp,
+                                    color = if (selected) pAccent else pAccent.copy(alpha = 0.35f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(pBg)
+                                            .border(1.5.dp, pAccent, CircleShape)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(pAccent)
+                                    )
+                                    Text(
+                                        text = preset.label,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = pText
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // Görünüm (Dark / Light segmented toggle)
+                    // Görünüm (Koyu / AMOLED / Açık)
                     Text(
                         text = "Görünüm",
                         style = MaterialTheme.typography.labelLarge.copy(
@@ -979,71 +1170,91 @@ private fun CustomThemeEditorDialog(
                             .padding(4.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(44.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { applyAppearanceMode(true) },
-                            color = if (isDarkMode) colors.card else Color.Transparent,
-                            shape = RoundedCornerShape(10.dp),
-                            border = if (isDarkMode) BorderStroke(1.dp, previewAccent.copy(alpha = 0.6f)) else null
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
+                        ThemeAppearanceMode.entries.forEach { mode ->
+                            val selected = appearanceMode == mode
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(40.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        appearanceMode = mode
+                                        if (mode == ThemeAppearanceMode.AMOLED) bgDepth = 0f
+                                        else if (bgDepth == 0f) bgDepth = 0.55f
+                                        deriveSurfacesFromAccent(mode = mode)
+                                    },
+                                color = if (selected) colors.card else Color.Transparent,
+                                shape = RoundedCornerShape(10.dp),
+                                border = if (selected) BorderStroke(1.dp, previewAccent.copy(alpha = 0.6f)) else null
                             ) {
-                                Icon(
-                                    Icons.Default.DarkMode,
-                                    contentDescription = "Koyu",
-                                    tint = if (isDarkMode) previewAccent else colors.textSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    "Koyu",
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isDarkMode) MaterialTheme.colorScheme.onSurface else colors.textSecondary
+                                Row(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (mode == ThemeAppearanceMode.LIGHT) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                        contentDescription = mode.label,
+                                        tint = if (selected) previewAccent else colors.textSecondary,
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        mode.label,
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (selected) MaterialTheme.colorScheme.onSurface else colors.textSecondary
+                                        )
+                                    )
+                                }
                             }
                         }
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(44.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { applyAppearanceMode(false) },
-                            color = if (!isDarkMode) colors.card else Color.Transparent,
-                            shape = RoundedCornerShape(10.dp),
-                            border = if (!isDarkMode) BorderStroke(1.dp, previewAccent.copy(alpha = 0.6f)) else null
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.LightMode,
-                                    contentDescription = "Açık",
-                                    tint = if (!isDarkMode) previewAccent else colors.textSecondary,
-                                    modifier = Modifier.size(18.dp)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Renk Uyumu (Vurgudan Türet)
+                    Text(
+                        text = "Renk Uyumu",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textSecondary
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ThemeHarmonyMode.entries.forEach { mode ->
+                            val selected = harmonyMode == mode
+                            Surface(
+                                onClick = {
+                                    harmonyMode = mode
+                                    deriveSurfacesFromAccent(harmony = mode)
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (selected) previewAccent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                border = BorderStroke(
+                                    width = if (selected) 1.5.dp else 1.dp,
+                                    color = if (selected) previewAccent else colors.border
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
+                            ) {
                                 Text(
-                                    "Açık",
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (!isDarkMode) MaterialTheme.colorScheme.onSurface else colors.textSecondary
+                                    text = mode.label,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (selected) previewAccent else MaterialTheme.colorScheme.onSurface
                                     )
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Renkler
                     Text(
@@ -1224,11 +1435,72 @@ private fun CustomThemeEditorDialog(
                         onValueChange = { intensity ->
                             colorIntensity = intensity
                             val aHsv = colorToHsv(previewAccent)
-                            val bHsv = colorToHsv(previewBg)
-                            val cHsv = colorToHsv(previewCard)
                             accentHex = colorToHexString(hsvToComposeColor(aHsv[0], (0.25f + 0.75f * intensity).coerceIn(0f, 1f), aHsv[2].coerceAtLeast(0.45f)))
-                            bgHex = colorToHexString(hsvToComposeColor(bHsv[0], (intensity * if (isDarkMode) 0.55f else 0.18f).coerceIn(0f, 1f), bHsv[2]))
-                            cardHex = colorToHexString(hsvToComposeColor(cHsv[0], (intensity * if (isDarkMode) 0.45f else 0.22f).coerceIn(0f, 1f), cHsv[2]))
+                            deriveSurfacesFromAccent(intensity = intensity)
+                        },
+                        valueRange = 0f..1f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = previewAccent,
+                            activeTrackColor = previewAccent
+                        )
+                    )
+
+                    // Arka Plan Derinliği (not applicable in pure AMOLED)
+                    if (appearanceMode != ThemeAppearanceMode.AMOLED) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Arka Plan Derinliği",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                            )
+                            Text(
+                                text = "${(bgDepth * 100).roundToInt()}%",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = previewAccent
+                                )
+                            )
+                        }
+                        Slider(
+                            value = bgDepth,
+                            onValueChange = { d ->
+                                bgDepth = d
+                                deriveSurfacesFromAccent(depth = d)
+                            },
+                            valueRange = 0f..1f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = previewAccent,
+                                activeTrackColor = previewAccent
+                            )
+                        )
+                    }
+
+                    // Kart Ayrımı
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Kart Ayrımı",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                        )
+                        Text(
+                            text = "${(cardContrast * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = previewAccent
+                            )
+                        )
+                    }
+                    Slider(
+                        value = cardContrast,
+                        onValueChange = { c ->
+                            cardContrast = c
+                            deriveSurfacesFromAccent(contrast = c)
                         },
                         valueRange = 0f..1f,
                         colors = SliderDefaults.colors(
@@ -1249,29 +1521,7 @@ private fun CustomThemeEditorDialog(
                                 val randomHue = Random.nextFloat() * 360f
                                 val accentS = (0.65f + Random.nextFloat() * 0.30f) * colorIntensity.coerceAtLeast(0.4f)
                                 accentHex = colorToHexString(hsvToComposeColor(randomHue, accentS.coerceIn(0.3f, 1f), 0.92f))
-                                if (isDarkMode) {
-                                    bgHex = colorToHexString(hsvToComposeColor(randomHue, 0.35f * colorIntensity, 0.09f + Random.nextFloat() * 0.06f))
-                                    cardHex = colorToHexString(hsvToComposeColor(randomHue, 0.30f * colorIntensity, 0.16f + Random.nextFloat() * 0.07f))
-                                    textHex = "#F8FAFC"
-                                } else {
-                                    bgHex = colorToHexString(hsvToComposeColor(randomHue, 0.08f * colorIntensity, 0.97f))
-                                    cardHex = colorToHexString(hsvToComposeColor(randomHue, 0.14f * colorIntensity, 0.91f))
-                                    textHex = "#18181B"
-                                }
-                                val refreshed = colorToHsv(
-                                    parseHexColor(
-                                        when (activeRole) {
-                                            ThemeColorRole.ACCENT -> accentHex
-                                            ThemeColorRole.BACKGROUND -> bgHex
-                                            ThemeColorRole.CARD -> cardHex
-                                            ThemeColorRole.TEXT -> textHex
-                                        },
-                                        previewAccent
-                                    )
-                                )
-                                hue = refreshed[0]
-                                sat = refreshed[1]
-                                value = refreshed[2]
+                                deriveSurfacesFromAccent()
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -1289,27 +1539,21 @@ private fun CustomThemeEditorDialog(
 
                         OutlinedButton(
                             onClick = {
-                                name = defaultName
                                 bgHex = defaultBg
                                 cardHex = defaultCard
                                 accentHex = defaultAccent
                                 textHex = defaultText
-                                isDarkMode = parseHexColor(defaultBg, Color(0xFF141022)).luminance() < 0.5f
+                                val bgCol = parseHexColor(defaultBg, Color(0xFF141022))
+                                appearanceMode = when {
+                                    bgCol.luminance() >= 0.5f -> ThemeAppearanceMode.LIGHT
+                                    defaultBg.equals("#000000", ignoreCase = true) -> ThemeAppearanceMode.AMOLED
+                                    else -> ThemeAppearanceMode.DARK
+                                }
+                                harmonyMode = ThemeHarmonyMode.MONOCHROME
                                 colorIntensity = 0.8f
-                                val refreshed = colorToHsv(
-                                    parseHexColor(
-                                        when (activeRole) {
-                                            ThemeColorRole.ACCENT -> defaultAccent
-                                            ThemeColorRole.BACKGROUND -> defaultBg
-                                            ThemeColorRole.CARD -> defaultCard
-                                            ThemeColorRole.TEXT -> defaultText
-                                        },
-                                        previewAccent
-                                    )
-                                )
-                                hue = refreshed[0]
-                                sat = refreshed[1]
-                                value = refreshed[2]
+                                bgDepth = if (appearanceMode == ThemeAppearanceMode.AMOLED) 0f else 0.55f
+                                cardContrast = 0.55f
+                                syncSlidersToActiveRole()
                             },
                             modifier = Modifier.height(46.dp),
                             shape = RoundedCornerShape(12.dp)
@@ -1347,10 +1591,11 @@ private fun CustomThemeEditorDialog(
 
                     Button(
                         onClick = {
-                            val cleanName = name.trim().ifEmpty { "Custom Tema" }
+                            val autoName = initialSpec?.name?.takeIf { it.isNotBlank() }
+                                ?: "Özel Tema ${existingCustomCount + 1}"
                             val spec = CustomThemeSpec(
                                 id = initialSpec?.id ?: "custom.${UUID.randomUUID().toString().take(8)}",
-                                name = cleanName,
+                                name = autoName,
                                 backgroundHex = if (bgHex.startsWith("#")) bgHex else "#$bgHex",
                                 cardHex = if (cardHex.startsWith("#")) cardHex else "#$cardHex",
                                 accentHex = if (accentHex.startsWith("#")) accentHex else "#$accentHex",
