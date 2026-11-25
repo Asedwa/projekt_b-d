@@ -10,9 +10,9 @@
 
 ---
 
-## 📥 İndir ve Kur
+##  İndir ve Kur
 
-👉 [**Güncel Android APK'sını İndir (Releases)**](https://github.com/Asedwa/projekt_b-d/releases/latest)
+ [**Güncel Android APK'sını İndir (Releases)**](https://github.com/Asedwa/projekt_b-d/releases/latest)
 
 1. Açılan sürüm sayfasında **Assets** bölümünden `projekt_b-d-<sürüm>.apk` dosyasını indir.
 2. APK'yı açıp yükle (R8 optimizasyonlu release derlemesidir).
@@ -20,9 +20,9 @@
 
 ---
 
-## ✨ Öne Çıkan Özellikler
+##  Öne Çıkan Özellikler
 
-### 🎨 Tasarım, Tema ve Tam Ekran Oynatıcı
+###  Tasarım, Tema ve Tam Ekran Oynatıcı
 - **Saydam Cam Now Playing:** Çalan albüm kapağından Rust palet motoruyla üretilen derin ışık hüzmeleri, saydam cam yüzeyler ve kesintisiz geçiş animasyonu.
 - **12 Canlı Ortam Arka Planı:** İpek Aurora, Nebula Küreleri, Okyanus Dalgaları, Siber Halkalar, Yıldız Tozu, Prizma Hüzmeleri, Kuzey Perdesi, Güneş Patlaması, Dijital Yağmur, Kadife Dalgalar, Kozmik Girdap ve Ateş Böcekleri — tam ekran canlı önizleme ve basılı tutarak deseni inceleme desteğiyle.
 - **Kişiselleştirme:** Hazır ve özel temalar, dinamik albüm renkleri, özelleştirilebilir oynatıcı alt cep tuşları, ilerleme çubuğu stilleri, uygulama ikonu ve özel başlık logosu.
@@ -36,11 +36,11 @@
 ### 👥 Jam (Birlikte Dinle)
 - **Gerçek Zamanlı Eşzamanlı Dinleme:** TLS şifreli MQTT üzerinden oda koduyla arkadaşlarınla aynı şarkıyı saniyesi saniyesine birlikte dinle; isteğe bağlı misafir oynatma/ilerletme kontrolü.
 
-### 🧩 Modüler Ana Sayfa ve İstatistikler
+###  Modüler Ana Sayfa ve İstatistikler
 - **Özelleştirilebilir Ana Sayfa:** Ana sayfaya basılı tutarak widget'ları sürükle-bırak ile sırala, boyut/stil değiştir veya yeni widget ekle.
 - **Dinleme İstatistikleri ve Devamlılık:** Toplam dinleme süresi, en çok çalınan parçalar/sanatçılar, kaldığın yerden devam et, uyku zamanlayıcısı ve gizli dinleme oturumu.
 
-### 🔄 Otomatik Güncelleme
+###  Otomatik Güncelleme
 - Uygulama açılışında GitHub Releases üzerinden yeni sürümü otomatik denetler, sürüm notlarını gösterir, APK'yı uygulama içinde indirip doğrulayarak kurulumu başlatır.
 
 ---
