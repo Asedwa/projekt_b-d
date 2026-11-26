@@ -524,6 +524,53 @@ impl LibraryRepository for Database {
         Ok(())
     }
 
+    fn remove_track_by_id_from_playlist(
+        &self,
+        id: &PlaylistId,
+        track_id: &TrackId,
+    ) -> DomainResult<bool> {
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("tx error: {e}")))?;
+
+        let deleted = tx
+            .execute(
+                "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2;",
+                params![id.to_string(), track_id.to_string()],
+            )
+            .map_err(|e| DomainError::Storage(format!("delete by track_id error: {e}")))?;
+
+        if deleted > 0 {
+            let rowids: Vec<(i64, i64)> = {
+                let mut stmt = tx
+                    .prepare_cached(
+                        "SELECT rowid, position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position ASC;",
+                    )
+                    .map_err(|e| DomainError::Storage(format!("prepare reindex error: {e}")))?;
+                let rows = stmt
+                    .query_map(params![id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .map_err(|e| DomainError::Storage(format!("query reindex error: {e}")))?;
+                rows.collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| DomainError::Storage(format!("read reindex error: {e}")))?
+            };
+            let mut update_stmt = tx
+                .prepare_cached("UPDATE playlist_tracks SET position = ?1 WHERE rowid = ?2;")
+                .map_err(|e| DomainError::Storage(format!("prepare update pos error: {e}")))?;
+            for (new_pos, (rowid, old_pos)) in rowids.into_iter().enumerate() {
+                if old_pos != new_pos as i64 {
+                    update_stmt
+                        .execute(params![new_pos as i64, rowid])
+                        .map_err(|e| DomainError::Storage(format!("update pos error: {e}")))?;
+                }
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit error: {e}")))?;
+        Ok(deleted > 0)
+    }
+
     fn move_in_playlist(&self, id: &PlaylistId, from: u32, to: u32) -> DomainResult<()> {
         if from == to {
             return Ok(());

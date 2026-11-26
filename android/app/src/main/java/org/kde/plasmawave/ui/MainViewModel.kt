@@ -83,6 +83,7 @@ import uniffi.plasmawave_core.FfiListeningAnalytics
 import uniffi.plasmawave_core.FfiLocalTrackInput
 import uniffi.plasmawave_core.FfiModInfo
 import uniffi.plasmawave_core.FfiPlaylist
+import uniffi.plasmawave_core.FfiPlaylistPickerItem
 import uniffi.plasmawave_core.FfiPrivateSessionStatus
 import uniffi.plasmawave_core.FfiQuickArtistItem
 import uniffi.plasmawave_core.FfiResumePlaybackState
@@ -2133,18 +2134,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createPlaylist(name: String, onDeezer: Boolean = false) {
+    fun createPlaylist(
+        name: String,
+        onDeezer: Boolean = false,
+        initialTrack: FfiTrack? = null,
+        onCreated: (() -> Unit)? = null
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (onDeezer) {
-                    deezerSession.createPlaylist(name)
+                    val createdId = deezerSession.createPlaylist(name)
+                    if (initialTrack != null && initialTrack.provider == "deezer") {
+                        runCatching {
+                            deezerSession.editPlaylist(createdId, initialTrack.id, add = true)
+                            core.updatePlaylistMembershipCache(createdId, initialTrack.id, true)
+                        }
+                    }
                     try {
                         val updated = deezerSession.playlists()
                         _deezerPlaylists.value = updated
                         persistDeezerPlaylistsCache(updated)
                     } catch (_: Exception) { }
-                } else { core.createPlaylist(name); refreshPlaylists() }
-                _statusMessage.value = "Çalma listesi oluşturuldu"
+                } else {
+                    val created = core.createPlaylist(name)
+                    if (initialTrack != null) {
+                        core.addTracksToPlaylist(created.id, listOf(initialTrack))
+                    }
+                    refreshPlaylists()
+                }
+                _statusMessage.value = if (initialTrack != null && (!onDeezer || initialTrack.provider == "deezer")) {
+                    "\"$name\" oluşturuldu ve şarkı eklendi"
+                } else {
+                    "Çalma listesi oluşturuldu"
+                }
+                if (onCreated != null) withContext(Dispatchers.Main) { onCreated() }
             } catch (_: Exception) {
                 _statusMessage.value = "Liste oluşturulamadı; bağlantıyı ve liste adını kontrol et"
             }
@@ -2164,6 +2187,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else { core.deletePlaylist(playlist.id); refreshPlaylists() }
                 pinnedItems.remove("playlist:${playlist.id}")
                 invalidatePlaylist(playlist.id)
+                runCatching { core.clearPlaylistMembershipCache(playlist.id) }
                 _statusMessage.value = "Çalma listesi silindi"
                 withContext(Dispatchers.Main) { onDeleted() }
             } catch (_: Exception) { _statusMessage.value = "Liste silinemedi; düzenleme iznini kontrol et" }
@@ -2883,12 +2907,122 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun getPlaylistPickerItems(
+        playlists: List<FfiPlaylist>,
+        track: FfiTrack,
+        query: String
+    ): List<FfiPlaylistPickerItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            core.getPlaylistPickerItems(playlists, track.id, track.provider, query)
+        }.getOrElse {
+            playlists.distinctBy { it.id }.map {
+                FfiPlaylistPickerItem(
+                    playlist = it,
+                    isMember = false,
+                    isCompatible = it.isLocal || track.provider == "deezer"
+                )
+            }
+        }
+    }
+
+    fun ensureUncachedDeezerPlaylistsIndexed(
+        playlists: List<FfiPlaylist>,
+        onIndexed: () -> Unit
+    ) {
+        if (!deezerSession.hasSavedSession) return
+        val deezerIds = playlists.map { it.id }.filter { it.startsWith("deezer:") }
+        if (deezerIds.isEmpty()) return
+        val generation = deezerGeneration.get()
+        viewModelScope.launch(Dispatchers.IO) {
+            val missing = runCatching { core.getUncachedPlaylistIds(deezerIds) }.getOrDefault(emptyList())
+            if (missing.isEmpty()) return@launch
+            val gate = Semaphore(2)
+            var updatedAny = false
+            coroutineScope {
+                missing.take(8).forEach { pid ->
+                    launch {
+                        gate.withPermit {
+                            if (generation != deezerGeneration.get()) return@withPermit
+                            runCatching {
+                                val startVersion = playlistCacheVersion(pid)
+                                val fetched = deezerSession.playlistTrackEntries(pid)
+                                if (cachePlaylistEntriesIfFresh(pid, startVersion, generation, fetched)) {
+                                    updatedAny = true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (updatedAny) {
+                withContext(Dispatchers.Main) { onIndexed() }
+            }
+        }
+    }
+
+    suspend fun toggleTrackInPlaylist(
+        playlist: FfiPlaylist,
+        track: FfiTrack,
+        currentlyMember: Boolean
+    ): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            if (currentlyMember) {
+                if (playlist.id.startsWith("deezer:")) {
+                    deezerSession.editPlaylist(playlist.id, track.id, add = false)
+                    runCatching { core.updatePlaylistMembershipCache(playlist.id, track.id, false) }
+                    invalidatePlaylist(playlist.id)
+                    viewModelScope.launch(Dispatchers.IO) {
+                        runCatching {
+                            val updated = deezerSession.playlists()
+                            _deezerPlaylists.value = updated
+                            persistDeezerPlaylistsCache(updated)
+                        }
+                    }
+                } else {
+                    core.removeTrackByIdFromPlaylist(playlist.id, track.id)
+                    refreshPlaylists()
+                    invalidatePlaylist(playlist.id)
+                }
+                _statusMessage.value = "\"${playlist.name}\" listesinden çıkarıldı"
+                Result.success(false)
+            } else {
+                if (playlist.id.startsWith("deezer:")) {
+                    if (track.provider != "deezer") {
+                        throw DeezerException("Deezer listelerine yalnızca Deezer şarkıları eklenebilir")
+                    }
+                    deezerSession.editPlaylist(playlist.id, track.id, add = true)
+                    runCatching { core.updatePlaylistMembershipCache(playlist.id, track.id, true) }
+                    invalidatePlaylist(playlist.id)
+                    viewModelScope.launch(Dispatchers.IO) {
+                        runCatching {
+                            val updated = deezerSession.playlists()
+                            _deezerPlaylists.value = updated
+                            persistDeezerPlaylistsCache(updated)
+                        }
+                    }
+                } else {
+                    core.addTracksToPlaylist(playlist.id, listOf(track))
+                    refreshPlaylists()
+                    invalidatePlaylist(playlist.id)
+                }
+                _statusMessage.value = "\"${playlist.name}\" listesine eklendi"
+                Result.success(true)
+            }
+        } catch (e: Exception) {
+            _statusMessage.value = (e as? DeezerException)?.message
+                ?: if (currentlyMember) "Şarkı çıkarılamadı; bağlantını kontrol et"
+                else "Şarkı eklenemedi; liste düzenleme iznini ve bağlantını kontrol et"
+            Result.failure(e)
+        }
+    }
+
     fun addTrackToPlaylist(playlistId: String, track: FfiTrack) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (playlistId.startsWith("deezer:")) {
                     if (track.provider != "deezer") throw DeezerException("Deezer listelerine yalnızca Deezer şarkıları eklenebilir")
                     deezerSession.editPlaylist(playlistId, track.id, add = true)
+                    runCatching { core.updatePlaylistMembershipCache(playlistId, track.id, true) }
                 } else {
                     core.addTracksToPlaylist(playlistId, listOf(track))
                     refreshPlaylists()
@@ -2915,6 +3049,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 if (menu.playlist.id.startsWith("deezer:")) {
                     deezerSession.editPlaylist(menu.playlist.id, track.id, add = false)
+                    runCatching { core.updatePlaylistMembershipCache(menu.playlist.id, track.id, false) }
                 } else {
                     val current = core.getPlaylistTracks(menu.playlist.id).getOrNull(menu.originalIndex)
                     if (current?.id != track.id) throw IllegalStateException("Liste değişti; tekrar dene")

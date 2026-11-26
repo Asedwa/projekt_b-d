@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const _CURRENT_SCHEMA_VERSION: i32 = 4;
+pub const _CURRENT_SCHEMA_VERSION: i32 = 5;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -247,6 +247,67 @@ impl Database {
                 .map_err(|e| DomainError::Storage(format!("commit migration v4 error: {e}")))?;
         }
 
+        if version < 5 {
+            let tx = conn
+                .transaction()
+                .map_err(|e| DomainError::Storage(format!("migration v5 transaction error: {e}")))?;
+
+            tx.execute_batch(
+                "CREATE TABLE IF NOT EXISTS playlist_membership_cache (
+                    playlist_id TEXT NOT NULL,
+                    track_id TEXT NOT NULL,
+                    PRIMARY KEY (playlist_id, track_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_playlist_membership_track
+                    ON playlist_membership_cache(track_id);",
+            )
+            .map_err(|e| DomainError::Storage(format!("failed to execute migration v5: {e}")))?;
+
+            // Backfill membership index from any existing cached playlist entries.
+            {
+                let mut select_stmt = tx
+                    .prepare("SELECT playlist_id, entries_json FROM playlist_entries_cache;")
+                    .map_err(|e| DomainError::Storage(format!("v5 backfill prepare: {e}")))?;
+                let rows = select_stmt
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|e| DomainError::Storage(format!("v5 backfill query: {e}")))?;
+
+                let mut pairs: Vec<(String, String)> = Vec::new();
+                for r in rows {
+                    if let Ok((pid, json_str)) = r {
+                        if let Ok(entries) =
+                            serde_json::from_str::<Vec<crate::StoredPlaylistTrackEntry>>(&json_str)
+                        {
+                            for entry in entries {
+                                pairs.push((pid.clone(), entry.track.id));
+                            }
+                        }
+                    }
+                }
+                drop(select_stmt);
+
+                if !pairs.is_empty() {
+                    let mut insert_stmt = tx
+                        .prepare(
+                            "INSERT OR IGNORE INTO playlist_membership_cache (playlist_id, track_id)
+                             VALUES (?1, ?2);",
+                        )
+                        .map_err(|e| DomainError::Storage(format!("v5 backfill insert prepare: {e}")))?;
+                    for (pid, tid) in pairs {
+                        let _ = insert_stmt.execute(rusqlite::params![pid, tid]);
+                    }
+                }
+            }
+
+            tx.execute_batch("PRAGMA user_version = 5;")
+                .map_err(|e| DomainError::Storage(format!("v5 user_version: {e}")))?;
+
+            tx.commit()
+                .map_err(|e| DomainError::Storage(format!("commit migration v5 error: {e}")))?;
+        }
+
         Ok(())
     }
 }
@@ -262,6 +323,6 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
     }
 }

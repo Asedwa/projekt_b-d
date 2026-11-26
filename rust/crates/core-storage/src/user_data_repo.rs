@@ -693,8 +693,12 @@ impl Database {
         let trimmed: Vec<&StoredPlaylistTrackEntry> = entries.iter().take(400).collect();
         let entries_json = serde_json::to_string(&trimmed)
             .map_err(|e| DomainError::Storage(format!("serialize playlist cache: {e}")))?;
-        let conn = self.lock()?;
-        conn.execute(
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("tx set_cached_playlist_entries: {e}")))?;
+
+        tx.execute(
             "INSERT INTO playlist_entries_cache (playlist_id, entries_json, updated_at_ms)
              VALUES (?1, ?2, ?3)
              ON CONFLICT(playlist_id) DO UPDATE SET
@@ -703,6 +707,28 @@ impl Database {
             params![playlist_id, entries_json, now_ms as i64],
         )
         .map_err(|e| DomainError::Storage(format!("set_cached_playlist_entries: {e}")))?;
+
+        tx.execute(
+            "DELETE FROM playlist_membership_cache WHERE playlist_id = ?1;",
+            params![playlist_id],
+        )
+        .map_err(|e| DomainError::Storage(format!("clear playlist_membership_cache: {e}")))?;
+
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO playlist_membership_cache (playlist_id, track_id)
+                     VALUES (?1, ?2);",
+                )
+                .map_err(|e| DomainError::Storage(format!("prepare membership insert: {e}")))?;
+            for entry in entries {
+                stmt.execute(params![playlist_id, entry.track.id])
+                    .map_err(|e| DomainError::Storage(format!("insert membership: {e}")))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit set_cached_playlist_entries: {e}")))?;
         Ok(())
     }
 
@@ -741,6 +767,84 @@ impl Database {
         )
         .map_err(|e| DomainError::Storage(format!("delete_cached_playlist_entries: {e}")))?;
         Ok(())
+    }
+
+    pub fn update_playlist_membership_cache(
+        &self,
+        playlist_id: &str,
+        track_id: &str,
+        is_member: bool,
+    ) -> DomainResult<()> {
+        let conn = self.lock()?;
+        if is_member {
+            let mut stmt = conn
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO playlist_membership_cache (playlist_id, track_id)
+                     VALUES (?1, ?2);",
+                )
+                .map_err(|e| DomainError::Storage(format!("prepare insert membership: {e}")))?;
+            stmt.execute(params![playlist_id, track_id])
+                .map_err(|e| DomainError::Storage(format!("insert membership: {e}")))?;
+        } else {
+            let mut stmt = conn
+                .prepare_cached(
+                    "DELETE FROM playlist_membership_cache WHERE playlist_id = ?1 AND track_id = ?2;",
+                )
+                .map_err(|e| DomainError::Storage(format!("prepare delete membership: {e}")))?;
+            stmt.execute(params![playlist_id, track_id])
+                .map_err(|e| DomainError::Storage(format!("delete membership: {e}")))?;
+        }
+        Ok(())
+    }
+
+    pub fn clear_playlist_membership_cache(&self, playlist_id: &str) -> DomainResult<()> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached("DELETE FROM playlist_membership_cache WHERE playlist_id = ?1;")
+            .map_err(|e| DomainError::Storage(format!("prepare clear membership: {e}")))?;
+        stmt.execute(params![playlist_id])
+            .map_err(|e| DomainError::Storage(format!("clear membership: {e}")))?;
+        Ok(())
+    }
+
+    pub fn get_playlists_containing_track(&self, track_id: &str) -> DomainResult<Vec<String>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1
+                 UNION
+                 SELECT playlist_id FROM playlist_membership_cache WHERE track_id = ?1;",
+            )
+            .map_err(|e| DomainError::Storage(format!("prepare membership lookup: {e}")))?;
+        let rows = stmt
+            .query_map(params![track_id], |row| row.get::<_, String>(0))
+            .map_err(|e| DomainError::Storage(format!("query membership lookup: {e}")))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| DomainError::Storage(format!("read membership row: {e}")))?);
+        }
+        Ok(out)
+    }
+
+    pub fn get_uncached_playlist_ids(&self, playlist_ids: &[String]) -> DomainResult<Vec<String>> {
+        if playlist_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached("SELECT 1 FROM playlist_entries_cache WHERE playlist_id = ?1 LIMIT 1;")
+            .map_err(|e| DomainError::Storage(format!("prepare uncached check: {e}")))?;
+        let mut missing = Vec::new();
+        for pid in playlist_ids {
+            let exists: Option<i64> = stmt
+                .query_row(params![pid], |row| row.get(0))
+                .optional()
+                .map_err(|e| DomainError::Storage(format!("query uncached check: {e}")))?;
+            if exists.is_none() {
+                missing.push(pid.clone());
+            }
+        }
+        Ok(missing)
     }
 }
 
@@ -832,5 +936,79 @@ mod tests {
         assert_eq!(after_add.len(), 1);
         let after_remove = db.toggle_pinned_item(pin).unwrap();
         assert!(after_remove.is_empty());
+    }
+
+    #[test]
+    fn playlist_membership_index_and_remove_by_id() {
+        use core_domain::{DataOrigin, Track, TrackId};
+        use core_library::LibraryRepository;
+
+        let db = Database::in_memory().unwrap();
+        let t1_stored = sample_track("deezer:101", "Song A", "Artist A");
+        let t2_stored = sample_track("deezer:202", "Song B", "Artist B");
+
+        let t1 = Track {
+            id: TrackId::parse("deezer:101").unwrap(),
+            title: "Song A".into(),
+            artist: "Artist A".into(),
+            album: "Album".into(),
+            duration_ms: 180_000,
+            artwork_url: None,
+            playback_uri: None,
+            is_preview: false,
+            origin: DataOrigin::Real,
+        };
+        let t2 = Track {
+            id: TrackId::parse("deezer:202").unwrap(),
+            title: "Song B".into(),
+            ..t1.clone()
+        };
+
+        db.upsert_tracks(&[t1.clone(), t2.clone()]).unwrap();
+        let local_pl = db.create_playlist("Local Mix").unwrap();
+        db.append_to_playlist(&local_pl.id, &[t1.id.clone(), t2.id.clone()])
+            .unwrap();
+
+        db.set_cached_playlist_entries(
+            "deezer:555",
+            &[StoredPlaylistTrackEntry {
+                track: t1_stored.clone(),
+                added_at: Some(1000),
+                original_index: 0,
+            }],
+            2000,
+        )
+        .unwrap();
+
+        let containing_t1 = db.get_playlists_containing_track("deezer:101").unwrap();
+        assert!(containing_t1.contains(&local_pl.id.to_string()));
+        assert!(containing_t1.contains(&"deezer:555".to_string()));
+
+        // Remove t1 from local playlist by id
+        assert!(db
+            .remove_track_by_id_from_playlist(&local_pl.id, &t1.id)
+            .unwrap());
+        let local_tracks = db.playlist_tracks(&local_pl.id).unwrap();
+        assert_eq!(local_tracks.len(), 1);
+        assert_eq!(local_tracks[0].id, t2.id);
+
+        // Update remote membership cache directly
+        db.update_playlist_membership_cache("deezer:555", "deezer:101", false)
+            .unwrap();
+        db.update_playlist_membership_cache("deezer:555", &t2_stored.id, true)
+            .unwrap();
+        assert!(db
+            .get_playlists_containing_track("deezer:101")
+            .unwrap()
+            .is_empty());
+        let containing_t2 = db.get_playlists_containing_track("deezer:202").unwrap();
+        assert_eq!(containing_t2.len(), 2);
+        assert!(containing_t2.contains(&local_pl.id.to_string()));
+        assert!(containing_t2.contains(&"deezer:555".to_string()));
+
+        let uncached = db
+            .get_uncached_playlist_ids(&["deezer:555".into(), "deezer:999".into()])
+            .unwrap();
+        assert_eq!(uncached, vec!["deezer:999".to_string()]);
     }
 }

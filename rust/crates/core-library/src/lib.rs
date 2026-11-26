@@ -38,6 +38,7 @@ pub trait LibraryRepository: Send + Sync {
     fn playlist_tracks(&self, id: &PlaylistId) -> DomainResult<Vec<Track>>;
     fn append_to_playlist(&self, id: &PlaylistId, tracks: &[TrackId]) -> DomainResult<()>;
     fn remove_from_playlist(&self, id: &PlaylistId, position: u32) -> DomainResult<()>;
+    fn remove_track_by_id_from_playlist(&self, id: &PlaylistId, track_id: &TrackId) -> DomainResult<bool>;
     fn move_in_playlist(&self, id: &PlaylistId, from: u32, to: u32) -> DomainResult<()>;
 }
 
@@ -112,6 +113,15 @@ impl LibraryService {
     pub fn remove_from_playlist(&self, id: &PlaylistId, position: u32) -> DomainResult<()> {
         self.require_local(id)?;
         self.repo.remove_from_playlist(id, position)
+    }
+
+    pub fn remove_track_by_id_from_playlist(
+        &self,
+        id: &PlaylistId,
+        track_id: &TrackId,
+    ) -> DomainResult<bool> {
+        self.require_local(id)?;
+        self.repo.remove_track_by_id_from_playlist(id, track_id)
     }
 
     pub fn move_in_playlist(&self, id: &PlaylistId, from: u32, to: u32) -> DomainResult<()> {

@@ -737,15 +737,44 @@ private fun PlaylistPickerHost(
         (deezerPlaylists.map { it.playlist } + localPlaylists).distinctBy { it.id }
     }
 
+    var query by remember(track.id) { mutableStateOf("") }
+    var refreshTick by remember(track.id) { mutableIntStateOf(0) }
+    var pendingIds by remember(track.id) { mutableStateOf(emptySet<String>()) }
+    var items by remember(track.id) { mutableStateOf<List<uniffi.plasmawave_core.FfiPlaylistPickerItem>>(emptyList()) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(track.id, allPlaylists) {
+        viewModel.ensureUncachedDeezerPlaylistsIndexed(allPlaylists) {
+            refreshTick++
+        }
+    }
+
+    LaunchedEffect(track.id, allPlaylists, query, refreshTick) {
+        items = viewModel.getPlaylistPickerItems(allPlaylists, track, query)
+    }
+
     PlaylistPicker(
         track = track,
-        playlists = allPlaylists,
+        items = items,
+        query = query,
+        onQueryChange = { query = it },
+        pendingPlaylistIds = pendingIds,
         canCreateDeezer = deezerUser != null,
         onDismiss = onDismiss,
-        onSelect = { playlist ->
-            viewModel.addTrackToPlaylist(playlist.id, track)
-            onDismiss()
+        onToggle = { item ->
+            val pid = item.playlist.id
+            if (pendingIds.contains(pid)) return@PlaylistPicker
+            pendingIds = pendingIds + pid
+            scope.launch {
+                viewModel.toggleTrackInPlaylist(item.playlist, track, item.isMember)
+                pendingIds = pendingIds - pid
+                refreshTick++
+            }
         },
-        onCreate = viewModel::createPlaylist
+        onCreate = { name, onDeezer ->
+            viewModel.createPlaylist(name, onDeezer, initialTrack = track) {
+                refreshTick++
+            }
+        }
     )
 }

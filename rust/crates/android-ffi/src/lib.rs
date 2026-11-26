@@ -782,6 +782,13 @@ pub struct FfiLibraryPlaylistEntry {
     pub is_pinned: bool,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiPlaylistPickerItem {
+    pub playlist: FfiPlaylist,
+    pub is_member: bool,
+    pub is_compatible: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FfiLibraryPlaylistSort {
     Default,
@@ -1506,6 +1513,78 @@ impl PlasmaWaveCore {
     pub fn remove_track_from_playlist(&self, playlist_id: String, position: u32) -> FfiResult<()> {
         let pid = PlaylistId::new(playlist_id)?;
         Ok(self.library_service.remove_from_playlist(&pid, position)?)
+    }
+
+    pub fn remove_track_by_id_from_playlist(
+        &self,
+        playlist_id: String,
+        track_id: String,
+    ) -> FfiResult<bool> {
+        let pid = PlaylistId::new(playlist_id)?;
+        let tid = TrackId::parse(&track_id)?;
+        Ok(self
+            .library_service
+            .remove_track_by_id_from_playlist(&pid, &tid)?)
+    }
+
+    pub fn update_playlist_membership_cache(
+        &self,
+        playlist_id: String,
+        track_id: String,
+        is_member: bool,
+    ) -> FfiResult<()> {
+        self.database
+            .update_playlist_membership_cache(&playlist_id, &track_id, is_member)?;
+        Ok(())
+    }
+
+    pub fn clear_playlist_membership_cache(&self, playlist_id: String) -> FfiResult<()> {
+        self.database.clear_playlist_membership_cache(&playlist_id)?;
+        Ok(())
+    }
+
+    pub fn get_playlists_containing_track(&self, track_id: String) -> FfiResult<Vec<String>> {
+        Ok(self.database.get_playlists_containing_track(&track_id)?)
+    }
+
+    pub fn get_uncached_playlist_ids(&self, playlist_ids: Vec<String>) -> FfiResult<Vec<String>> {
+        Ok(self.database.get_uncached_playlist_ids(&playlist_ids)?)
+    }
+
+    pub fn get_playlist_picker_items(
+        &self,
+        playlists: Vec<FfiPlaylist>,
+        track_id: String,
+        track_provider: String,
+        query: String,
+    ) -> FfiResult<Vec<FfiPlaylistPickerItem>> {
+        let member_ids: std::collections::HashSet<String> = self
+            .database
+            .get_playlists_containing_track(&track_id)?
+            .into_iter()
+            .collect();
+        let trimmed_query = query.trim().to_lowercase();
+        let mut seen = std::collections::HashSet::with_capacity(playlists.len());
+        let mut items = Vec::with_capacity(playlists.len());
+
+        for playlist in playlists {
+            if !seen.insert(playlist.id.clone()) {
+                continue;
+            }
+            if !trimmed_query.is_empty() && !playlist.name.to_lowercase().contains(&trimmed_query) {
+                continue;
+            }
+            let is_member = member_ids.contains(&playlist.id);
+            let is_compatible = playlist.is_local || track_provider == "deezer";
+            items.push(FfiPlaylistPickerItem {
+                playlist,
+                is_member,
+                is_compatible,
+            });
+        }
+
+        items.sort_by(|a, b| b.is_compatible.cmp(&a.is_compatible));
+        Ok(items)
     }
 
     // ------------------------------------------------------------------------
