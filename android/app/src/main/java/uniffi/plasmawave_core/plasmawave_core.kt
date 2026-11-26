@@ -992,6 +992,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1026,6 +1030,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_build_user_data_export_json(`ptr`: Pointer,`exportedAtEpochMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_cancel_download(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_check_app_update(`ptr`: Pointer,`currentVersion`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_all_collected_user_data(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1158,6 +1164,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_ingest_local_tracks(`ptr`: Pointer,`inputs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Int
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_is_favorite(`ptr`: Pointer,`trackIdStr`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_is_trusted_update_url(`ptr`: Pointer,`url`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_list_cached_artwork(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1425,6 +1433,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_cancel_download(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_check_app_update(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_all_collected_user_data(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_deezer_user(
@@ -1556,6 +1566,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_ingest_local_tracks(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_is_favorite(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_is_trusted_update_url(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_list_cached_artwork(
     ): Short
@@ -1728,6 +1740,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_cancel_download() != 60058.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_check_app_update() != 41654.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_all_collected_user_data() != 20928.toShort()) {
@@ -1926,6 +1941,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_is_favorite() != 30678.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_is_trusted_update_url() != 48454.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_list_cached_artwork() != 53423.toShort()) {
@@ -2533,6 +2551,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `cancelDownload`(`id`: kotlin.Long): FfiDownloadTask
     
+    fun `checkAppUpdate`(`currentVersion`: kotlin.String): FfiAppUpdateRelease?
+    
     fun `clearAllCollectedUserData`()
     
     fun `clearDeezerUser`()
@@ -2664,6 +2684,8 @@ public interface PlasmaWaveCoreInterface {
     fun `ingestLocalTracks`(`inputs`: List<FfiLocalTrackInput>): kotlin.UInt
     
     fun `isFavorite`(`trackIdStr`: kotlin.String): kotlin.Boolean
+    
+    fun `isTrustedUpdateUrl`(`url`: kotlin.String): kotlin.Boolean
     
     fun `listCachedArtwork`(`limit`: kotlin.UInt): Map<kotlin.String, kotlin.String>
     
@@ -2938,6 +2960,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_cancel_download(
         it, FfiConverterLong.lower(`id`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `checkAppUpdate`(`currentVersion`: kotlin.String): FfiAppUpdateRelease? {
+            return FfiConverterOptionalTypeFfiAppUpdateRelease.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_check_app_update(
+        it, FfiConverterString.lower(`currentVersion`),_status)
 }
     }
     )
@@ -3773,6 +3808,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_is_favorite(
         it, FfiConverterString.lower(`trackIdStr`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `isTrustedUpdateUrl`(`url`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_is_trusted_update_url(
+        it, FfiConverterString.lower(`url`),_status)
 }
     }
     )
@@ -4927,6 +4974,58 @@ public object FfiConverterTypeFfiAmbientRing: FfiConverterRustBuffer<FfiAmbientR
             FfiConverterFloat.write(value.`strokeWidth`, buf)
             FfiConverterUInt.write(value.`colorArgb`, buf)
             FfiConverterFloat.write(value.`alpha`, buf)
+    }
+}
+
+
+
+data class FfiAppUpdateRelease (
+    var `version`: kotlin.String, 
+    var `tagName`: kotlin.String, 
+    var `title`: kotlin.String, 
+    var `notes`: kotlin.String, 
+    var `apkUrl`: kotlin.String, 
+    var `apkSizeBytes`: kotlin.ULong, 
+    var `htmlUrl`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiAppUpdateRelease: FfiConverterRustBuffer<FfiAppUpdateRelease> {
+    override fun read(buf: ByteBuffer): FfiAppUpdateRelease {
+        return FfiAppUpdateRelease(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiAppUpdateRelease) = (
+            FfiConverterString.allocationSize(value.`version`) +
+            FfiConverterString.allocationSize(value.`tagName`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterString.allocationSize(value.`notes`) +
+            FfiConverterString.allocationSize(value.`apkUrl`) +
+            FfiConverterULong.allocationSize(value.`apkSizeBytes`) +
+            FfiConverterString.allocationSize(value.`htmlUrl`)
+    )
+
+    override fun write(value: FfiAppUpdateRelease, buf: ByteBuffer) {
+            FfiConverterString.write(value.`version`, buf)
+            FfiConverterString.write(value.`tagName`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterString.write(value.`notes`, buf)
+            FfiConverterString.write(value.`apkUrl`, buf)
+            FfiConverterULong.write(value.`apkSizeBytes`, buf)
+            FfiConverterString.write(value.`htmlUrl`, buf)
     }
 }
 
@@ -7276,6 +7375,38 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
         } else {
             buf.put(1)
             FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeFfiAppUpdateRelease: FfiConverterRustBuffer<FfiAppUpdateRelease?> {
+    override fun read(buf: ByteBuffer): FfiAppUpdateRelease? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeFfiAppUpdateRelease.read(buf)
+    }
+
+    override fun allocationSize(value: FfiAppUpdateRelease?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeFfiAppUpdateRelease.allocationSize(value)
+        }
+    }
+
+    override fun write(value: FfiAppUpdateRelease?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeFfiAppUpdateRelease.write(value, buf)
         }
     }
 }

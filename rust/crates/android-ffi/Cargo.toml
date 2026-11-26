@@ -24,6 +24,7 @@ core-themes.workspace = true
 core-mods.workspace = true
 core-settings.workspace = true
 core-lyrics.workspace = true
+core-updater.workspace = true
 uniffi = { workspace = true, features = ["cli"] }
 tokio.workspace = true
 serde.workspace = true

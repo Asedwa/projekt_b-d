@@ -790,6 +790,31 @@ pub struct FfiPlaylistPickerItem {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiAppUpdateRelease {
+    pub version: String,
+    pub tag_name: String,
+    pub title: String,
+    pub notes: String,
+    pub apk_url: String,
+    pub apk_size_bytes: u64,
+    pub html_url: String,
+}
+
+impl From<core_updater::AppUpdateRelease> for FfiAppUpdateRelease {
+    fn from(r: core_updater::AppUpdateRelease) -> Self {
+        Self {
+            version: r.version,
+            tag_name: r.tag_name,
+            title: r.title,
+            notes: r.notes,
+            apk_url: r.apk_url,
+            apk_size_bytes: r.apk_size_bytes,
+            html_url: r.html_url,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiLyricLine {
     pub time_ms: u64,
     pub text: String,
@@ -1120,6 +1145,7 @@ pub struct PlasmaWaveCore {
     download_manager: Arc<DownloadManager>,
     lyrics_client: core_lyrics::LyricsClient,
     artwork_client: provider_deezer::artwork::ArtworkClient,
+    updater_client: core_updater::UpdaterClient,
     active_theme_id: RwLock<String>,
     tokio_runtime: tokio::runtime::Runtime,
     private_session_until_ms: Mutex<Option<u64>>,
@@ -1189,6 +1215,7 @@ impl PlasmaWaveCore {
             download_manager,
             lyrics_client: core_lyrics::LyricsClient::new(),
             artwork_client: provider_deezer::artwork::ArtworkClient::new(),
+            updater_client: core_updater::UpdaterClient::new(),
             active_theme_id,
             tokio_runtime,
             private_session_until_ms: Mutex::new(None),
@@ -1286,6 +1313,26 @@ impl PlasmaWaveCore {
     ) -> FfiResult<std::collections::HashMap<String, String>> {
         let pairs = self.database.list_cached_artwork(limit)?;
         Ok(pairs.into_iter().collect())
+    }
+
+    // ------------------------------------------------------------------------
+    // App Updater (GitHub Releases + Semver + Trusted URL Validation)
+    // ------------------------------------------------------------------------
+    pub fn check_app_update(
+        &self,
+        current_version: String,
+    ) -> FfiResult<Option<FfiAppUpdateRelease>> {
+        let release = self
+            .tokio_runtime
+            .block_on(self.updater_client.fetch_latest_release(&current_version))
+            .map_err(|e| FfiError::OperationFailed {
+                reason: e.to_string(),
+            })?;
+        Ok(release.map(FfiAppUpdateRelease::from))
+    }
+
+    pub fn is_trusted_update_url(&self, url: String) -> bool {
+        core_updater::is_trusted_download_url(&url)
     }
 
     // ------------------------------------------------------------------------

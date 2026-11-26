@@ -5,13 +5,13 @@
 
   <p>
     <a href="https://github.com/Asedwa/projekt_b-d/releases/latest">
-      <img src="https://img.shields.io/github/v/release/Asedwa/projekt_b-d?label=S%C3%BCr%C3%BCm&style=flat&color=3daee9" alt="Son Sürüm" />
+      <img src="https://img.shields.io/github/v/release/Asedwa/projekt_b-d?label=Version&style=flat&color=3daee9" alt="Latest Release" />
     </a>
     <img src="https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=flat&logo=android&logoColor=white" alt="Android 8.0+" />
     <img src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=flat&logo=kotlin&logoColor=white" alt="Kotlin Compose" />
     <img src="https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white" alt="Rust" />
-    <a href="#lisans">
-      <img src="https://img.shields.io/badge/Lisans-GPL--3.0-blue?style=flat" alt="Lisans" />
+    <a href="#license">
+      <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat" alt="License" />
     </a>
   </p>
 
@@ -19,32 +19,32 @@
 
   <p>
     <a href="https://github.com/Asedwa/projekt_b-d/releases/latest">
-      <img src="https://img.shields.io/badge/APK%20%C4%B0ndir-GitHub%20Releases-3daee9?style=for-the-badge&logo=android&logoColor=white" alt="APK İndir" />
+      <img src="https://img.shields.io/badge/Download%20APK-GitHub%20Releases-3daee9?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" />
     </a>
   </p>
 </div>
 
-Selamlar herkese bir süredir kendi ihtiyacımız ve merakımız üzerine uğraştığımız açık kaynaklı bir Android müzik çalar projem vardı, artık paylaşılacak kıvama geldiği için sizinle de paylaşmak istedim. Adı projekt better dezeer.
+Hey everyone! For a while I've been working on an open-source Android music player project out of personal need and curiosity, and now that it's ready to share, I wanted to post it here. It's called **projekt better deezer** (`projekt_b-d`).
 
-Kısaca bahsetmek gerekirse telefondaki yerel müzik dosyalarıyla Deezer kütüphaneniz tek bir uygulamada, göz yormayan ve kafanıza göre özelleştirebileceğiniz bir arayüzde toplamak istiyordum. Arayüz tarafını Kotlin ve Jetpack Compose ile, arka plandaki çekirdek işleri ise performanslı olsun diye Rust ile yazdık.
+In short, I wanted to bring local audio files on your phone and your Deezer library together in a single, clean, eye-friendly app that you can customize however you like. The UI is built with Kotlin and Jetpack Compose, while the core backend logic is written in Rust for high performance.
 
-İçinde neler var derseniz:
+Here's what's inside:
 
-- **Deezer + Yerel Müzik bir arada:** Hem Deezer hesabınızdaki listeleri, Flow'u ve miksleri hem de cihazdaki ses dosyalarını tek yerden çalabiliyorsunuz.
-- **FLAC / MP3 İndirme:** Parçaları veya listeleri çevrimdışı dinlemek için doğrudan MP3 ya da kayıpsız FLAC olarak telefona indirebiliyor.
-- **Jam (Birlikte Dinleme):** Oda kodu oluşturup arkadaşlarınızla aynı anda, senkronize şekilde müzik dinleyebiliyorsunuz.
-- **Fazlasıyla Kişiselleştirilebilir Arayüz:** Ana sayfadaki kartları ve widget'ları sürükle-bırak ile istediğiniz gibi dizebilirsiniz. AMOLED siyah mod, kendi temanızı yapabileceğiniz tema düzenleyici, albüm kapağına göre renk değiştiren saydam cam oynatıcı ve 12 farklı canlı arka plan var.
-- **Ekstra araçlar:** Dinleme istatistikleri, uyku zamanlayıcısı, gizli mod gibi günlük kullanımda işe yarayan detayları da ekledim. Bütün verileriniz ve istatistikleriniz tamamen cihazda yerel olarak tutuluyor.
+- **Deezer + Local Music in one place:** Play your Deezer playlists, Flow, and mixes alongside the audio files stored on your device.
+- **FLAC / MP3 Downloads:** Download tracks or entire playlists directly to your phone as MP3 or lossless FLAC for offline listening.
+- **Jam (Listen Together):** Create a room code and listen to music in real-time sync with your friends.
+- **Highly Customizable UI:** Reorder home screen cards and widgets with drag-and-drop. Includes AMOLED black mode, a custom theme editor, a translucent glass player that adapts to album artwork colors, and 12 animated live backgrounds.
+- **Extra Tools:** Listening statistics, sleep timer, and private mode — all your data and stats stay 100% local on your device.
 
-Kurmak isteyenler [GitHub Releases](https://github.com/Asedwa/projekt_b-d/releases/latest) kısmından doğrudan APK olarak indirip kurabilir. Sonraki güncellemeler için tekrar GitHub'a girmenize gerek yok, uygulamanın ayarlarından tek tuşla yeni sürümü kontrol edip güncelleyebiliyor.
+If you'd like to try it out, you can download the APK directly from [GitHub Releases](https://github.com/Asedwa/projekt_b-d/releases/latest). For future updates, you don't even need to revisit GitHub — you can check for and install new versions with a single tap right from the app's settings.
 
-GitHub & APK İndirme Linki: https://github.com/Asedwa/projekt_b-d
+GitHub & APK Download: https://github.com/Asedwa/projekt_b-d
 
-Deneyip "şurası şöyle olsa daha iyi olur" dediğiniz yerler veya denk geldiğiniz bir hata olursa yorumlarda yazarsanız çok sevinirim. Destek olmak isterseniz GitHub'dan bir yıldız bırakmanız da bizi bayağı motive eder. Şimdiden deneyen herkese teşekkürler!
+If you try it and have feedback like "this part could be better" or run into any bugs, feel free to share them in the comments or issues. Leaving a star on GitHub also motivates us a lot. Thanks to everyone who gives it a try!
 
-## Kaynak Koddan Derleme
+## Building from Source
 
-Gereksinimler: JDK 17, Android SDK & NDK, Rust ve [`cargo-ndk`](https://github.com/bbqsrc/cargo-ndk).
+Requirements: JDK 17, Android SDK & NDK, Rust, and [`cargo-ndk`](https://github.com/bbqsrc/cargo-ndk).
 
 ```bash
 git clone https://github.com/Asedwa/projekt_b-d.git
@@ -54,8 +54,8 @@ cd ../android
 ./gradlew :app:assembleRelease
 ```
 
-APK çıktısı `android/app/build/outputs/apk/release/app-release.apk` konumunda oluşturulur.
+The release APK is generated at `android/app/build/outputs/apk/release/app-release.apk`.
 
-## Lisans
+## License
 
-Bu proje **GPL-3.0-or-later** lisansı ile lisanslanmıştır.
+This project is licensed under **GPL-3.0-or-later**.

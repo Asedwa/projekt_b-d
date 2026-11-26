@@ -37,6 +37,7 @@ dependencies = [
  "core-settings",
  "core-storage",
  "core-themes",
+ "core-updater",
  "provider-deezer",
  "provider-dev",
  "provider-local",
@@ -458,6 +459,17 @@ dependencies = [
  "core-domain",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "core-updater"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "url",
 ]
 
 [[package]]
