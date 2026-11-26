@@ -1543,6 +1543,27 @@ impl PlasmaWaveCore {
         Ok(())
     }
 
+    pub fn replace_playlist_membership_cache(
+        &self,
+        playlist_id: String,
+        track_ids: Vec<String>,
+    ) -> FfiResult<()> {
+        self.database
+            .replace_playlist_membership_cache(&playlist_id, &track_ids)?;
+        Ok(())
+    }
+
+    pub fn get_playlists_needing_membership_sync(
+        &self,
+        playlists: Vec<FfiPlaylist>,
+    ) -> FfiResult<Vec<String>> {
+        let pairs: Vec<(String, u32)> = playlists
+            .into_iter()
+            .map(|p| (p.id, p.track_count))
+            .collect();
+        Ok(self.database.get_playlists_needing_membership_sync(&pairs)?)
+    }
+
     pub fn get_playlists_containing_track(&self, track_id: String) -> FfiResult<Vec<String>> {
         Ok(self.database.get_playlists_containing_track(&track_id)?)
     }

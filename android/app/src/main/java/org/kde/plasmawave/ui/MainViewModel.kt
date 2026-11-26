@@ -2709,6 +2709,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun persistCachedPlaylistEntries(playlistId: String, entries: List<PlaylistTrackEntry>) {
         try {
             core.setCachedPlaylistEntries(playlistId, entries.take(300).map { it.toFfi() })
+            if (entries.size > 300) {
+                core.replacePlaylistMembershipCache(playlistId, entries.map { it.track.id })
+            }
         } catch (_: Exception) {}
     }
 
@@ -2930,16 +2933,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onIndexed: () -> Unit
     ) {
         if (!deezerSession.hasSavedSession) return
-        val deezerIds = playlists.map { it.id }.filter { it.startsWith("deezer:") }
-        if (deezerIds.isEmpty()) return
+        val deezerPlaylists = playlists.filter { it.id.startsWith("deezer:") }
+        if (deezerPlaylists.isEmpty()) return
         val generation = deezerGeneration.get()
         viewModelScope.launch(Dispatchers.IO) {
-            val missing = runCatching { core.getUncachedPlaylistIds(deezerIds) }.getOrDefault(emptyList())
+            val missing = runCatching {
+                core.getPlaylistsNeedingMembershipSync(deezerPlaylists)
+            }.getOrDefault(emptyList())
             if (missing.isEmpty()) return@launch
-            val gate = Semaphore(2)
+            val gate = Semaphore(3)
             var updatedAny = false
             coroutineScope {
-                missing.take(8).forEach { pid ->
+                missing.forEach { pid ->
                     launch {
                         gate.withPermit {
                             if (generation != deezerGeneration.get()) return@withPermit
@@ -2990,7 +2995,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (track.provider != "deezer") {
                         throw DeezerException("Deezer listelerine yalnızca Deezer şarkıları eklenebilir")
                     }
-                    deezerSession.editPlaylist(playlist.id, track.id, add = true)
+                    try {
+                        deezerSession.editPlaylist(playlist.id, track.id, add = true)
+                    } catch (e: DeezerException) {
+                        val existing = runCatching { deezerSession.playlistTrackEntries(playlist.id) }.getOrNull()
+                        if (existing != null) {
+                            persistCachedPlaylistEntries(playlist.id, existing)
+                            if (existing.any { it.track.id == track.id }) {
+                                _statusMessage.value = "\"${playlist.name}\" listesinde zaten mevcut"
+                                return@withContext Result.success(true)
+                            }
+                        }
+                        throw e
+                    }
                     runCatching { core.updatePlaylistMembershipCache(playlist.id, track.id, true) }
                     invalidatePlaylist(playlist.id)
                     viewModelScope.launch(Dispatchers.IO) {

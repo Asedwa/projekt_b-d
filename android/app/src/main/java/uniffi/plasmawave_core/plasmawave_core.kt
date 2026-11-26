@@ -980,6 +980,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1113,6 +1117,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_playlists_containing_track(`ptr`: Pointer,`trackId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_playlists_needing_membership_sync(`ptr`: Pointer,`playlists`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_private_session_status(`ptr`: Pointer,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_providers(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1195,6 +1201,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_reorder_home_widgets(`ptr`: Pointer,`orderedInstanceIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_replace_playlist_membership_cache(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`trackIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_reset_home_layout(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_restore_home_layout(`ptr`: Pointer,`items`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1499,6 +1507,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlists_containing_track(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlists_needing_membership_sync(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_private_session_status(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_providers(
@@ -1580,6 +1590,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_rename_playlist(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_reorder_home_widgets(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_replace_playlist_membership_cache(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_reset_home_layout(
     ): Short
@@ -1841,6 +1853,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlists_containing_track() != 37511.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlists_needing_membership_sync() != 8585.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_private_session_status() != 50611.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1962,6 +1977,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_reorder_home_widgets() != 24526.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_replace_playlist_membership_cache() != 56559.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_reset_home_layout() != 5300.toShort()) {
@@ -2577,6 +2595,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `getPlaylistsContainingTrack`(`trackId`: kotlin.String): List<kotlin.String>
     
+    fun `getPlaylistsNeedingMembershipSync`(`playlists`: List<FfiPlaylist>): List<kotlin.String>
+    
     fun `getPrivateSessionStatus`(`nowMs`: kotlin.ULong): FfiPrivateSessionStatus
     
     fun `getProviders`(): List<FfiProviderInfo>
@@ -2658,6 +2678,8 @@ public interface PlasmaWaveCoreInterface {
     fun `renamePlaylist`(`playlistId`: kotlin.String, `newName`: kotlin.String)
     
     fun `reorderHomeWidgets`(`orderedInstanceIds`: List<kotlin.String>): List<FfiHomeWidgetItem>
+    
+    fun `replacePlaylistMembershipCache`(`playlistId`: kotlin.String, `trackIds`: List<kotlin.String>)
     
     fun `resetHomeLayout`(): List<FfiHomeWidgetItem>
     
@@ -3497,6 +3519,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     }
     
 
+    
+    @Throws(FfiException::class)override fun `getPlaylistsNeedingMembershipSync`(`playlists`: List<FfiPlaylist>): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_playlists_needing_membership_sync(
+        it, FfiConverterSequenceTypeFfiPlaylist.lower(`playlists`),_status)
+}
+    }
+    )
+    }
+    
+
     override fun `getPrivateSessionStatus`(`nowMs`: kotlin.ULong): FfiPrivateSessionStatus {
             return FfiConverterTypeFfiPrivateSessionStatus.lift(
     callWithPointer {
@@ -4007,6 +4042,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     }
     )
     }
+    
+
+    
+    @Throws(FfiException::class)override fun `replacePlaylistMembershipCache`(`playlistId`: kotlin.String, `trackIds`: List<kotlin.String>)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_replace_playlist_membership_cache(
+        it, FfiConverterString.lower(`playlistId`),FfiConverterSequenceString.lower(`trackIds`),_status)
+}
+    }
+    
     
 
     

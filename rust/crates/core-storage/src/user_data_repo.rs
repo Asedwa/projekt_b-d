@@ -807,6 +807,62 @@ impl Database {
         Ok(())
     }
 
+    pub fn replace_playlist_membership_cache(
+        &self,
+        playlist_id: &str,
+        track_ids: &[String],
+    ) -> DomainResult<()> {
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("tx replace membership: {e}")))?;
+        tx.execute(
+            "DELETE FROM playlist_membership_cache WHERE playlist_id = ?1;",
+            params![playlist_id],
+        )
+        .map_err(|e| DomainError::Storage(format!("delete replace membership: {e}")))?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO playlist_membership_cache (playlist_id, track_id)
+                     VALUES (?1, ?2);",
+                )
+                .map_err(|e| DomainError::Storage(format!("prepare replace membership: {e}")))?;
+            for tid in track_ids {
+                stmt.execute(params![playlist_id, tid])
+                    .map_err(|e| DomainError::Storage(format!("insert replace membership: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit replace membership: {e}")))?;
+        Ok(())
+    }
+
+    pub fn get_playlists_needing_membership_sync(
+        &self,
+        playlists: &[(String, u32)],
+    ) -> DomainResult<Vec<String>> {
+        if playlists.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT COUNT(*) FROM playlist_membership_cache WHERE playlist_id = ?1;",
+            )
+            .map_err(|e| DomainError::Storage(format!("prepare membership sync check: {e}")))?;
+        let mut needing = Vec::new();
+        for (pid, expected_count) in playlists {
+            let count: i64 = stmt
+                .query_row(params![pid], |row| row.get(0))
+                .map_err(|e| DomainError::Storage(format!("query membership sync check: {e}")))?;
+            if count == 0 || (*expected_count > 0 && count < *expected_count as i64) {
+                needing.push(pid.clone());
+            }
+        }
+        Ok(needing)
+    }
+
     pub fn get_playlists_containing_track(&self, track_id: &str) -> DomainResult<Vec<String>> {
         let conn = self.lock()?;
         let mut stmt = conn
