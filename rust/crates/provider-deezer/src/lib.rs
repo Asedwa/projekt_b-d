@@ -17,7 +17,8 @@
 //! Nothing in this crate uses undocumented endpoints, cookies (ARL) or
 //! session-token interception.
 
-mod api;
+pub mod api;
+pub mod artwork;
 mod config;
 mod oauth;
 mod provider;

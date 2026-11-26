@@ -1119,6 +1119,7 @@ pub struct PlasmaWaveCore {
     dev_provider: DevProvider,
     download_manager: Arc<DownloadManager>,
     lyrics_client: core_lyrics::LyricsClient,
+    artwork_client: provider_deezer::artwork::ArtworkClient,
     active_theme_id: RwLock<String>,
     tokio_runtime: tokio::runtime::Runtime,
     private_session_until_ms: Mutex<Option<u64>>,
@@ -1187,6 +1188,7 @@ impl PlasmaWaveCore {
             dev_provider,
             download_manager,
             lyrics_client: core_lyrics::LyricsClient::new(),
+            artwork_client: provider_deezer::artwork::ArtworkClient::new(),
             active_theme_id,
             tokio_runtime,
             private_session_until_ms: Mutex::new(None),
@@ -1249,6 +1251,41 @@ impl PlasmaWaveCore {
                 text: l.text,
             })
             .collect()
+    }
+
+    // ------------------------------------------------------------------------
+    // Artwork Resolution (Deezer + iTunes + Bounded SQLite Cache)
+    // ------------------------------------------------------------------------
+    pub fn resolve_artwork(
+        &self,
+        title: String,
+        artist: Option<String>,
+    ) -> FfiResult<Option<String>> {
+        let Some(key) = provider_deezer::artwork::cache_key(&title, artist.as_deref()) else {
+            return Ok(None);
+        };
+        if let Ok(Some(cached)) = self.database.get_cached_artwork(&key) {
+            return Ok(Some(cached));
+        }
+
+        let resolved = self
+            .tokio_runtime
+            .block_on(self.artwork_client.resolve(&title, artist.as_deref()));
+
+        if let Some(ref url) = resolved {
+            let _ = self
+                .database
+                .set_cached_artwork(&key, url, now_epoch_ms());
+        }
+        Ok(resolved)
+    }
+
+    pub fn list_cached_artwork(
+        &self,
+        limit: u32,
+    ) -> FfiResult<std::collections::HashMap<String, String>> {
+        let pairs = self.database.list_cached_artwork(limit)?;
+        Ok(pairs.into_iter().collect())
     }
 
     // ------------------------------------------------------------------------

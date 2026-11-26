@@ -988,6 +988,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1155,6 +1159,8 @@ internal interface UniffiLib : Library {
     ): Int
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_is_favorite(`ptr`: Pointer,`trackIdStr`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_list_cached_artwork(`ptr`: Pointer,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_list_downloads(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_list_mods(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1212,6 +1218,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_replace_playlist_membership_cache(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`trackIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_reset_home_layout(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_resolve_artwork(`ptr`: Pointer,`title`: RustBuffer.ByValue,`artist`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_restore_home_layout(`ptr`: Pointer,`items`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1549,6 +1557,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_is_favorite(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_list_cached_artwork(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_list_downloads(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_list_mods(
@@ -1606,6 +1616,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_replace_playlist_membership_cache(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_reset_home_layout(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_resolve_artwork(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_restore_home_layout(
     ): Short
@@ -1916,6 +1928,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_is_favorite() != 30678.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_list_cached_artwork() != 53423.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_list_downloads() != 58396.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2001,6 +2016,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_reset_home_layout() != 5300.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_resolve_artwork() != 28474.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_restore_home_layout() != 35993.toShort()) {
@@ -2647,6 +2665,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `isFavorite`(`trackIdStr`: kotlin.String): kotlin.Boolean
     
+    fun `listCachedArtwork`(`limit`: kotlin.UInt): Map<kotlin.String, kotlin.String>
+    
     fun `listDownloads`(): List<FfiDownloadTask>
     
     fun `listMods`(): List<FfiModInfo>
@@ -2704,6 +2724,8 @@ public interface PlasmaWaveCoreInterface {
     fun `replacePlaylistMembershipCache`(`playlistId`: kotlin.String, `trackIds`: List<kotlin.String>)
     
     fun `resetHomeLayout`(): List<FfiHomeWidgetItem>
+    
+    fun `resolveArtwork`(`title`: kotlin.String, `artist`: kotlin.String?): kotlin.String?
     
     fun `restoreHomeLayout`(`items`: List<FfiHomeWidgetItem>): List<FfiHomeWidgetItem>
     
@@ -3758,6 +3780,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
 
     
+    @Throws(FfiException::class)override fun `listCachedArtwork`(`limit`: kotlin.UInt): Map<kotlin.String, kotlin.String> {
+            return FfiConverterMapStringString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_list_cached_artwork(
+        it, FfiConverterUInt.lower(`limit`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(FfiException::class)override fun `listDownloads`(): List<FfiDownloadTask> {
             return FfiConverterSequenceTypeFfiDownloadTask.lift(
     callWithPointer {
@@ -4110,6 +4145,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_reset_home_layout(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `resolveArtwork`(`title`: kotlin.String, `artist`: kotlin.String?): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_resolve_artwork(
+        it, FfiConverterString.lower(`title`),FfiConverterOptionalString.lower(`artist`),_status)
 }
     }
     )
@@ -8296,6 +8344,45 @@ public object FfiConverterSequenceTypeFfiTrackListeningStat: FfiConverterRustBuf
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiTrackListeningStat.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.String, kotlin.String>> {
+    override fun read(buf: ByteBuffer): Map<kotlin.String, kotlin.String> {
+        val len = buf.getInt()
+        return buildMap<kotlin.String, kotlin.String>(len) {
+            repeat(len) {
+                val k = FfiConverterString.read(buf)
+                val v = FfiConverterString.read(buf)
+                this[k] = v
+            }
+        }
+    }
+
+    override fun allocationSize(value: Map<kotlin.String, kotlin.String>): ULong {
+        val spaceForMapSize = 4UL
+        val spaceForChildren = value.map { (k, v) ->
+            FfiConverterString.allocationSize(k) +
+            FfiConverterString.allocationSize(v)
+        }.sum()
+        return spaceForMapSize + spaceForChildren
+    }
+
+    override fun write(value: Map<kotlin.String, kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        // The parens on `(k, v)` here ensure we're calling the right method,
+        // which is important for compatibility with older android devices.
+        // Ref https://blog.danlew.net/2017/03/16/kotlin-puzzler-whose-line-is-it-anyways/
+        value.forEach { (k, v) ->
+            FfiConverterString.write(k, buf)
+            FfiConverterString.write(v, buf)
         }
     }
 }

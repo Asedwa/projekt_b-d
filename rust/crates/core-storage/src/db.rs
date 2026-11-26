@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const _CURRENT_SCHEMA_VERSION: i32 = 6;
+pub const _CURRENT_SCHEMA_VERSION: i32 = 7;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -330,6 +330,28 @@ impl Database {
                 .map_err(|e| DomainError::Storage(format!("commit migration v6 error: {e}")))?;
         }
 
+        if version < 7 {
+            let tx = conn
+                .transaction()
+                .map_err(|e| DomainError::Storage(format!("migration v7 transaction error: {e}")))?;
+
+            tx.execute_batch(
+                "CREATE TABLE IF NOT EXISTS artwork_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    artwork_url TEXT NOT NULL,
+                    updated_at_ms INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_artwork_cache_updated
+                    ON artwork_cache(updated_at_ms ASC);
+
+                PRAGMA user_version = 7;",
+            )
+            .map_err(|e| DomainError::Storage(format!("failed to execute migration v7: {e}")))?;
+
+            tx.commit()
+                .map_err(|e| DomainError::Storage(format!("commit migration v7 error: {e}")))?;
+        }
+
         Ok(())
     }
 }
@@ -345,6 +367,6 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
     }
 }

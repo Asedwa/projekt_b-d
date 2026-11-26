@@ -954,6 +954,79 @@ impl Database {
             .map_err(|e| DomainError::Storage(format!("commit set_cached_lyrics: {e}")))?;
         Ok(())
     }
+
+    // ------------------------------------------------------------------------
+    // Artwork Fallback Cache (bounded LRU in SQLite)
+    // ------------------------------------------------------------------------
+    pub fn get_cached_artwork(&self, cache_key: &str) -> DomainResult<Option<String>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached("SELECT artwork_url FROM artwork_cache WHERE cache_key = ?1;")
+            .map_err(|e| DomainError::Storage(format!("prepare get_cached_artwork: {e}")))?;
+        let url: Option<String> = stmt
+            .query_row(params![cache_key], |row| row.get(0))
+            .optional()
+            .map_err(|e| DomainError::Storage(format!("query get_cached_artwork: {e}")))?;
+        Ok(url)
+    }
+
+    pub fn set_cached_artwork(
+        &self,
+        cache_key: &str,
+        artwork_url: &str,
+        now_ms: u64,
+    ) -> DomainResult<()> {
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("tx set_cached_artwork: {e}")))?;
+        tx.execute(
+            "INSERT INTO artwork_cache (cache_key, artwork_url, updated_at_ms)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(cache_key) DO UPDATE SET
+                artwork_url = excluded.artwork_url,
+                updated_at_ms = excluded.updated_at_ms;",
+            params![cache_key, artwork_url, now_ms as i64],
+        )
+        .map_err(|e| DomainError::Storage(format!("set_cached_artwork: {e}")))?;
+
+        // Keep artwork cache bounded to 1000 entries
+        tx.execute(
+            "DELETE FROM artwork_cache
+             WHERE cache_key IN (
+                 SELECT cache_key FROM artwork_cache
+                 ORDER BY updated_at_ms DESC
+                 LIMIT -1 OFFSET 1000
+             );",
+            [],
+        )
+        .map_err(|e| DomainError::Storage(format!("prune artwork_cache: {e}")))?;
+
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit set_cached_artwork: {e}")))?;
+        Ok(())
+    }
+
+    pub fn list_cached_artwork(&self, limit: u32) -> DomainResult<Vec<(String, String)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT cache_key, artwork_url FROM artwork_cache
+                 ORDER BY updated_at_ms DESC
+                 LIMIT ?1;",
+            )
+            .map_err(|e| DomainError::Storage(format!("prepare list_cached_artwork: {e}")))?;
+        let rows = stmt
+            .query_map(params![limit.clamp(1, 1000)], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| DomainError::Storage(format!("query list_cached_artwork: {e}")))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| DomainError::Storage(format!("read artwork row: {e}")))?);
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
