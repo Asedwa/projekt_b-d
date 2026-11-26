@@ -2,10 +2,6 @@
 <div align="center">
   <img src="docs/images/logo.png" alt="projekt_b-d Logo" height="160" />
   <h1>projekt_b-d</h1>
-  <p>
-    projekt_b-d, Deezer kitaplığını ve cihazındaki yerel müzikleri Kotlin, Jetpack Compose
-    ve Rust çekirdeğiyle bir araya getiren modern ve kişiselleştirilebilir bir Android müzik oynatıcısıdır.
-  </p>
 
   <p>
     <a href="https://github.com/Asedwa/projekt_b-d/releases/latest">
@@ -28,40 +24,23 @@
   </p>
 </div>
 
-## Genel Bakış
+Selamlar herkese bir süredir kendi ihtiyacımız ve merakımız üzerine uğraştığımız açık kaynaklı bir Android müzik çalar projem vardı, artık paylaşılacak kıvama geldiği için sizinle de paylaşmak istedim. Adı projekt better dezeer.
 
-projekt_b-d; Deezer hesabını, çalma listelerini ve cihazındaki yerel ses dosyalarını tek bir sade arayüzde toplar. Parçaları çevrimdışı dinlemek için indirebilir, ana sayfayı kendi widget düzenine göre şekillendirebilir ve arkadaşlarınla aynı anda müzik dinleyebilirsin.
+Kısaca bahsetmek gerekirse telefondaki yerel müzik dosyalarıyla Deezer kütüphaneniz tek bir uygulamada, göz yormayan ve kafanıza göre özelleştirebileceğiniz bir arayüzde toplamak istiyordum. Arayüz tarafını Kotlin ve Jetpack Compose ile, arka plandaki çekirdek işleri ise performanslı olsun diye Rust ile yazdık.
 
-Kitaplık, çalma listeleri, temalar ve dinleme istatistikleri cihazda yerel olarak saklanır; yeni sürümler uygulama içinden otomatik olarak denetlenir.
+İçinde neler var derseniz:
 
-## Özellikler
+- **Deezer + Yerel Müzik bir arada:** Hem Deezer hesabınızdaki listeleri, Flow'u ve miksleri hem de cihazdaki ses dosyalarını tek yerden çalabiliyorsunuz.
+- **FLAC / MP3 İndirme:** Parçaları veya listeleri çevrimdışı dinlemek için doğrudan MP3 ya da kayıpsız FLAC olarak telefona indirebiliyor.
+- **Jam (Birlikte Dinleme):** Oda kodu oluşturup arkadaşlarınızla aynı anda, senkronize şekilde müzik dinleyebiliyorsunuz.
+- **Fazlasıyla Kişiselleştirilebilir Arayüz:** Ana sayfadaki kartları ve widget'ları sürükle-bırak ile istediğiniz gibi dizebilirsiniz. AMOLED siyah mod, kendi temanızı yapabileceğiniz tema düzenleyici, albüm kapağına göre renk değiştiren saydam cam oynatıcı ve 12 farklı canlı arka plan var.
+- **Ekstra araçlar:** Dinleme istatistikleri, uyku zamanlayıcısı, gizli mod gibi günlük kullanımda işe yarayan detayları da ekledim. Bütün verileriniz ve istatistikleriniz tamamen cihazda yerel olarak tutuluyor.
 
-- **Tema ve Görünüm**: Hazır temalar, renk uyumu destekli özel tema düzenleyici, dinamik albüm renkleri ve AMOLED siyah modu.
-- **Now Playing**: Albüm kapağından üretilen saydam cam oynatıcı ve 12 canlı ortam arka planı.
-- **Deezer ve Yerel Müzik**: Deezer kitaplığı, Flow, miksler ve cihazdaki yerel müzik dosyalarını tek yerden oynatma.
-- **Çevrimdışı İndirme**: Şarkı ve çalma listelerini MP3 veya FLAC olarak `Müzik/PlasmaWave` klasörüne kaydetme.
-- **Jam (Birlikte Dinle)**: Oda koduyla arkadaşlarınla gerçek zamanlı eşzamanlı müzik dinleme.
-- **Modüler Ana Sayfa**: Sürükle-bırak widget düzenleme, kaldığın yerden devam et ve özelleştirilebilir hızlı kartlar.
-- **İstatistikler ve Araçlar**: Dinleme süresi takibi, uyku zamanlayıcısı ve gizli dinleme modu.
-- **Otomatik Güncelleme**: GitHub Releases üzerinden yeni sürümleri uygulama içinde denetleyip tek dokunuşla kurma.
+Kurmak isteyenler [GitHub Releases](https://github.com/Asedwa/projekt_b-d/releases/latest) kısmından doğrudan APK olarak indirip kurabilir. Sonraki güncellemeler için tekrar GitHub'a girmenize gerek yok, uygulamanın ayarlarından tek tuşla yeni sürümü kontrol edip güncelleyebiliyor.
 
-<!--
-Ekran görüntülerini `docs/images/` klasörüne ekleyip aşağıdaki bölümü açabilirsiniz:
+GitHub & APK İndirme Linki: https://github.com/Asedwa/projekt_b-d
 
-## Ekran Görüntüleri
-
-<div align="center">
-  <img src="docs/images/home.png" width="240" alt="Ana Sayfa" />
-  <img src="docs/images/player.png" width="240" alt="Oynatıcı" />
-  <img src="docs/images/themes.png" width="240" alt="Temalar" />
-</div>
--->
-
-## Kurulum
-
-1. [Releases](https://github.com/Asedwa/projekt_b-d/releases/latest) sayfasından `projekt_b-d-<sürüm>.apk` dosyasını indir.
-2. APK'yı cihazına kur.
-3. Sonraki güncellemeleri **Ayarlar → Eklentiler ve Hakkında → Güncellemeler** üzerinden doğrudan indirip kurabilirsin.
+Deneyip "şurası şöyle olsa daha iyi olur" dediğiniz yerler veya denk geldiğiniz bir hata olursa yorumlarda yazarsanız çok sevinirim. Destek olmak isterseniz GitHub'dan bir yıldız bırakmanız da bizi bayağı motive eder. Şimdiden deneyen herkese teşekkürler!
 
 ## Kaynak Koddan Derleme
 
