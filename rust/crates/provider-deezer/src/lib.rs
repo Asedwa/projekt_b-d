@@ -19,6 +19,7 @@
 
 pub mod api;
 pub mod artwork;
+pub mod crypto;
 mod config;
 mod oauth;
 mod provider;

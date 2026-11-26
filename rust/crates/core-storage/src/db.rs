@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const _CURRENT_SCHEMA_VERSION: i32 = 8;
+pub const _CURRENT_SCHEMA_VERSION: i32 = 9;
 
 pub struct Database {
     conn: Mutex<Connection>,
@@ -371,6 +371,35 @@ impl Database {
                 .map_err(|e| DomainError::Storage(format!("commit migration v8 error: {e}")))?;
         }
 
+        if version < 9 {
+            let tx = conn
+                .transaction()
+                .map_err(|e| DomainError::Storage(format!("migration v9 transaction error: {e}")))?;
+
+            tx.execute_batch(
+                "CREATE TABLE IF NOT EXISTS full_downloads_queue (
+                    position INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id TEXT NOT NULL UNIQUE,
+                    track_json TEXT NOT NULL,
+                    quality TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    progress INTEGER NOT NULL DEFAULT 0,
+                    uri TEXT,
+                    error TEXT,
+                    partial_uri TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    playlist_id TEXT,
+                    playlist_name TEXT
+                );
+
+                PRAGMA user_version = 9;",
+            )
+            .map_err(|e| DomainError::Storage(format!("failed to execute migration v9: {e}")))?;
+
+            tx.commit()
+                .map_err(|e| DomainError::Storage(format!("commit migration v9 error: {e}")))?;
+        }
+
         Ok(())
     }
 }
@@ -386,6 +415,6 @@ mod tests {
         let version: i32 = conn
             .query_row("PRAGMA user_version;", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
     }
 }

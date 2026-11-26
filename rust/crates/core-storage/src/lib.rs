@@ -14,6 +14,6 @@ pub use stats_analytics_repo::{
 };
 pub use user_data_repo::{
     now_epoch_ms, StoredHistoryEntry, StoredPinnedItem, StoredPlaylistRecord,
-    StoredPlaylistTrackEntry, StoredResumePlaybackState, StoredTrackListeningStat,
-    StoredTrackRecord,
+    StoredPlaylistTrackEntry, StoredResumePlaybackState, StoredSavedDownload,
+    StoredTrackListeningStat, StoredTrackRecord,
 };

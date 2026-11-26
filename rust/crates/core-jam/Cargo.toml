@@ -1,0 +1,13 @@
+[package]
+name = "core-jam"
+description = "MQTT 3.1.1 packet codec, constant-time Jam code verification, and playback drift helpers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

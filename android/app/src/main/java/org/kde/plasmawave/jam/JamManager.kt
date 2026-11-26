@@ -46,10 +46,14 @@ internal fun verifyJamCodeConstantTime(expectedCode: String, providedCode: Strin
     val exp = expectedCode.trim().uppercase()
     val prov = providedCode.trim().uppercase()
     if (!isValidJamCode(exp) || !isValidJamCode(prov)) return false
-    return MessageDigest.isEqual(
-        exp.toByteArray(Charsets.UTF_8),
-        prov.toByteArray(Charsets.UTF_8)
-    )
+    return try {
+        org.kde.plasmawave.PlasmaWaveApp.core.jamConstantTimeEq(exp, prov)
+    } catch (_: UninitializedPropertyAccessException) {
+        MessageDigest.isEqual(
+            exp.toByteArray(Charsets.UTF_8),
+            prov.toByteArray(Charsets.UTF_8)
+        )
+    }
 }
 
 internal fun parseValidatedLanHostPort(raw: String): String? {

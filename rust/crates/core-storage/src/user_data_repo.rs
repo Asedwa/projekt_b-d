@@ -81,6 +81,21 @@ pub struct StoredPlaylistTrackEntry {
     pub original_index: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredSavedDownload {
+    pub id: String,
+    pub track: StoredTrackRecord,
+    pub quality: String,
+    pub state: String,
+    pub progress: i32,
+    pub uri: Option<String>,
+    pub error: Option<String>,
+    pub partial_uri: Option<String>,
+    pub attempts: i32,
+    pub playlist_id: Option<String>,
+    pub playlist_name: Option<String>,
+}
+
 impl Database {
     // ------------------------------------------------------------------------
     // Listening Statistics & History
@@ -1083,6 +1098,165 @@ impl Database {
         }
         tx.commit()
             .map_err(|e| DomainError::Storage(format!("commit set_kv_batch: {e}")))?;
+        Ok(())
+    }
+
+    // ------------------------------------------------------------------------
+    // Full Downloads Queue (replaces Kotlin DownloadDatabase SQLiteOpenHelper)
+    // ------------------------------------------------------------------------
+    pub fn load_full_downloads(&self) -> DomainResult<Vec<StoredSavedDownload>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, track_json, quality, state, progress, uri, error, partial_uri, attempts, playlist_id, playlist_name
+                 FROM full_downloads_queue
+                 ORDER BY position ASC;",
+            )
+            .map_err(|e| DomainError::Storage(format!("prepare load_full_downloads: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i32>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, i32>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
+                ))
+            })
+            .map_err(|e| DomainError::Storage(format!("query load_full_downloads: {e}")))?;
+
+        let mut out = Vec::new();
+        for r in rows {
+            let (id, track_json, quality, state, progress, uri, error, partial_uri, attempts, playlist_id, playlist_name) =
+                r.map_err(|e| DomainError::Storage(format!("read full_download row: {e}")))?;
+            if let Ok(track) = serde_json::from_str::<StoredTrackRecord>(&track_json) {
+                out.push(StoredSavedDownload {
+                    id,
+                    track,
+                    quality,
+                    state,
+                    progress,
+                    uri,
+                    error,
+                    partial_uri,
+                    attempts,
+                    playlist_id,
+                    playlist_name,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn insert_full_downloads(&self, items: &[StoredSavedDownload]) -> DomainResult<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("tx insert_full_downloads: {e}")))?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO full_downloads_queue
+                     (id, track_json, quality, state, progress, uri, error, partial_uri, attempts, playlist_id, playlist_name)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11);",
+                )
+                .map_err(|e| DomainError::Storage(format!("prepare insert_full_downloads: {e}")))?;
+            for item in items {
+                let track_json = serde_json::to_string(&item.track)
+                    .map_err(|e| DomainError::Storage(format!("serialize download track: {e}")))?;
+                stmt.execute(params![
+                    item.id,
+                    track_json,
+                    item.quality,
+                    item.state,
+                    item.progress,
+                    item.uri,
+                    item.error,
+                    item.partial_uri,
+                    item.attempts,
+                    item.playlist_id,
+                    item.playlist_name,
+                ])
+                .map_err(|e| DomainError::Storage(format!("exec insert_full_downloads: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit insert_full_downloads: {e}")))?;
+        Ok(())
+    }
+
+    pub fn update_full_download(&self, item: &StoredSavedDownload) -> DomainResult<()> {
+        let track_json = serde_json::to_string(&item.track)
+            .map_err(|e| DomainError::Storage(format!("serialize download track: {e}")))?;
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "UPDATE full_downloads_queue
+                 SET track_json = ?2, quality = ?3, state = ?4, progress = ?5,
+                     uri = ?6, error = ?7, partial_uri = ?8, attempts = ?9,
+                     playlist_id = ?10, playlist_name = ?11
+                 WHERE id = ?1;",
+            )
+            .map_err(|e| DomainError::Storage(format!("prepare update_full_download: {e}")))?;
+        stmt.execute(params![
+            item.id,
+            track_json,
+            item.quality,
+            item.state,
+            item.progress,
+            item.uri,
+            item.error,
+            item.partial_uri,
+            item.attempts,
+            item.playlist_id,
+            item.playlist_name,
+        ])
+        .map_err(|e| DomainError::Storage(format!("exec update_full_download: {e}")))?;
+        Ok(())
+    }
+
+    pub fn remove_full_download(&self, id: &str) -> DomainResult<()> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached("DELETE FROM full_downloads_queue WHERE id = ?1;")
+            .map_err(|e| DomainError::Storage(format!("prepare remove_full_download: {e}")))?;
+        stmt.execute(params![id])
+            .map_err(|e| DomainError::Storage(format!("exec remove_full_download: {e}")))?;
+        Ok(())
+    }
+
+    pub fn cancel_full_downloads(&self, ids: &[String]) -> DomainResult<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("tx cancel_full_downloads: {e}")))?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "UPDATE full_downloads_queue
+                     SET state = 'cancelled', error = NULL, partial_uri = NULL
+                     WHERE id = ?1;",
+                )
+                .map_err(|e| DomainError::Storage(format!("prepare cancel_full_downloads: {e}")))?;
+            for id in ids {
+                stmt.execute(params![id])
+                    .map_err(|e| DomainError::Storage(format!("exec cancel_full_downloads: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit cancel_full_downloads: {e}")))?;
         Ok(())
     }
 

@@ -17,6 +17,9 @@ tokio.workspace = true
 url.workspace = true
 getrandom = "0.2"
 hex.workspace = true
+md-5.workspace = true
+blowfish.workspace = true
+cbc.workspace = true
 
 [dev-dependencies]
 wiremock.workspace = true

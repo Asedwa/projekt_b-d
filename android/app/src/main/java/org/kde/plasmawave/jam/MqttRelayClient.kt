@@ -142,23 +142,9 @@ class MqttRelayClient(
         scope.launch {
             try {
                 val out = output ?: return@launch
-                val topicBytes = topicFilter.toByteArray(Charsets.UTF_8)
-                val body = ByteArrayOutputStream().apply {
-                    // Packet Identifier = 1
-                    write(0x00)
-                    write(0x01)
-                    // Topic filter
-                    write((topicBytes.size shr 8) and 0xFF)
-                    write(topicBytes.size and 0xFF)
-                    write(topicBytes)
-                    // QoS 0
-                    write(0x00)
-                }.toByteArray()
-
+                val packet = org.kde.plasmawave.PlasmaWaveApp.core.mqttEncodeSubscribe(1u, topicFilter)
                 synchronized(writeLock) {
-                    out.write(0x82)
-                    writeRemainingLength(out, body.size)
-                    out.write(body)
+                    out.write(packet)
                     out.flush()
                 }
             } catch (e: Exception) {
@@ -171,20 +157,9 @@ class MqttRelayClient(
         scope.launch {
             try {
                 val out = output ?: return@launch
-                val topicBytes = topic.toByteArray(Charsets.UTF_8)
-                val payloadBytes = payload.toByteArray(Charsets.UTF_8)
-                val body = ByteArrayOutputStream().apply {
-                    write((topicBytes.size shr 8) and 0xFF)
-                    write(topicBytes.size and 0xFF)
-                    write(topicBytes)
-                    write(payloadBytes)
-                }.toByteArray()
-
-                val headerByte = if (retain) 0x31 else 0x30
+                val packet = org.kde.plasmawave.PlasmaWaveApp.core.mqttEncodePublish(topic, payload, retain)
                 synchronized(writeLock) {
-                    out.write(headerByte)
-                    writeRemainingLength(out, body.size)
-                    out.write(body)
+                    out.write(packet)
                     out.flush()
                 }
             } catch (e: Exception) {
@@ -224,9 +199,9 @@ class MqttRelayClient(
                 delay(20_000)
                 try {
                     val out = output ?: break
+                    val ping = org.kde.plasmawave.PlasmaWaveApp.core.mqttEncodePingreq()
                     synchronized(writeLock) {
-                        out.write(0xC0)
-                        out.write(0x00)
+                        out.write(ping)
                         out.flush()
                     }
                 } catch (_: Exception) {
@@ -245,15 +220,10 @@ class MqttRelayClient(
 
                     val packetType = header and 0xF0
                     if (packetType == 0x30 && payload.size >= 2) {
-                        val topicLen = ((payload[0].toInt() and 0xFF) shl 8) or (payload[1].toInt() and 0xFF)
-                        if (2 + topicLen <= payload.size) {
-                            val topic = String(payload, 2, topicLen, Charsets.UTF_8)
-                            val qos = (header shr 1) and 0x03
-                            val msgOffset = 2 + topicLen + (if (qos > 0) 2 else 0)
-                            if (msgOffset <= payload.size) {
-                                val msg = String(payload, msgOffset, payload.size - msgOffset, Charsets.UTF_8)
-                                onMessage(topic, msg)
-                            }
+                        runCatching {
+                            org.kde.plasmawave.PlasmaWaveApp.core.mqttDecodePublish(header.toUByte(), payload)
+                        }.onSuccess { decoded ->
+                            onMessage(decoded.topic, decoded.payload)
                         }
                     }
                 }
@@ -267,37 +237,9 @@ class MqttRelayClient(
     }
 
     private fun sendConnectPacket(out: OutputStream, clientId: String) {
-        val clientBytes = clientId.toByteArray(Charsets.UTF_8)
-        val body = ByteArrayOutputStream().apply {
-            // Protocol Name "MQTT"
-            write(0x00); write(0x04)
-            write("MQTT".toByteArray(Charsets.UTF_8))
-            // Protocol Level 4 (v3.1.1)
-            write(0x04)
-            // Connect Flags: Clean Session (0x02)
-            write(0x02)
-            // Keep Alive = 30s
-            write(0x00); write(0x1E)
-            // Client ID
-            write((clientBytes.size shr 8) and 0xFF)
-            write(clientBytes.size and 0xFF)
-            write(clientBytes)
-        }.toByteArray()
-
-        out.write(0x10)
-        writeRemainingLength(out, body.size)
-        out.write(body)
+        val packet = org.kde.plasmawave.PlasmaWaveApp.core.mqttEncodeConnect(clientId, 30u)
+        out.write(packet)
         out.flush()
-    }
-
-    private fun writeRemainingLength(out: OutputStream, length: Int) {
-        var x = length
-        do {
-            var encoded = x % 128
-            x /= 128
-            if (x > 0) encoded = encoded or 0x80
-            out.write(encoded)
-        } while (x > 0)
     }
 
     private fun readRemainingLength(inp: DataInputStream): Int =

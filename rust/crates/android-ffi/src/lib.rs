@@ -790,6 +790,63 @@ pub struct FfiPlaylistPickerItem {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiMqttPublish {
+    pub topic: String,
+    pub payload: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiSavedDownload {
+    pub id: String,
+    pub track: FfiTrack,
+    pub quality: String,
+    pub state: String,
+    pub progress: i32,
+    pub uri: Option<String>,
+    pub error: Option<String>,
+    pub partial_uri: Option<String>,
+    pub attempts: i32,
+    pub playlist_id: Option<String>,
+    pub playlist_name: Option<String>,
+}
+
+impl From<core_storage::StoredSavedDownload> for FfiSavedDownload {
+    fn from(d: core_storage::StoredSavedDownload) -> Self {
+        Self {
+            id: d.id,
+            track: FfiTrack::from(d.track),
+            quality: d.quality,
+            state: d.state,
+            progress: d.progress,
+            uri: d.uri,
+            error: d.error,
+            partial_uri: d.partial_uri,
+            attempts: d.attempts,
+            playlist_id: d.playlist_id,
+            playlist_name: d.playlist_name,
+        }
+    }
+}
+
+impl From<FfiSavedDownload> for core_storage::StoredSavedDownload {
+    fn from(d: FfiSavedDownload) -> Self {
+        Self {
+            id: d.id,
+            track: StoredTrackRecord::from(d.track),
+            quality: d.quality,
+            state: d.state,
+            progress: d.progress,
+            uri: d.uri,
+            error: d.error,
+            partial_uri: d.partial_uri,
+            attempts: d.attempts,
+            playlist_id: d.playlist_id,
+            playlist_name: d.playlist_name,
+        }
+    }
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiAppUpdateRelease {
     pub version: String,
     pub tag_name: String,
@@ -1364,6 +1421,79 @@ impl PlasmaWaveCore {
     ) -> FfiResult<()> {
         let pairs: Vec<(String, String)> = entries.into_iter().collect();
         Ok(self.database.set_kv_batch(&pairs)?)
+    }
+
+    // ------------------------------------------------------------------------
+    // Deezer Blowfish/MD5 Stripe Decryption
+    // ------------------------------------------------------------------------
+    pub fn derive_deezer_track_key(&self, track_id: String) -> Vec<u8> {
+        provider_deezer::crypto::derive_track_key(&track_id).to_vec()
+    }
+
+    pub fn decrypt_deezer_chunk(&self, key: Vec<u8>, chunk_index: u64, data: Vec<u8>) -> Vec<u8> {
+        provider_deezer::crypto::decrypt_stripe_bytes(&key, chunk_index, data)
+    }
+
+    // ------------------------------------------------------------------------
+    // Full Downloads Queue (Rust SQLite)
+    // ------------------------------------------------------------------------
+    pub fn load_full_downloads(&self) -> FfiResult<Vec<FfiSavedDownload>> {
+        let items = self.database.load_full_downloads()?;
+        Ok(items.into_iter().map(FfiSavedDownload::from).collect())
+    }
+
+    pub fn insert_full_downloads(&self, items: Vec<FfiSavedDownload>) -> FfiResult<()> {
+        let core_items: Vec<core_storage::StoredSavedDownload> =
+            items.into_iter().map(Into::into).collect();
+        Ok(self.database.insert_full_downloads(&core_items)?)
+    }
+
+    pub fn update_full_download(&self, item: FfiSavedDownload) -> FfiResult<()> {
+        let core_item = core_storage::StoredSavedDownload::from(item);
+        Ok(self.database.update_full_download(&core_item)?)
+    }
+
+    pub fn remove_full_download(&self, id: String) -> FfiResult<()> {
+        Ok(self.database.remove_full_download(&id)?)
+    }
+
+    pub fn cancel_full_downloads(&self, ids: Vec<String>) -> FfiResult<()> {
+        Ok(self.database.cancel_full_downloads(&ids)?)
+    }
+
+    // ------------------------------------------------------------------------
+    // Jam / MQTT 3.1.1 Codec & Protocol Helpers
+    // ------------------------------------------------------------------------
+    pub fn jam_constant_time_eq(&self, expected: String, provided: String) -> bool {
+        core_jam::constant_time_eq(&expected, &provided)
+    }
+
+    pub fn mqtt_encode_connect(&self, client_id: String, keep_alive_secs: u16) -> Vec<u8> {
+        core_jam::encode_mqtt_connect(&client_id, keep_alive_secs)
+    }
+
+    pub fn mqtt_encode_subscribe(&self, packet_id: u16, topic_filter: String) -> Vec<u8> {
+        core_jam::encode_mqtt_subscribe(packet_id, &topic_filter)
+    }
+
+    pub fn mqtt_encode_publish(&self, topic: String, payload: String, retain: bool) -> Vec<u8> {
+        core_jam::encode_mqtt_publish(&topic, &payload, retain)
+    }
+
+    pub fn mqtt_encode_pingreq(&self) -> Vec<u8> {
+        core_jam::encode_mqtt_pingreq()
+    }
+
+    pub fn mqtt_decode_publish(&self, header: u8, body: Vec<u8>) -> FfiResult<FfiMqttPublish> {
+        let decoded = core_jam::decode_mqtt_publish_body(header, &body).map_err(|e| {
+            FfiError::OperationFailed {
+                reason: e.to_string(),
+            }
+        })?;
+        Ok(FfiMqttPublish {
+            topic: decoded.topic,
+            payload: decoded.payload,
+        })
     }
 
     // ------------------------------------------------------------------------
