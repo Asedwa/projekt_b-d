@@ -341,7 +341,6 @@ class MainActivity : ComponentActivity() {
                                 onDismiss = { fullPlayerController.close() },
                                 onAddToPlaylist = { trackForPlaylist = it },
                                 onOpenMenu = { track ->
-                                    fullPlayerController.close()
                                     viewModel.openTrackMenu(track)
                                 },
                                 onShowSleepTimer = { showSleepTimerDialog = true },
