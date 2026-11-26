@@ -23,6 +23,7 @@ core-storage.workspace = true
 core-themes.workspace = true
 core-mods.workspace = true
 core-settings.workspace = true
+core-lyrics.workspace = true
 uniffi = { workspace = true, features = ["cli"] }
 tokio.workspace = true
 serde.workspace = true

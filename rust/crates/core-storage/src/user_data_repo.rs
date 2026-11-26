@@ -902,6 +902,58 @@ impl Database {
         }
         Ok(missing)
     }
+
+    // ------------------------------------------------------------------------
+    // Lyrics Cache
+    // ------------------------------------------------------------------------
+    pub fn get_cached_lyrics(&self, cache_key: &str) -> DomainResult<Option<String>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached("SELECT payload_json FROM lyrics_cache WHERE cache_key = ?1;")
+            .map_err(|e| DomainError::Storage(format!("prepare get_cached_lyrics: {e}")))?;
+        let raw: Option<String> = stmt
+            .query_row(params![cache_key], |row| row.get(0))
+            .optional()
+            .map_err(|e| DomainError::Storage(format!("query get_cached_lyrics: {e}")))?;
+        Ok(raw)
+    }
+
+    pub fn set_cached_lyrics(
+        &self,
+        cache_key: &str,
+        payload_json: &str,
+        now_ms: u64,
+    ) -> DomainResult<()> {
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("tx set_cached_lyrics: {e}")))?;
+        tx.execute(
+            "INSERT INTO lyrics_cache (cache_key, payload_json, updated_at_ms)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(cache_key) DO UPDATE SET
+                payload_json = excluded.payload_json,
+                updated_at_ms = excluded.updated_at_ms;",
+            params![cache_key, payload_json, now_ms as i64],
+        )
+        .map_err(|e| DomainError::Storage(format!("set_cached_lyrics: {e}")))?;
+
+        // Keep lyrics cache bounded to 500 entries (evict oldest)
+        tx.execute(
+            "DELETE FROM lyrics_cache
+             WHERE cache_key IN (
+                 SELECT cache_key FROM lyrics_cache
+                 ORDER BY updated_at_ms DESC
+                 LIMIT -1 OFFSET 500
+             );",
+            [],
+        )
+        .map_err(|e| DomainError::Storage(format!("prune lyrics_cache: {e}")))?;
+
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit set_cached_lyrics: {e}")))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -984,6 +984,10 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1050,6 +1054,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_enqueue_authorized_download(`ptr`: Pointer,`url`: RustBuffer.ByValue,`sha256`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_execute_track_mod_action(`ptr`: Pointer,`modId`: RustBuffer.ByValue,`trackIdStr`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_fetch_lyrics(`ptr`: Pointer,`title`: RustBuffer.ByValue,`artist`: RustBuffer.ByValue,`album`: RustBuffer.ByValue,`durationMs`: Long,`forceRefresh`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_format_duration_tr(`ptr`: Pointer,`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1158,6 +1164,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_list_user_custom_themes(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_move_home_widget(`ptr`: Pointer,`instanceId`: RustBuffer.ByValue,`toIndex`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_parse_lrc(`ptr`: Pointer,`raw`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_pause_download(`ptr`: Pointer,`id`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1441,6 +1449,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_execute_track_mod_action(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_fetch_lyrics(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_format_duration_tr(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_generate_mood_mix(
@@ -1548,6 +1558,8 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_list_user_custom_themes(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_move_home_widget(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_parse_lrc(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_pause_download(
     ): Short
@@ -1754,6 +1766,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_execute_track_mod_action() != 53765.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_fetch_lyrics() != 5653.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_format_duration_tr() != 12859.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1914,6 +1929,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_move_home_widget() != 57518.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_parse_lrc() != 3250.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_pause_download() != 23603.toShort()) {
@@ -2529,6 +2547,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `executeTrackModAction`(`modId`: kotlin.String, `trackIdStr`: kotlin.String): kotlin.String
     
+    fun `fetchLyrics`(`title`: kotlin.String, `artist`: kotlin.String, `album`: kotlin.String?, `durationMs`: kotlin.ULong, `forceRefresh`: kotlin.Boolean): FfiLyricsResult
+    
     fun `formatDurationTr`(`ms`: kotlin.ULong): kotlin.String
     
     fun `generateMoodMix`(`mood`: kotlin.String, `limit`: kotlin.UInt, `candidateTracks`: List<FfiTrack>): List<FfiTrack>
@@ -2636,6 +2656,8 @@ public interface PlasmaWaveCoreInterface {
     fun `listUserCustomThemes`(): List<FfiCustomThemeSpec>
     
     fun `moveHomeWidget`(`instanceId`: kotlin.String, `toIndex`: kotlin.UInt): List<FfiHomeWidgetItem>
+    
+    fun `parseLrc`(`raw`: kotlin.String): List<FfiLyricLine>
     
     fun `pauseDownload`(`id`: kotlin.Long): FfiDownloadTask
     
@@ -3092,6 +3114,19 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_execute_track_mod_action(
         it, FfiConverterString.lower(`modId`),FfiConverterString.lower(`trackIdStr`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `fetchLyrics`(`title`: kotlin.String, `artist`: kotlin.String, `album`: kotlin.String?, `durationMs`: kotlin.ULong, `forceRefresh`: kotlin.Boolean): FfiLyricsResult {
+            return FfiConverterTypeFfiLyricsResult.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_fetch_lyrics(
+        it, FfiConverterString.lower(`title`),FfiConverterString.lower(`artist`),FfiConverterOptionalString.lower(`album`),FfiConverterULong.lower(`durationMs`),FfiConverterBoolean.lower(`forceRefresh`),_status)
 }
     }
     )
@@ -3779,6 +3814,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_move_home_widget(
         it, FfiConverterString.lower(`instanceId`),FfiConverterUInt.lower(`toIndex`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `parseLrc`(`raw`: kotlin.String): List<FfiLyricLine> {
+            return FfiConverterSequenceTypeFfiLyricLine.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_parse_lrc(
+        it, FfiConverterString.lower(`raw`),_status)
 }
     }
     )
@@ -5717,6 +5764,74 @@ public object FfiConverterTypeFfiLocalTrackInput: FfiConverterRustBuffer<FfiLoca
 
 
 
+data class FfiLyricLine (
+    var `timeMs`: kotlin.ULong, 
+    var `text`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiLyricLine: FfiConverterRustBuffer<FfiLyricLine> {
+    override fun read(buf: ByteBuffer): FfiLyricLine {
+        return FfiLyricLine(
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiLyricLine) = (
+            FfiConverterULong.allocationSize(value.`timeMs`) +
+            FfiConverterString.allocationSize(value.`text`)
+    )
+
+    override fun write(value: FfiLyricLine, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`timeMs`, buf)
+            FfiConverterString.write(value.`text`, buf)
+    }
+}
+
+
+
+data class FfiLyricsResult (
+    var `status`: FfiLyricsStatus, 
+    var `lines`: List<FfiLyricLine>, 
+    var `plainText`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiLyricsResult: FfiConverterRustBuffer<FfiLyricsResult> {
+    override fun read(buf: ByteBuffer): FfiLyricsResult {
+        return FfiLyricsResult(
+            FfiConverterTypeFfiLyricsStatus.read(buf),
+            FfiConverterSequenceTypeFfiLyricLine.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: FfiLyricsResult) = (
+            FfiConverterTypeFfiLyricsStatus.allocationSize(value.`status`) +
+            FfiConverterSequenceTypeFfiLyricLine.allocationSize(value.`lines`) +
+            FfiConverterOptionalString.allocationSize(value.`plainText`)
+    )
+
+    override fun write(value: FfiLyricsResult, buf: ByteBuffer) {
+            FfiConverterTypeFfiLyricsStatus.write(value.`status`, buf)
+            FfiConverterSequenceTypeFfiLyricLine.write(value.`lines`, buf)
+            FfiConverterOptionalString.write(value.`plainText`, buf)
+    }
+}
+
+
+
 data class FfiModInfo (
     var `id`: kotlin.String, 
     var `name`: kotlin.String, 
@@ -6829,6 +6944,38 @@ public object FfiConverterTypeFfiLocalSortOrder: FfiConverterRustBuffer<FfiLocal
 
 
 
+enum class FfiLyricsStatus {
+    
+    SYNCED,
+    PLAIN,
+    INSTRUMENTAL,
+    NOT_FOUND;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeFfiLyricsStatus: FfiConverterRustBuffer<FfiLyricsStatus> {
+    override fun read(buf: ByteBuffer) = try {
+        FfiLyricsStatus.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: FfiLyricsStatus) = 4UL
+
+    override fun write(value: FfiLyricsStatus, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+
 enum class FfiPlaylistTrackSort {
     
     DEFAULT,
@@ -7813,6 +7960,34 @@ public object FfiConverterSequenceTypeFfiLocalTrackInput: FfiConverterRustBuffer
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeFfiLocalTrackInput.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeFfiLyricLine: FfiConverterRustBuffer<List<FfiLyricLine>> {
+    override fun read(buf: ByteBuffer): List<FfiLyricLine> {
+        val len = buf.getInt()
+        return List<FfiLyricLine>(len) {
+            FfiConverterTypeFfiLyricLine.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<FfiLyricLine>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeFfiLyricLine.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<FfiLyricLine>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeFfiLyricLine.write(it, buf)
         }
     }
 }

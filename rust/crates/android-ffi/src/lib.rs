@@ -789,6 +789,60 @@ pub struct FfiPlaylistPickerItem {
     pub is_compatible: bool,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiLyricLine {
+    pub time_ms: u64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiLyricsStatus {
+    Synced,
+    Plain,
+    Instrumental,
+    NotFound,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FfiLyricsResult {
+    pub status: FfiLyricsStatus,
+    pub lines: Vec<FfiLyricLine>,
+    pub plain_text: Option<String>,
+}
+
+impl From<core_lyrics::LyricsResult> for FfiLyricsResult {
+    fn from(r: core_lyrics::LyricsResult) -> Self {
+        match r {
+            core_lyrics::LyricsResult::Synced { lines } => Self {
+                status: FfiLyricsStatus::Synced,
+                lines: lines
+                    .into_iter()
+                    .map(|l| FfiLyricLine {
+                        time_ms: l.time_ms,
+                        text: l.text,
+                    })
+                    .collect(),
+                plain_text: None,
+            },
+            core_lyrics::LyricsResult::Plain { text } => Self {
+                status: FfiLyricsStatus::Plain,
+                lines: Vec::new(),
+                plain_text: Some(text),
+            },
+            core_lyrics::LyricsResult::Instrumental => Self {
+                status: FfiLyricsStatus::Instrumental,
+                lines: Vec::new(),
+                plain_text: None,
+            },
+            core_lyrics::LyricsResult::NotFound => Self {
+                status: FfiLyricsStatus::NotFound,
+                lines: Vec::new(),
+                plain_text: None,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FfiLibraryPlaylistSort {
     Default,
@@ -1064,6 +1118,7 @@ pub struct PlasmaWaveCore {
     deezer_provider: DeezerProvider,
     dev_provider: DevProvider,
     download_manager: Arc<DownloadManager>,
+    lyrics_client: core_lyrics::LyricsClient,
     active_theme_id: RwLock<String>,
     tokio_runtime: tokio::runtime::Runtime,
     private_session_until_ms: Mutex<Option<u64>>,
@@ -1131,6 +1186,7 @@ impl PlasmaWaveCore {
             deezer_provider,
             dev_provider,
             download_manager,
+            lyrics_client: core_lyrics::LyricsClient::new(),
             active_theme_id,
             tokio_runtime,
             private_session_until_ms: Mutex::new(None),
@@ -1141,6 +1197,58 @@ impl PlasmaWaveCore {
 
     pub fn get_version(&self) -> String {
         "PlasmaWave 0.1.0-alpha (Rust Core + KDE Breeze)".into()
+    }
+
+    // ------------------------------------------------------------------------
+    // Lyrics (LRCLIB + SQLite Cache)
+    // ------------------------------------------------------------------------
+    pub fn fetch_lyrics(
+        &self,
+        title: String,
+        artist: String,
+        album: Option<String>,
+        duration_ms: u64,
+        force_refresh: bool,
+    ) -> FfiResult<FfiLyricsResult> {
+        let cache_key = core_lyrics::LyricsClient::cache_key(&title, &artist);
+        if !force_refresh {
+            if let Ok(Some(cached_json)) = self.database.get_cached_lyrics(&cache_key) {
+                if let Ok(parsed) = serde_json::from_str::<core_lyrics::LyricsResult>(&cached_json)
+                {
+                    return Ok(FfiLyricsResult::from(parsed));
+                }
+            }
+        }
+
+        let result = self
+            .tokio_runtime
+            .block_on(self.lyrics_client.fetch_lyrics(
+                &title,
+                &artist,
+                album.as_deref(),
+                duration_ms,
+            ))
+            .map_err(|e| FfiError::OperationFailed {
+                reason: e.to_string(),
+            })?;
+
+        if let Ok(json) = serde_json::to_string(&result) {
+            let _ = self
+                .database
+                .set_cached_lyrics(&cache_key, &json, now_epoch_ms());
+        }
+
+        Ok(FfiLyricsResult::from(result))
+    }
+
+    pub fn parse_lrc(&self, raw: String) -> Vec<FfiLyricLine> {
+        core_lyrics::parse_lrc(&raw)
+            .into_iter()
+            .map(|l| FfiLyricLine {
+                time_ms: l.time_ms,
+                text: l.text,
+            })
+            .collect()
     }
 
     // ------------------------------------------------------------------------

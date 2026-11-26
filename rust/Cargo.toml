@@ -13,6 +13,7 @@ members = [
     "crates/core-themes",
     "crates/core-mods",
     "crates/core-settings",
+    "crates/core-lyrics",
     "crates/android-ffi",
 ]
 
@@ -37,6 +38,7 @@ core-storage = { path = "crates/core-storage" }
 core-themes = { path = "crates/core-themes" }
 core-mods = { path = "crates/core-mods" }
 core-settings = { path = "crates/core-settings" }
+core-lyrics = { path = "crates/core-lyrics" }
 
 # External crates
 async-trait = "0.1"

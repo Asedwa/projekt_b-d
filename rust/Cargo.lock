@@ -30,6 +30,7 @@ dependencies = [
  "core-domain",
  "core-downloads",
  "core-library",
+ "core-lyrics",
  "core-mods",
  "core-providers",
  "core-queue",
@@ -382,6 +383,17 @@ name = "core-library"
 version = "0.1.0"
 dependencies = [
  "core-domain",
+]
+
+[[package]]
+name = "core-lyrics"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "url",
 ]
 
 [[package]]
