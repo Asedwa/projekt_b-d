@@ -1434,6 +1434,61 @@ impl PlasmaWaveCore {
         provider_deezer::crypto::decrypt_stripe_bytes(&key, chunk_index, data)
     }
 
+    pub fn decrypt_deezer_aligned_chunks(
+        &self,
+        key: Vec<u8>,
+        start_chunk_index: u64,
+        data: Vec<u8>,
+    ) -> Vec<u8> {
+        provider_deezer::crypto::decrypt_aligned_chunks(&key, start_chunk_index, data)
+    }
+
+    pub fn dz_set_favorite(&self, arl: String, track_id: String, favorite: bool) -> FfiResult<()> {
+        let clean = track_id.strip_prefix("deezer:").unwrap_or(&track_id);
+        let client = provider_deezer::gateway::DeezerGatewayClient::new(arl);
+        self.tokio_runtime
+            .block_on(client.set_favorite(clean, favorite))
+            .map_err(|e| FfiError::OperationFailed {
+                reason: e.to_string(),
+            })
+    }
+
+    pub fn dz_edit_playlist(
+        &self,
+        arl: String,
+        playlist_id: String,
+        track_id: String,
+        add: bool,
+    ) -> FfiResult<()> {
+        let pid = playlist_id.strip_prefix("deezer:").unwrap_or(&playlist_id);
+        let tid = track_id.strip_prefix("deezer:").unwrap_or(&track_id);
+        let client = provider_deezer::gateway::DeezerGatewayClient::new(arl);
+        self.tokio_runtime
+            .block_on(client.edit_playlist(pid, tid, add))
+            .map_err(|e| FfiError::OperationFailed {
+                reason: e.to_string(),
+            })
+    }
+
+    pub fn dz_create_playlist(&self, arl: String, name: String) -> FfiResult<String> {
+        let client = provider_deezer::gateway::DeezerGatewayClient::new(arl);
+        self.tokio_runtime
+            .block_on(client.create_playlist(&name))
+            .map_err(|e| FfiError::OperationFailed {
+                reason: e.to_string(),
+            })
+    }
+
+    pub fn dz_delete_playlist(&self, arl: String, playlist_id: String) -> FfiResult<()> {
+        let pid = playlist_id.strip_prefix("deezer:").unwrap_or(&playlist_id);
+        let client = provider_deezer::gateway::DeezerGatewayClient::new(arl);
+        self.tokio_runtime
+            .block_on(client.delete_playlist(pid))
+            .map_err(|e| FfiError::OperationFailed {
+                reason: e.to_string(),
+            })
+    }
+
     // ------------------------------------------------------------------------
     // Full Downloads Queue (Rust SQLite)
     // ------------------------------------------------------------------------
@@ -1494,6 +1549,23 @@ impl PlasmaWaveCore {
             topic: decoded.topic,
             payload: decoded.payload,
         })
+    }
+
+    pub fn build_jam_locked_html(&self, has_attempt: bool) -> String {
+        core_jam::build_locked_web_jam_html(has_attempt)
+    }
+
+    pub fn build_jam_web_html(&self, verified_code: String) -> String {
+        core_jam::build_web_jam_html(&verified_code)
+    }
+
+    pub fn compute_jam_drift_target_ms(
+        &self,
+        remote_pos_ms: i64,
+        local_pos_ms: i64,
+        threshold_ms: i64,
+    ) -> Option<i64> {
+        core_jam::compute_drift_target_ms(remote_pos_ms, local_pos_ms, threshold_ms)
     }
 
     // ------------------------------------------------------------------------

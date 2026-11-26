@@ -1021,104 +1021,11 @@ class JamManager(
         }
     }
 
-    private fun buildLockedWebJamHtml(hasAttempt: Boolean): String {
-        val errHtml = if (hasAttempt) "<p style=\"color:#f87171\">Jam kodu geçersiz.</p>" else ""
-        return """
-            <!doctype html>
-            <html lang="tr">
-            <head>
-              <meta charset="utf-8" />
-              <meta name="viewport" content="width=device-width,initial-scale=1" />
-              <title>PlasmaWave Jam</title>
-              <style>
-                body{font-family:system-ui,-apple-system,sans-serif;background:#121318;color:#f5f5f7;margin:0;padding:20px;}
-                .card{background:#1d2028;border-radius:16px;padding:18px;max-width:420px;margin:40px auto;border:1px solid #2e323d;}
-                h1{font-size:20px;margin:0 0 8px;}
-                p{color:#a1a9b1;margin:4px 0 14px;font-size:14px;}
-                input{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #2e323d;background:#121318;color:#fff;font-size:16px;text-transform:uppercase;margin-bottom:12px;}
-                button{width:100%;padding:12px;border:none;border-radius:10px;background:#3daee9;color:#fff;font-weight:700;cursor:pointer;}
-              </style>
-            </head>
-            <body>
-              <div class="card">
-                <h1>PlasmaWave Jam</h1>
-                <p>Oturuma katılmak için ev sahibinin paylaştığı Jam kodunu girin.</p>
-                $errHtml
-                <form method="get" action="/">
-                  <input name="code" maxlength="12" pattern="[A-Za-z0-9]{4,12}" placeholder="JAM KODU" required />
-                  <button type="submit">Katıl</button>
-                </form>
-              </div>
-            </body>
-            </html>
-        """.trimIndent()
-    }
+    private fun buildLockedWebJamHtml(hasAttempt: Boolean): String =
+        org.kde.plasmawave.PlasmaWaveApp.core.buildJamLockedHtml(hasAttempt)
 
-    internal fun buildWebJamHtml(verifiedCode: String): String {
-        val safeCode = verifiedCode.trim().uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(12)
-        return """
-            <!doctype html>
-            <html lang="tr">
-            <head>
-              <meta charset="utf-8" />
-              <meta name="viewport" content="width=device-width,initial-scale=1" />
-              <title>PlasmaWave Jam • $safeCode</title>
-              <style>
-                body{font-family:system-ui,-apple-system,sans-serif;background:#121318;color:#f5f5f7;margin:0;padding:20px;}
-                .card{background:#1d2028;border-radius:16px;padding:18px;max-width:480px;margin:0 auto 16px;border:1px solid #2e323d;}
-                .badge{display:inline-block;background:#3daee922;color:#3daee9;padding:4px 10px;border-radius:999px;font-weight:700;font-size:12px;}
-                h1{font-size:20px;margin:8px 0 4px;}
-                p{color:#a1a9b1;margin:4px 0;}
-                .row{display:flex;gap:8px;margin-top:12px;}
-                button{flex:1;padding:12px;border:none;border-radius:10px;background:#3daee9;color:#fff;font-weight:700;cursor:pointer;}
-                button.sec{background:#2a2e38;}
-                .q-item{padding:8px 0;border-bottom:1px solid #2b2f3a;font-size:14px;}
-              </style>
-            </head>
-            <body>
-              <div class="card">
-                <span class="badge">JAM KODU: $safeCode</span>
-                <h1 id="title">Yükleniyor...</h1>
-                <p id="artist">-</p>
-                <p id="parts"></p>
-                <div class="row">
-                  <button class="sec" onclick="ctrl('prev')">⏮ Önceki</button>
-                  <button onclick="ctrl('toggle')">⏯ Çal/Duraklat</button>
-                  <button class="sec" onclick="ctrl('next')">Sonraki ⏭</button>
-                </div>
-              </div>
-              <div class="card">
-                <h3 style="margin-top:0">Sıradaki Şarkılar</h3>
-                <div id="queue"></div>
-              </div>
-              <script>
-                const JAM_CODE = '$safeCode';
-                async function refresh(){
-                  const r = await fetch('/jam/state?code=' + encodeURIComponent(JAM_CODE) + '&name=Web+Misafir');
-                  if (!r.ok) return;
-                  const d = await r.json();
-                  document.getElementById('title').textContent = d.currentTrack ? (d.currentTrack.title || '') : 'Çalan şarkı yok';
-                  document.getElementById('artist').textContent = d.currentTrack ? (d.currentTrack.artist || '') : '';
-                  document.getElementById('parts').textContent = 'Katılımcılar: ' + (d.participants || []).join(', ');
-                  const q = document.getElementById('queue');
-                  q.replaceChildren();
-                  (d.queue || []).forEach((t, i) => {
-                    const div = document.createElement('div');
-                    div.className = 'q-item';
-                    div.textContent = (i + 1) + '. ' + (t.title || '') + ' — ' + (t.artist || '');
-                    q.appendChild(div);
-                  });
-                }
-                async function ctrl(action){
-                  await fetch('/jam/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:JAM_CODE,action})});
-                  setTimeout(refresh, 300);
-                }
-                refresh(); setInterval(refresh, 2000);
-              </script>
-            </body>
-            </html>
-        """.trimIndent()
-    }
+    internal fun buildWebJamHtml(verifiedCode: String): String =
+        org.kde.plasmawave.PlasmaWaveApp.core.buildJamWebHtml(verifiedCode)
 
     private fun readHeaders(input: BufferedInputStream): ByteArray? {
         val buffer = java.io.ByteArrayOutputStream()

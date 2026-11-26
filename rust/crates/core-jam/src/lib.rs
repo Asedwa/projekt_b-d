@@ -44,6 +44,149 @@ pub fn compute_drift_target_ms(
     }
 }
 
+pub fn is_valid_jam_code(code: &str) -> bool {
+    let trimmed = code.trim();
+    (4..=12).contains(&trimmed.len())
+        && trimmed
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+}
+
+pub fn parse_validated_lan_host_port(raw: &str) -> Option<String> {
+    let trimmed = raw
+        .trim()
+        .strip_prefix("http://")
+        .or_else(|| raw.trim().strip_prefix("https://"))
+        .unwrap_or_else(|| raw.trim())
+        .trim_end_matches('/');
+    if trimmed.is_empty()
+        || trimmed
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '/' | '?' | '#' | '@' | '\\'))
+    {
+        return None;
+    }
+    let (host, port_str) = trimmed.rsplit_once(':')?;
+    if host.is_empty() {
+        return None;
+    }
+    let port: u16 = port_str.parse().ok()?;
+    if port == 0 {
+        return None;
+    }
+    Some(format!("{host}:{port}"))
+}
+
+pub fn build_locked_web_jam_html(has_attempt: bool) -> String {
+    let error_banner = if has_attempt {
+        r#"<p class="err">Jam kodu hatalı. Lütfen kontrol edip tekrar deneyin.</p>"#
+    } else {
+        ""
+    };
+    format!(
+        r#"<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PlasmaWave Jam • Kod Doğrulama</title>
+  <style>
+    body{{font-family:system-ui,-apple-system,sans-serif;background:#121318;color:#f5f5f7;margin:0;padding:24px;display:flex;align-items:center;justify-content:center;min-height:100vh;box-sizing:border-box;}}
+    .card{{background:#1d2028;border-radius:16px;padding:22px;width:100%;max-width:400px;border:1px solid #2e323d;}}
+    h1{{font-size:20px;margin:0 0 8px;}}
+    p{{color:#a1a9b1;font-size:14px;margin:0 0 14px;}}
+    .err{{color:#ff6b6b;font-weight:600;}}
+    input{{width:100%;padding:12px;border-radius:10px;border:1px solid #394050;background:#121318;color:#fff;font-size:16px;box-sizing:border-box;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;}}
+    button{{width:100%;padding:12px;border:none;border-radius:10px;background:#3daee9;color:#fff;font-weight:700;font-size:15px;cursor:pointer;}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>PlasmaWave Jam</h1>
+    <p>Oturuma katılmak için ev sahibinin Jam kodunu girin.</p>
+    {error_banner}
+    <form method="GET" action="/">
+      <input name="code" placeholder="JAM KODU" maxlength="12" required autofocus />
+      <button type="submit">Katıl</button>
+    </form>
+  </div>
+</body>
+</html>"#
+    )
+}
+
+pub fn build_web_jam_html(verified_code: &str) -> String {
+    let safe_code: String = verified_code
+        .trim()
+        .to_ascii_uppercase()
+        .chars()
+        .filter(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        .take(12)
+        .collect();
+    format!(
+        r#"<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PlasmaWave Jam • {safe_code}</title>
+  <style>
+    body{{font-family:system-ui,-apple-system,sans-serif;background:#121318;color:#f5f5f7;margin:0;padding:20px;}}
+    .card{{background:#1d2028;border-radius:16px;padding:18px;max-width:480px;margin:0 auto 16px;border:1px solid #2e323d;}}
+    .badge{{display:inline-block;background:#3daee922;color:#3daee9;padding:4px 10px;border-radius:999px;font-weight:700;font-size:12px;}}
+    h1{{font-size:20px;margin:8px 0 4px;}}
+    p{{color:#a1a9b1;margin:4px 0;}}
+    .row{{display:flex;gap:8px;margin-top:12px;}}
+    button{{flex:1;padding:12px;border:none;border-radius:10px;background:#3daee9;color:#fff;font-weight:700;cursor:pointer;}}
+    button.sec{{background:#2a2e38;}}
+    .q-item{{padding:8px 0;border-bottom:1px solid #2b2f3a;font-size:14px;}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="badge">JAM KODU: {safe_code}</span>
+    <h1 id="title">Yükleniyor...</h1>
+    <p id="artist">-</p>
+    <p id="parts"></p>
+    <div class="row">
+      <button class="sec" onclick="ctrl('prev')">⏮ Önceki</button>
+      <button onclick="ctrl('toggle')">⏯ Çal/Duraklat</button>
+      <button class="sec" onclick="ctrl('next')">Sonraki ⏭</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Sıradaki Şarkılar</h3>
+    <div id="queue"></div>
+  </div>
+  <script>
+    const JAM_CODE = '{safe_code}';
+    async function refresh(){{
+      const r = await fetch('/jam/state?code=' + encodeURIComponent(JAM_CODE) + '&name=Web+Misafir');
+      if (!r.ok) return;
+      const d = await r.json();
+      document.getElementById('title').textContent = d.currentTrack ? (d.currentTrack.title || '') : 'Çalan şarkı yok';
+      document.getElementById('artist').textContent = d.currentTrack ? (d.currentTrack.artist || '') : '';
+      document.getElementById('parts').textContent = 'Katılımcılar: ' + (d.participants || []).join(', ');
+      const q = document.getElementById('queue');
+      q.replaceChildren();
+      (d.queue || []).forEach((t, i) => {{
+        const div = document.createElement('div');
+        div.className = 'q-item';
+        div.textContent = (i + 1) + '. ' + (t.title || '') + ' — ' + (t.artist || '');
+        q.appendChild(div);
+      }});
+    }}
+    async function ctrl(action){{
+      await fetch('/jam/control',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{code:JAM_CODE,action}})}});
+      setTimeout(refresh, 300);
+    }}
+    refresh(); setInterval(refresh, 2000);
+  </script>
+</body>
+</html>"#
+    )
+}
+
 pub fn encode_mqtt_remaining_length(mut length: usize, out: &mut Vec<u8>) {
     loop {
         let mut digit = (length % 128) as u8;

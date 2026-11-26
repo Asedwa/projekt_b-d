@@ -15,6 +15,7 @@ serde_json.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
 url.workspace = true
+thiserror.workspace = true
 getrandom = "0.2"
 hex.workspace = true
 md-5.workspace = true

@@ -1,0 +1,2 @@
+# Generated UniFFI bindings should not inflate Kotlin language statistics
+android/app/src/main/java/uniffi/** linguist-generated=true

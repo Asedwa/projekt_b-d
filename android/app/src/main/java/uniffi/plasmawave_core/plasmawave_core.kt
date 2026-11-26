@@ -1032,6 +1032,22 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1061,6 +1077,10 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_add_tracks_to_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`tracks`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_build_jam_locked_html(`ptr`: Pointer,`hasAttempt`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_build_jam_web_html(`ptr`: Pointer,`verifiedCode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_build_listening_stats_csv(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_build_user_data_export_json(`ptr`: Pointer,`exportedAtEpochMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1085,9 +1105,13 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_clear_resume_playback_state(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_compute_jam_drift_target_ms(`ptr`: Pointer,`remotePosMs`: Long,`localPosMs`: Long,`thresholdMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_create_playlist(`ptr`: Pointer,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_customize_home_widget(`ptr`: Pointer,`instanceId`: RustBuffer.ByValue,`patch`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_decrypt_deezer_aligned_chunks(`ptr`: Pointer,`key`: RustBuffer.ByValue,`startChunkIndex`: Long,`data`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_decrypt_deezer_chunk(`ptr`: Pointer,`key`: RustBuffer.ByValue,`chunkIndex`: Long,`data`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1103,6 +1127,14 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_download_track(`ptr`: Pointer,`track`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_dz_create_playlist(`ptr`: Pointer,`arl`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_dz_delete_playlist(`ptr`: Pointer,`arl`: RustBuffer.ByValue,`playlistId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_dz_edit_playlist(`ptr`: Pointer,`arl`: RustBuffer.ByValue,`playlistId`: RustBuffer.ByValue,`trackId`: RustBuffer.ByValue,`add`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_dz_set_favorite(`ptr`: Pointer,`arl`: RustBuffer.ByValue,`trackId`: RustBuffer.ByValue,`favorite`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_enqueue_authorized_download(`ptr`: Pointer,`url`: RustBuffer.ByValue,`sha256`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_execute_track_mod_action(`ptr`: Pointer,`modId`: RustBuffer.ByValue,`trackIdStr`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1499,6 +1531,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_add_tracks_to_playlist(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_build_jam_locked_html(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_build_jam_web_html(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_build_listening_stats_csv(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_build_user_data_export_json(
@@ -1523,9 +1559,13 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_resume_playback_state(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_compute_jam_drift_target_ms(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_create_playlist(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_customize_home_widget(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_decrypt_deezer_aligned_chunks(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_decrypt_deezer_chunk(
     ): Short
@@ -1540,6 +1580,14 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_derive_deezer_track_key(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_download_track(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_dz_create_playlist(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_dz_delete_playlist(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_dz_edit_playlist(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_dz_set_favorite(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_enqueue_authorized_download(
     ): Short
@@ -1841,6 +1889,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_add_tracks_to_playlist() != 53916.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_build_jam_locked_html() != 45278.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_build_jam_web_html() != 54228.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_build_listening_stats_csv() != 20015.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1877,10 +1931,16 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_clear_resume_playback_state() != 23611.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_compute_jam_drift_target_ms() != 53712.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_create_playlist() != 7138.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_customize_home_widget() != 19961.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_decrypt_deezer_aligned_chunks() != 27846.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_decrypt_deezer_chunk() != 62582.toShort()) {
@@ -1902,6 +1962,18 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_download_track() != 55953.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_dz_create_playlist() != 61163.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_dz_delete_playlist() != 60600.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_dz_edit_playlist() != 20749.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_dz_set_favorite() != 57127.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_enqueue_authorized_download() != 18756.toShort()) {
@@ -2772,6 +2844,10 @@ public interface PlasmaWaveCoreInterface {
     
     fun `addTracksToPlaylist`(`playlistId`: kotlin.String, `tracks`: List<FfiTrack>)
     
+    fun `buildJamLockedHtml`(`hasAttempt`: kotlin.Boolean): kotlin.String
+    
+    fun `buildJamWebHtml`(`verifiedCode`: kotlin.String): kotlin.String
+    
     fun `buildListeningStatsCsv`(): kotlin.String
     
     fun `buildUserDataExportJson`(`exportedAtEpochMs`: kotlin.ULong): kotlin.String
@@ -2796,9 +2872,13 @@ public interface PlasmaWaveCoreInterface {
     
     fun `clearResumePlaybackState`()
     
+    fun `computeJamDriftTargetMs`(`remotePosMs`: kotlin.Long, `localPosMs`: kotlin.Long, `thresholdMs`: kotlin.Long): kotlin.Long?
+    
     fun `createPlaylist`(`name`: kotlin.String): FfiPlaylist
     
     fun `customizeHomeWidget`(`instanceId`: kotlin.String, `patch`: FfiHomeWidgetPatch): List<FfiHomeWidgetItem>
+    
+    fun `decryptDeezerAlignedChunks`(`key`: kotlin.ByteArray, `startChunkIndex`: kotlin.ULong, `data`: kotlin.ByteArray): kotlin.ByteArray
     
     fun `decryptDeezerChunk`(`key`: kotlin.ByteArray, `chunkIndex`: kotlin.ULong, `data`: kotlin.ByteArray): kotlin.ByteArray
     
@@ -2813,6 +2893,14 @@ public interface PlasmaWaveCoreInterface {
     fun `deriveDeezerTrackKey`(`trackId`: kotlin.String): kotlin.ByteArray
     
     fun `downloadTrack`(`track`: FfiTrack): FfiDownloadTask
+    
+    fun `dzCreatePlaylist`(`arl`: kotlin.String, `name`: kotlin.String): kotlin.String
+    
+    fun `dzDeletePlaylist`(`arl`: kotlin.String, `playlistId`: kotlin.String)
+    
+    fun `dzEditPlaylist`(`arl`: kotlin.String, `playlistId`: kotlin.String, `trackId`: kotlin.String, `add`: kotlin.Boolean)
+    
+    fun `dzSetFavorite`(`arl`: kotlin.String, `trackId`: kotlin.String, `favorite`: kotlin.Boolean)
     
     fun `enqueueAuthorizedDownload`(`url`: kotlin.String, `sha256`: kotlin.String?): FfiDownloadTask
     
@@ -3190,6 +3278,30 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
     
 
+    override fun `buildJamLockedHtml`(`hasAttempt`: kotlin.Boolean): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_build_jam_locked_html(
+        it, FfiConverterBoolean.lower(`hasAttempt`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `buildJamWebHtml`(`verifiedCode`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_build_jam_web_html(
+        it, FfiConverterString.lower(`verifiedCode`),_status)
+}
+    }
+    )
+    }
+    
+
     
     @Throws(FfiException::class)override fun `buildListeningStatsCsv`(): kotlin.String {
             return FfiConverterString.lift(
@@ -3338,6 +3450,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
     
 
+    override fun `computeJamDriftTargetMs`(`remotePosMs`: kotlin.Long, `localPosMs`: kotlin.Long, `thresholdMs`: kotlin.Long): kotlin.Long? {
+            return FfiConverterOptionalLong.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_compute_jam_drift_target_ms(
+        it, FfiConverterLong.lower(`remotePosMs`),FfiConverterLong.lower(`localPosMs`),FfiConverterLong.lower(`thresholdMs`),_status)
+}
+    }
+    )
+    }
+    
+
     
     @Throws(FfiException::class)override fun `createPlaylist`(`name`: kotlin.String): FfiPlaylist {
             return FfiConverterTypeFfiPlaylist.lift(
@@ -3358,6 +3482,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_customize_home_widget(
         it, FfiConverterString.lower(`instanceId`),FfiConverterTypeFfiHomeWidgetPatch.lower(`patch`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `decryptDeezerAlignedChunks`(`key`: kotlin.ByteArray, `startChunkIndex`: kotlin.ULong, `data`: kotlin.ByteArray): kotlin.ByteArray {
+            return FfiConverterByteArray.lift(
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_decrypt_deezer_aligned_chunks(
+        it, FfiConverterByteArray.lower(`key`),FfiConverterULong.lower(`startChunkIndex`),FfiConverterByteArray.lower(`data`),_status)
 }
     }
     )
@@ -3448,6 +3584,55 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     }
     )
     }
+    
+
+    
+    @Throws(FfiException::class)override fun `dzCreatePlaylist`(`arl`: kotlin.String, `name`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_dz_create_playlist(
+        it, FfiConverterString.lower(`arl`),FfiConverterString.lower(`name`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `dzDeletePlaylist`(`arl`: kotlin.String, `playlistId`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_dz_delete_playlist(
+        it, FfiConverterString.lower(`arl`),FfiConverterString.lower(`playlistId`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `dzEditPlaylist`(`arl`: kotlin.String, `playlistId`: kotlin.String, `trackId`: kotlin.String, `add`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_dz_edit_playlist(
+        it, FfiConverterString.lower(`arl`),FfiConverterString.lower(`playlistId`),FfiConverterString.lower(`trackId`),FfiConverterBoolean.lower(`add`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `dzSetFavorite`(`arl`: kotlin.String, `trackId`: kotlin.String, `favorite`: kotlin.Boolean)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_dz_set_favorite(
+        it, FfiConverterString.lower(`arl`),FfiConverterString.lower(`trackId`),FfiConverterBoolean.lower(`favorite`),_status)
+}
+    }
+    
     
 
     

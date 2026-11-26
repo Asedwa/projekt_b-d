@@ -42,6 +42,19 @@ pub fn decrypt_stripe_bytes(key: &[u8], chunk_index: u64, mut data: Vec<u8>) -> 
     data
 }
 
+/// Decrypts a contiguous buffer of 2048-byte-aligned stripes starting at `start_chunk_index`.
+pub fn decrypt_aligned_chunks(key: &[u8], start_chunk_index: u64, mut data: Vec<u8>) -> Vec<u8> {
+    if key.len() != 16 {
+        return data;
+    }
+    let mut arr = [0u8; 16];
+    arr.copy_from_slice(key);
+    for (idx, chunk) in data.chunks_mut(STRIPE_CHUNK_SIZE).enumerate() {
+        decrypt_stripe_in_place(&arr, start_chunk_index + idx as u64, chunk);
+    }
+    data
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
