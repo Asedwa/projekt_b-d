@@ -324,22 +324,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val _ambientBackgroundEnabled = MutableStateFlow(
-        displayPrefs.getBoolean("ambient_background_enabled", true)
+        RustPrefs.getBoolean("display:ambient_background_enabled", true)
     )
     val ambientBackgroundEnabled = _ambientBackgroundEnabled.asStateFlow()
     fun setAmbientBackgroundEnabled(enabled: Boolean) {
         _ambientBackgroundEnabled.value = enabled
-        displayPrefs.edit().putBoolean("ambient_background_enabled", enabled).apply()
+        RustPrefs.putBoolean("display:ambient_background_enabled", enabled)
     }
 
     // ── In-App Automatic Update (GitHub Releases) ─────────────────────────────────
     private val _autoUpdateCheckEnabled = MutableStateFlow(
-        displayPrefs.getBoolean("auto_update_check_enabled", true)
+        RustPrefs.getBoolean("display:auto_update_check_enabled", true)
     )
     val autoUpdateCheckEnabled: StateFlow<Boolean> = _autoUpdateCheckEnabled.asStateFlow()
     fun setAutoUpdateCheckEnabled(enabled: Boolean) {
         _autoUpdateCheckEnabled.value = enabled
-        displayPrefs.edit().putBoolean("auto_update_check_enabled", enabled).apply()
+        RustPrefs.putBoolean("display:auto_update_check_enabled", enabled)
     }
 
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
@@ -368,7 +368,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         if (!manual) {
-            val lastCheckMs = displayPrefs.getLong("last_update_check_ms", 0L)
+            val lastCheckMs = RustPrefs.getLong("display:last_update_check_ms", 0L)
             val elapsedMs = System.currentTimeMillis() - lastCheckMs
             if (elapsedMs in 0L until (6L * 60L * 60L * 1000L)) {
                 return
@@ -381,14 +381,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AppUpdater.cleanupCachedApks(getApplication())
             val result = AppUpdater.fetchLatestRelease(BuildConfig.VERSION_NAME)
             result.onSuccess { release ->
-                displayPrefs.edit().putLong("last_update_check_ms", System.currentTimeMillis()).apply()
+                RustPrefs.putLong("display:last_update_check_ms", System.currentTimeMillis())
                 if (release == null) {
                     _updateState.value = UpdateState.UpToDate(BuildConfig.VERSION_NAME)
                     if (manual) {
                         _statusMessage.value = "Uygulama güncel (v${BuildConfig.VERSION_NAME})"
                     }
                 } else {
-                    val skipped = displayPrefs.getString("dismissed_update_version", null)
+                    val skipped = RustPrefs.getString("display:dismissed_update_version", null)
                     _updateState.value = UpdateState.Available(release)
                     if (manual || skipped != release.version) {
                         _updateDialogVisible.value = true
@@ -468,7 +468,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun skipUpdateVersion(version: String) {
-        displayPrefs.edit().putString("dismissed_update_version", version).apply()
+        RustPrefs.putString("display:dismissed_update_version", version)
         _updateDialogVisible.value = false
     }
 
@@ -477,12 +477,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private val _ambientBackdropStyle = MutableStateFlow(
-        AmbientBackdropStyle.fromId(displayPrefs.getString("ambient_backdrop_style", AmbientBackdropStyle.SILK_AURORA.id))
+        AmbientBackdropStyle.fromId(RustPrefs.getString("display:ambient_backdrop_style", AmbientBackdropStyle.SILK_AURORA.id))
     )
     val ambientBackdropStyle = _ambientBackdropStyle.asStateFlow()
     fun setAmbientBackdropStyle(style: AmbientBackdropStyle) {
         _ambientBackdropStyle.value = style
-        displayPrefs.edit().putString("ambient_backdrop_style", style.id).apply()
+        RustPrefs.putString("display:ambient_backdrop_style", style.id)
         if (!_ambientBackgroundEnabled.value) {
             setAmbientBackgroundEnabled(true)
         }
@@ -536,84 +536,84 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _quickCardStyle = MutableStateFlow(
         runCatching {
-            QuickCardStyle.valueOf(displayPrefs.getString("quick_card_style", QuickCardStyle.THEME_ADAPTIVE.name) ?: QuickCardStyle.THEME_ADAPTIVE.name)
+            QuickCardStyle.valueOf(RustPrefs.getString("display:quick_card_style", QuickCardStyle.THEME_ADAPTIVE.name) ?: QuickCardStyle.THEME_ADAPTIVE.name)
         }.getOrDefault(QuickCardStyle.THEME_ADAPTIVE)
     )
     val quickCardStyle = _quickCardStyle.asStateFlow()
     fun setQuickCardStyle(style: QuickCardStyle) {
         _quickCardStyle.value = style
-        displayPrefs.edit().putString("quick_card_style", style.name).apply()
+        RustPrefs.putString("display:quick_card_style", style.name)
     }
 
     private val _quickCardScale = MutableStateFlow(
-        displayPrefs.getFloat("quick_card_scale", 1.0f).coerceIn(0.50f, 1.30f)
+        RustPrefs.getFloat("display:quick_card_scale", 1.0f).coerceIn(0.50f, 1.30f)
     )
     val quickCardScale = _quickCardScale.asStateFlow()
     fun setQuickCardScale(scale: Float) {
         val clamped = scale.coerceIn(0.50f, 1.30f)
         _quickCardScale.value = clamped
-        displayPrefs.edit().putFloat("quick_card_scale", clamped).apply()
+        RustPrefs.putFloat("display:quick_card_scale", clamped)
     }
 
     private val _quickIconScale = MutableStateFlow(
-        displayPrefs.getFloat("quick_icon_scale", 1.0f).coerceIn(0.70f, 1.40f)
+        RustPrefs.getFloat("display:quick_icon_scale", 1.0f).coerceIn(0.70f, 1.40f)
     )
     val quickIconScale = _quickIconScale.asStateFlow()
     fun setQuickIconScale(scale: Float) {
         val clamped = scale.coerceIn(0.70f, 1.40f)
         _quickIconScale.value = clamped
-        displayPrefs.edit().putFloat("quick_icon_scale", clamped).apply()
+        RustPrefs.putFloat("display:quick_icon_scale", clamped)
     }
 
     private val _quickCardShape = MutableStateFlow(
         runCatching {
-            QuickCardShape.valueOf(displayPrefs.getString("quick_card_shape", QuickCardShape.ROUNDED.name) ?: QuickCardShape.ROUNDED.name)
+            QuickCardShape.valueOf(RustPrefs.getString("display:quick_card_shape", QuickCardShape.ROUNDED.name) ?: QuickCardShape.ROUNDED.name)
         }.getOrDefault(QuickCardShape.ROUNDED)
     )
     val quickCardShape = _quickCardShape.asStateFlow()
     fun setQuickCardShape(shape: QuickCardShape) {
         _quickCardShape.value = shape
-        displayPrefs.edit().putString("quick_card_shape", shape.name).apply()
+        RustPrefs.putString("display:quick_card_shape", shape.name)
     }
 
     private val _quickCardLayout = MutableStateFlow(
         runCatching {
-            QuickCardLayout.valueOf(displayPrefs.getString("quick_card_layout", QuickCardLayout.COMPACT_HORIZONTAL.name) ?: QuickCardLayout.COMPACT_HORIZONTAL.name)
+            QuickCardLayout.valueOf(RustPrefs.getString("display:quick_card_layout", QuickCardLayout.COMPACT_HORIZONTAL.name) ?: QuickCardLayout.COMPACT_HORIZONTAL.name)
         }.getOrDefault(QuickCardLayout.COMPACT_HORIZONTAL)
     )
     val quickCardLayout = _quickCardLayout.asStateFlow()
     fun setQuickCardLayout(layout: QuickCardLayout) {
         _quickCardLayout.value = layout
-        displayPrefs.edit().putString("quick_card_layout", layout.name).apply()
+        RustPrefs.putString("display:quick_card_layout", layout.name)
     }
 
     private val _quickCardContentMode = MutableStateFlow(
         runCatching {
-            QuickCardContentMode.valueOf(displayPrefs.getString("quick_card_content_mode", QuickCardContentMode.BOTH.name) ?: QuickCardContentMode.BOTH.name)
+            QuickCardContentMode.valueOf(RustPrefs.getString("display:quick_card_content_mode", QuickCardContentMode.BOTH.name) ?: QuickCardContentMode.BOTH.name)
         }.getOrDefault(QuickCardContentMode.BOTH)
     )
     val quickCardContentMode = _quickCardContentMode.asStateFlow()
     fun setQuickCardContentMode(mode: QuickCardContentMode) {
         _quickCardContentMode.value = mode
-        displayPrefs.edit().putString("quick_card_content_mode", mode.name).apply()
+        RustPrefs.putString("display:quick_card_content_mode", mode.name)
     }
 
     private val _librarySyncWithQuick = MutableStateFlow(
-        displayPrefs.getBoolean("library_sync_with_quick", true)
+        RustPrefs.getBoolean("display:library_sync_with_quick", true)
     )
     val librarySyncWithQuick = _librarySyncWithQuick.asStateFlow()
 
     private val _legacyUiMode = MutableStateFlow(
-        displayPrefs.getBoolean("legacy_ui_mode", false)
+        RustPrefs.getBoolean("display:legacy_ui_mode", false)
     )
     val legacyUiMode = _legacyUiMode.asStateFlow()
     fun setLegacyUiMode(enabled: Boolean) {
         _legacyUiMode.value = enabled
-        displayPrefs.edit().putBoolean("legacy_ui_mode", enabled).apply()
+        RustPrefs.putBoolean("display:legacy_ui_mode", enabled)
     }
 
     private fun loadPinnedPlayerActions(): List<PlayerActionButton> {
-        val raw = displayPrefs.getString("pinned_player_actions", null).orEmpty()
+        val raw = RustPrefs.getString("display:pinned_player_actions", null).orEmpty()
         val parsed = raw.split(",")
             .mapNotNull { token -> runCatching { PlayerActionButton.valueOf(token.trim()) }.getOrNull() }
             .distinct()
@@ -631,7 +631,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             (sanitized + PlayerActionButton.DEFAULT_PINNED).distinct().take(2)
         }
         _pinnedPlayerActions.value = finalPair
-        displayPrefs.edit().putString("pinned_player_actions", finalPair.joinToString(",") { it.name }).apply()
+        RustPrefs.putString("display:pinned_player_actions", finalPair.joinToString(",") { it.name })
     }
 
     fun togglePinnedPlayerAction(action: PlayerActionButton) {
@@ -645,7 +645,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         setPinnedPlayerActions(PlayerActionButton.DEFAULT_PINNED)
     }
     fun setLibrarySyncWithQuick(sync: Boolean) {
-        if (!sync && _librarySyncWithQuick.value && !displayPrefs.contains("lib_card_style")) {
+        if (!sync && _librarySyncWithQuick.value && !RustPrefs.contains("display:lib_card_style")) {
             // Copy current Quick Access settings as initial baseline when splitting for the first time
             setLibraryCardStyle(_quickCardStyle.value)
             setLibraryCardScale(_quickCardScale.value)
@@ -655,71 +655,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             setLibraryCardContentMode(_quickCardContentMode.value)
         }
         _librarySyncWithQuick.value = sync
-        displayPrefs.edit().putBoolean("library_sync_with_quick", sync).apply()
+        RustPrefs.putBoolean("display:library_sync_with_quick", sync)
     }
 
     private val _libraryCardStyle = MutableStateFlow(
         runCatching {
-            QuickCardStyle.valueOf(displayPrefs.getString("lib_card_style", _quickCardStyle.value.name) ?: _quickCardStyle.value.name)
+            QuickCardStyle.valueOf(RustPrefs.getString("display:lib_card_style", _quickCardStyle.value.name) ?: _quickCardStyle.value.name)
         }.getOrDefault(_quickCardStyle.value)
     )
     val libraryCardStyle = _libraryCardStyle.asStateFlow()
     fun setLibraryCardStyle(style: QuickCardStyle) {
         _libraryCardStyle.value = style
-        displayPrefs.edit().putString("lib_card_style", style.name).apply()
+        RustPrefs.putString("display:lib_card_style", style.name)
     }
 
     private val _libraryCardScale = MutableStateFlow(
-        displayPrefs.getFloat("lib_card_scale", _quickCardScale.value).coerceIn(0.50f, 1.30f)
+        RustPrefs.getFloat("display:lib_card_scale", _quickCardScale.value).coerceIn(0.50f, 1.30f)
     )
     val libraryCardScale = _libraryCardScale.asStateFlow()
     fun setLibraryCardScale(scale: Float) {
         val clamped = scale.coerceIn(0.50f, 1.30f)
         _libraryCardScale.value = clamped
-        displayPrefs.edit().putFloat("lib_card_scale", clamped).apply()
+        RustPrefs.putFloat("display:lib_card_scale", clamped)
     }
 
     private val _libraryIconScale = MutableStateFlow(
-        displayPrefs.getFloat("lib_icon_scale", _quickIconScale.value).coerceIn(0.70f, 1.40f)
+        RustPrefs.getFloat("display:lib_icon_scale", _quickIconScale.value).coerceIn(0.70f, 1.40f)
     )
     val libraryIconScale = _libraryIconScale.asStateFlow()
     fun setLibraryIconScale(scale: Float) {
         val clamped = scale.coerceIn(0.70f, 1.40f)
         _libraryIconScale.value = clamped
-        displayPrefs.edit().putFloat("lib_icon_scale", clamped).apply()
+        RustPrefs.putFloat("display:lib_icon_scale", clamped)
     }
 
     private val _libraryCardShape = MutableStateFlow(
         runCatching {
-            QuickCardShape.valueOf(displayPrefs.getString("lib_card_shape", _quickCardShape.value.name) ?: _quickCardShape.value.name)
+            QuickCardShape.valueOf(RustPrefs.getString("display:lib_card_shape", _quickCardShape.value.name) ?: _quickCardShape.value.name)
         }.getOrDefault(_quickCardShape.value)
     )
     val libraryCardShape = _libraryCardShape.asStateFlow()
     fun setLibraryCardShape(shape: QuickCardShape) {
         _libraryCardShape.value = shape
-        displayPrefs.edit().putString("lib_card_shape", shape.name).apply()
+        RustPrefs.putString("display:lib_card_shape", shape.name)
     }
 
     private val _libraryCardLayout = MutableStateFlow(
         runCatching {
-            QuickCardLayout.valueOf(displayPrefs.getString("lib_card_layout", _quickCardLayout.value.name) ?: _quickCardLayout.value.name)
+            QuickCardLayout.valueOf(RustPrefs.getString("display:lib_card_layout", _quickCardLayout.value.name) ?: _quickCardLayout.value.name)
         }.getOrDefault(_quickCardLayout.value)
     )
     val libraryCardLayout = _libraryCardLayout.asStateFlow()
     fun setLibraryCardLayout(layout: QuickCardLayout) {
         _libraryCardLayout.value = layout
-        displayPrefs.edit().putString("lib_card_layout", layout.name).apply()
+        RustPrefs.putString("display:lib_card_layout", layout.name)
     }
 
     private val _libraryCardContentMode = MutableStateFlow(
         runCatching {
-            QuickCardContentMode.valueOf(displayPrefs.getString("lib_card_content_mode", _quickCardContentMode.value.name) ?: _quickCardContentMode.value.name)
+            QuickCardContentMode.valueOf(RustPrefs.getString("display:lib_card_content_mode", _quickCardContentMode.value.name) ?: _quickCardContentMode.value.name)
         }.getOrDefault(_quickCardContentMode.value)
     )
     val libraryCardContentMode = _libraryCardContentMode.asStateFlow()
     fun setLibraryCardContentMode(mode: QuickCardContentMode) {
         _libraryCardContentMode.value = mode
-        displayPrefs.edit().putString("lib_card_content_mode", mode.name).apply()
+        RustPrefs.putString("display:lib_card_content_mode", mode.name)
     }
 
     private val _downloadsQuickAccessPinned = MutableStateFlow(initialCoreSettings.downloadsQuickAccessPinned)
@@ -2283,7 +2283,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         deezerFavoriteEntries = emptyList()
         _deezerFlow.value = emptyList()
         synchronized(playlistCacheLock) { playlistTracksMemCache.remove(DEEZER_FAVORITES_ID) }
-        playlistCachePrefs.edit().remove("deezer:playlists").apply()
+        RustPrefs.remove("cache:deezer:playlists")
         _statusMessage.value = "Deezer oturumu kapatıldı"
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -2580,7 +2580,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadCachedDeezerPlaylists(): List<LibraryPlaylistEntry> {
         if (!deezerSession.hasSavedSession) return emptyList()
-        val raw = playlistCachePrefs.getString("deezer:playlists", null) ?: return emptyList()
+        val raw = RustPrefs.getString("cache:deezer:playlists", null) ?: return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
             (0 until arr.length()).mapNotNull { i ->
@@ -2624,7 +2624,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         .put("modifiedAt", entry.modifiedAt)
                 )
             }
-            playlistCachePrefs.edit().putString("deezer:playlists", arr.toString()).apply()
+            RustPrefs.putString("cache:deezer:playlists", arr.toString())
         }
     }
 

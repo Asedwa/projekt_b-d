@@ -996,6 +996,16 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1135,6 +1145,10 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_playlists_needing_membership_sync(`ptr`: Pointer,`playlists`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_pref(`ptr`: Pointer,`key`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_prefs_by_prefix(`ptr`: Pointer,`prefix`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_private_session_status(`ptr`: Pointer,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_get_providers(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
@@ -1215,6 +1229,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_pinned_item(`ptr`: Pointer,`pinId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_pref(`ptr`: Pointer,`key`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_track_by_id_from_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`trackId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Byte
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_remove_track_from_playlist(`ptr`: Pointer,`playlistId`: RustBuffer.ByValue,`position`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -1264,6 +1280,10 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_mod_enabled(`ptr`: Pointer,`modId`: RustBuffer.ByValue,`enabled`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_pinned_items(`ptr`: Pointer,`items`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_pref(`ptr`: Pointer,`key`: RustBuffer.ByValue,`value`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_prefs_batch(`ptr`: Pointer,`entries`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_plasmawave_core_fn_method_plasmawavecore_set_private_session(`ptr`: Pointer,`enabled`: Byte,`durationMs`: Long,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1537,6 +1557,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlists_needing_membership_sync(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_pref(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_prefs_by_prefix(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_private_session_status(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_get_providers(
@@ -1617,6 +1641,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_pinned_item(
     ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_pref(
+    ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_track_by_id_from_playlist(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_track_from_playlist(
@@ -1666,6 +1692,10 @@ internal interface UniffiLib : Library {
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_mod_enabled(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_pinned_items(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_pref(
+    ): Short
+    fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_prefs_batch(
     ): Short
     fun uniffi_plasmawave_core_checksum_method_plasmawavecore_set_private_session(
     ): Short
@@ -1898,6 +1928,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_playlists_needing_membership_sync() != 8585.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_pref() != 45747.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_prefs_by_prefix() != 40234.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_get_private_session_status() != 50611.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2018,6 +2054,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_pinned_item() != 8510.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_pref() != 54770.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_remove_track_by_id_from_playlist() != 20245.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2091,6 +2130,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_pinned_items() != 27441.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_pref() != 45831.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_prefs_batch() != 58902.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_plasmawave_core_checksum_method_plasmawavecore_set_private_session() != 16543.toShort()) {
@@ -2655,6 +2700,10 @@ public interface PlasmaWaveCoreInterface {
     
     fun `getPlaylistsNeedingMembershipSync`(`playlists`: List<FfiPlaylist>): List<kotlin.String>
     
+    fun `getPref`(`key`: kotlin.String): kotlin.String?
+    
+    fun `getPrefsByPrefix`(`prefix`: kotlin.String): Map<kotlin.String, kotlin.String>
+    
     fun `getPrivateSessionStatus`(`nowMs`: kotlin.ULong): FfiPrivateSessionStatus
     
     fun `getProviders`(): List<FfiProviderInfo>
@@ -2735,6 +2784,8 @@ public interface PlasmaWaveCoreInterface {
     
     fun `removePinnedItem`(`pinId`: kotlin.String): List<FfiPinnedItem>
     
+    fun `removePref`(`key`: kotlin.String)
+    
     fun `removeTrackByIdFromPlaylist`(`playlistId`: kotlin.String, `trackId`: kotlin.String): kotlin.Boolean
     
     fun `removeTrackFromPlaylist`(`playlistId`: kotlin.String, `position`: kotlin.UInt)
@@ -2784,6 +2835,10 @@ public interface PlasmaWaveCoreInterface {
     fun `setModEnabled`(`modId`: kotlin.String, `enabled`: kotlin.Boolean)
     
     fun `setPinnedItems`(`items`: List<FfiPinnedItem>)
+    
+    fun `setPref`(`key`: kotlin.String, `value`: kotlin.String)
+    
+    fun `setPrefsBatch`(`entries`: Map<kotlin.String, kotlin.String>)
     
     fun `setPrivateSession`(`enabled`: kotlin.Boolean, `durationMs`: kotlin.ULong, `nowMs`: kotlin.ULong): FfiPrivateSessionStatus
     
@@ -3624,6 +3679,32 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     }
     
 
+    
+    @Throws(FfiException::class)override fun `getPref`(`key`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_pref(
+        it, FfiConverterString.lower(`key`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(FfiException::class)override fun `getPrefsByPrefix`(`prefix`: kotlin.String): Map<kotlin.String, kotlin.String> {
+            return FfiConverterMapStringString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_get_prefs_by_prefix(
+        it, FfiConverterString.lower(`prefix`),_status)
+}
+    }
+    )
+    }
+    
+
     override fun `getPrivateSessionStatus`(`nowMs`: kotlin.ULong): FfiPrivateSessionStatus {
             return FfiConverterTypeFfiPrivateSessionStatus.lift(
     callWithPointer {
@@ -4124,6 +4205,18 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     
 
     
+    @Throws(FfiException::class)override fun `removePref`(`key`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_remove_pref(
+        it, FfiConverterString.lower(`key`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(FfiException::class)override fun `removeTrackByIdFromPlaylist`(`playlistId`: kotlin.String, `trackId`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     callWithPointer {
@@ -4434,6 +4527,30 @@ open class PlasmaWaveCore: Disposable, AutoCloseable, PlasmaWaveCoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_set_pinned_items(
         it, FfiConverterSequenceTypeFfiPinnedItem.lower(`items`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `setPref`(`key`: kotlin.String, `value`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_set_pref(
+        it, FfiConverterString.lower(`key`),FfiConverterString.lower(`value`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(FfiException::class)override fun `setPrefsBatch`(`entries`: Map<kotlin.String, kotlin.String>)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_plasmawave_core_fn_method_plasmawavecore_set_prefs_batch(
+        it, FfiConverterMapStringString.lower(`entries`),_status)
 }
     }
     

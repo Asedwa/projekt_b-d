@@ -89,7 +89,6 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
     val effectiveLayout = if (librarySyncWithQuick) quickCardLayout else libraryCardLayout
     val effectiveContentMode = if (librarySyncWithQuick) quickCardContentMode else libraryCardContentMode
     val context = LocalContext.current
-    val prefs = context.getSharedPreferences("playlist_sort", Context.MODE_PRIVATE)
     var hasAudioPerm by remember { mutableStateOf(viewModel.hasLocalAudioPermission(context)) }
     val audioPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -114,8 +113,8 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
     }
     val colors = LocalPlasmaColors.current
     var filter by rememberSaveable { mutableStateOf(PlaylistFilter.ALL) }
-    var sort by rememberSaveable { mutableStateOf(runCatching { LibraryPlaylistSort.valueOf(prefs.getString("library", null) ?: "DEFAULT") }.getOrDefault(LibraryPlaylistSort.DEFAULT)) }
-    var grid by rememberSaveable { mutableStateOf(prefs.getBoolean("library_grid", true)) }
+    var sort by rememberSaveable { mutableStateOf(runCatching { LibraryPlaylistSort.valueOf(org.kde.plasmawave.ui.RustPrefs.getString("sort:library", null) ?: "DEFAULT") }.getOrDefault(LibraryPlaylistSort.DEFAULT)) }
+    var grid by rememberSaveable { mutableStateOf(org.kde.plasmawave.ui.RustPrefs.getBoolean("sort:library_grid", true)) }
     var showSort by remember { mutableStateOf(false) }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -244,11 +243,11 @@ fun LibraryScreen(viewModel: MainViewModel, onPlaylistClick: (FfiPlaylist) -> Un
                         val needsDate = option == LibraryPlaylistSort.ADDED_NEWEST || option == LibraryPlaylistSort.ADDED_OLDEST
                         DropdownMenuItem(text = { Text(option.label) }, enabled = !needsDate || entries.any { it.addedAt != null },
                             leadingIcon = { if (sort == option) Icon(Icons.Default.Check, contentDescription = null) },
-                            onClick = { sort = option; prefs.edit().putString("library", option.name).apply(); showSort = false })
+                            onClick = { sort = option; org.kde.plasmawave.ui.RustPrefs.putString("sort:library", option.name); showSort = false })
                     }
                 }
             }
-            IconButton(onClick = { grid = !grid; prefs.edit().putBoolean("library_grid", grid).apply() }) {
+            IconButton(onClick = { grid = !grid; org.kde.plasmawave.ui.RustPrefs.putBoolean("sort:library_grid", grid) }) {
                 Icon(if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView, contentDescription = if (grid) "Liste görünümü" else "Izgara görünümü")
             }
         }

@@ -144,17 +144,16 @@ class PlaybackManager private constructor(private val context: Context) {
     val progress: StateFlow<PlaybackProgress> = _progress.asStateFlow()
     private val _sleepTimerState = MutableStateFlow<SleepTimerState>(SleepTimerState.Off)
     val sleepTimerState: StateFlow<SleepTimerState> = _sleepTimerState.asStateFlow()
-    private val audioFxPrefs = context.getSharedPreferences("audio_fx", Context.MODE_PRIVATE)
-    private val _soundBoostEnabled = MutableStateFlow(audioFxPrefs.getBoolean("sound_boost_enabled", false))
+    private val _soundBoostEnabled = MutableStateFlow(org.kde.plasmawave.ui.RustPrefs.getBoolean("audio_fx:sound_boost_enabled", false))
     val soundBoostEnabled: StateFlow<Boolean> = _soundBoostEnabled.asStateFlow()
-    private val _soundBoostPercent = MutableStateFlow(audioFxPrefs.getInt("sound_boost_percent", 0).coerceIn(0, 100))
+    private val _soundBoostPercent = MutableStateFlow(org.kde.plasmawave.ui.RustPrefs.getInt("audio_fx:sound_boost_percent", 0).coerceIn(0, 100))
     val soundBoostPercent: StateFlow<Int> = _soundBoostPercent.asStateFlow()
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var loudnessSessionId: Int = C.AUDIO_SESSION_ID_UNSET
 
     fun setSoundBoostEnabled(enabled: Boolean) {
         _soundBoostEnabled.value = enabled
-        audioFxPrefs.edit().putBoolean("sound_boost_enabled", enabled).apply()
+        org.kde.plasmawave.ui.RustPrefs.putBoolean("audio_fx:sound_boost_enabled", enabled)
         scope.launch(Dispatchers.Main.immediate) {
             applySoundBoostForPlayer(playbackPlayer)
         }
@@ -163,7 +162,7 @@ class PlaybackManager private constructor(private val context: Context) {
     fun setSoundBoostPercent(percent: Int) {
         val clamped = percent.coerceIn(0, 100)
         _soundBoostPercent.value = clamped
-        audioFxPrefs.edit().putInt("sound_boost_percent", clamped).apply()
+        org.kde.plasmawave.ui.RustPrefs.putInt("audio_fx:sound_boost_percent", clamped)
         scope.launch(Dispatchers.Main.immediate) {
             applySoundBoostForPlayer(playbackPlayer)
         }

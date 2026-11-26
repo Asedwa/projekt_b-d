@@ -54,22 +54,21 @@ class DeezerSession private constructor(context: Context) {
     }
 
     private val prefs = context.getSharedPreferences("deezer_session", Context.MODE_PRIVATE)
-    private val audioPrefs = context.getSharedPreferences("audio_settings", Context.MODE_PRIVATE)
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private fun readQuality(key: String, default: StreamingQuality): StreamingQuality = runCatching {
-        val legacy = audioPrefs.getString("streaming_quality", null)
-        StreamingQuality.valueOf(audioPrefs.getString(key, legacy ?: default.name)!!)
+        val legacy = org.kde.plasmawave.ui.RustPrefs.getString("audio:streaming_quality", null)
+        StreamingQuality.valueOf(org.kde.plasmawave.ui.RustPrefs.getString("audio:$key", legacy ?: default.name)!!)
     }.getOrDefault(default)
     private val _wifiQuality = MutableStateFlow(readQuality("wifi_quality", StreamingQuality.AUTO))
     private val _mobileQuality = MutableStateFlow(readQuality("mobile_quality", StreamingQuality.MP3_128))
     val wifiQuality = _wifiQuality.asStateFlow()
     val mobileQuality = _mobileQuality.asStateFlow()
     fun setWifiQuality(quality: StreamingQuality) {
-        audioPrefs.edit().putString("wifi_quality", quality.name).apply()
+        org.kde.plasmawave.ui.RustPrefs.putString("audio:wifi_quality", quality.name)
         _wifiQuality.value = quality
     }
     fun setMobileQuality(quality: StreamingQuality) {
-        audioPrefs.edit().putString("mobile_quality", quality.name).apply()
+        org.kde.plasmawave.ui.RustPrefs.putString("audio:mobile_quality", quality.name)
         _mobileQuality.value = quality
     }
     private val _connected = MutableStateFlow(false)

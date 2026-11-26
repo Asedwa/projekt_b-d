@@ -1336,6 +1336,37 @@ impl PlasmaWaveCore {
     }
 
     // ------------------------------------------------------------------------
+    // App KV Preferences (Rust SQLite replacement for SharedPreferences)
+    // ------------------------------------------------------------------------
+    pub fn get_pref(&self, key: String) -> FfiResult<Option<String>> {
+        Ok(self.database.get_kv(&key)?)
+    }
+
+    pub fn set_pref(&self, key: String, value: String) -> FfiResult<()> {
+        Ok(self.database.set_kv(&key, &value)?)
+    }
+
+    pub fn remove_pref(&self, key: String) -> FfiResult<()> {
+        Ok(self.database.remove_kv(&key)?)
+    }
+
+    pub fn get_prefs_by_prefix(
+        &self,
+        prefix: String,
+    ) -> FfiResult<std::collections::HashMap<String, String>> {
+        let pairs = self.database.get_kv_by_prefix(&prefix)?;
+        Ok(pairs.into_iter().collect())
+    }
+
+    pub fn set_prefs_batch(
+        &self,
+        entries: std::collections::HashMap<String, String>,
+    ) -> FfiResult<()> {
+        let pairs: Vec<(String, String)> = entries.into_iter().collect();
+        Ok(self.database.set_kv_batch(&pairs)?)
+    }
+
+    // ------------------------------------------------------------------------
     // Provider & Capabilities
     // ------------------------------------------------------------------------
     pub fn get_providers(&self) -> Vec<FfiProviderInfo> {

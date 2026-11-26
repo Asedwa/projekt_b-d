@@ -96,10 +96,9 @@ fun PlaylistDetailScreen(
         )
     }
     var retry by remember(playlist.id) { mutableIntStateOf(0) }
-    val sortPrefs = LocalContext.current.getSharedPreferences("playlist_sort", Context.MODE_PRIVATE)
-    val sortKey = "tracks:${playlist.id}"
+    val sortKey = "sort:tracks:${playlist.id}"
     var sort by rememberSaveable(playlist.id) {
-        mutableStateOf(runCatching { PlaylistTrackSort.valueOf(sortPrefs.getString(sortKey, null) ?: "ORIGINAL") }.getOrDefault(PlaylistTrackSort.ORIGINAL))
+        mutableStateOf(runCatching { PlaylistTrackSort.valueOf(org.kde.plasmawave.ui.RustPrefs.getString(sortKey, null) ?: "ORIGINAL") }.getOrDefault(PlaylistTrackSort.ORIGINAL))
     }
     var showSort by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -422,7 +421,7 @@ fun PlaylistDetailScreen(
                                             text = { Text(option.label) },
                                             enabled = !needsDate || hasAddedDates,
                                             leadingIcon = { if (sort == option) Icon(Icons.Default.Check, contentDescription = null) },
-                                            onClick = { sort = option; sortPrefs.edit().putString(sortKey, option.name).apply(); showSort = false }
+                                            onClick = { sort = option; org.kde.plasmawave.ui.RustPrefs.putString(sortKey, option.name); showSort = false }
                                         )
                                     }
                                 }

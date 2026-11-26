@@ -34,6 +34,7 @@ class PlasmaWaveApp : Application(), ImageLoaderFactory {
             System.loadLibrary("plasmawave_core")
             val storageDir = File(filesDir, "plasmawave_data").apply { mkdirs() }
             core = PlasmaWaveCore(storageDir.absolutePath)
+            org.kde.plasmawave.ui.RustPrefs.init(this)
             Log.i(TAG, "PlasmaWave core initialized: ${core.getVersion()}")
             appInitScope.launch {
                 runCatching {

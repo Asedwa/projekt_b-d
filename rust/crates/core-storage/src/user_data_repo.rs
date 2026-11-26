@@ -1007,6 +1007,85 @@ impl Database {
         Ok(())
     }
 
+    // ------------------------------------------------------------------------
+    // App KV Store (replaces legacy SharedPreferences)
+    // ------------------------------------------------------------------------
+    pub fn get_kv(&self, key: &str) -> DomainResult<Option<String>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached("SELECT v FROM app_kv_store WHERE k = ?1;")
+            .map_err(|e| DomainError::Storage(format!("prepare get_kv: {e}")))?;
+        stmt.query_row(params![key], |row| row.get(0))
+            .optional()
+            .map_err(|e| DomainError::Storage(format!("query get_kv: {e}")))
+    }
+
+    pub fn set_kv(&self, key: &str, value: &str) -> DomainResult<()> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "INSERT INTO app_kv_store (k, v) VALUES (?1, ?2)
+                 ON CONFLICT(k) DO UPDATE SET v = excluded.v;",
+            )
+            .map_err(|e| DomainError::Storage(format!("prepare set_kv: {e}")))?;
+        stmt.execute(params![key, value])
+            .map_err(|e| DomainError::Storage(format!("exec set_kv: {e}")))?;
+        Ok(())
+    }
+
+    pub fn remove_kv(&self, key: &str) -> DomainResult<()> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached("DELETE FROM app_kv_store WHERE k = ?1;")
+            .map_err(|e| DomainError::Storage(format!("prepare remove_kv: {e}")))?;
+        stmt.execute(params![key])
+            .map_err(|e| DomainError::Storage(format!("exec remove_kv: {e}")))?;
+        Ok(())
+    }
+
+    pub fn get_kv_by_prefix(&self, prefix: &str) -> DomainResult<Vec<(String, String)>> {
+        let conn = self.lock()?;
+        let pattern = format!("{prefix}%");
+        let mut stmt = conn
+            .prepare_cached("SELECT k, v FROM app_kv_store WHERE k LIKE ?1;")
+            .map_err(|e| DomainError::Storage(format!("prepare get_kv_by_prefix: {e}")))?;
+        let rows = stmt
+            .query_map(params![pattern], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| DomainError::Storage(format!("query get_kv_by_prefix: {e}")))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| DomainError::Storage(format!("read kv row: {e}")))?);
+        }
+        Ok(out)
+    }
+
+    pub fn set_kv_batch(&self, entries: &[(String, String)]) -> DomainResult<()> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| DomainError::Storage(format!("tx set_kv_batch: {e}")))?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT INTO app_kv_store (k, v) VALUES (?1, ?2)
+                     ON CONFLICT(k) DO UPDATE SET v = excluded.v;",
+                )
+                .map_err(|e| DomainError::Storage(format!("prepare set_kv_batch: {e}")))?;
+            for (k, v) in entries {
+                stmt.execute(params![k, v])
+                    .map_err(|e| DomainError::Storage(format!("exec set_kv_batch: {e}")))?;
+            }
+        }
+        tx.commit()
+            .map_err(|e| DomainError::Storage(format!("commit set_kv_batch: {e}")))?;
+        Ok(())
+    }
+
     pub fn list_cached_artwork(&self, limit: u32) -> DomainResult<Vec<(String, String)>> {
         let conn = self.lock()?;
         let mut stmt = conn
